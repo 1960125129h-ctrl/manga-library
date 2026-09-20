@@ -2,6 +2,7 @@
 // 一次下载 = 单开一个标签页; 全程计时(开页 -> 解析 -> 逐话下载入库 -> 重建书库 -> 关页)
 // 用法: node run-album.mjs "https://18comic.vip/album/491045/?series_sort=2"
 import fs from 'node:fs';
+import { requirePython } from '../lib/python.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, execSync } from 'node:child_process';
@@ -11,9 +12,9 @@ const T_START = Date.now();
 const WORK = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.resolve(WORK, '..', '..');
 const CAT = '漫画';
-const DL = 'C:\\Users\\终楠\\Downloads';
+const DL = path.join(process.env.USERPROFILE || '', 'Downloads');
 const STAGE = path.join(LIB, '_zips');
-const PY = 'C:\\Users\\终楠\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+const PY = requirePython('禁漫下载(要 OCR 解验证码 + 拼页)');
 const CAP = path.join(WORK, 'cap-live.jpg');
 const PORT = 9333;
 const albumUrl = process.argv[2];

@@ -2,6 +2,7 @@
 // 多连接测试: 每个专辑一个专用页面(各自只开一个链接), 验证码环节全局串行(同一会话只有一张验证码有效)
 // 用法: node run-albums.mjs <url1> [url2] [url3] ...
 import fs from 'node:fs';
+import { requirePython } from '../lib/python.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, execSync } from 'node:child_process';
@@ -12,9 +13,9 @@ const T0 = Date.now();
 const WORK = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.resolve(WORK, '..', '..');
 const CAT = '漫画';
-const DL = 'C:\\Users\\终楠\\Downloads';
+const DL = path.join(process.env.USERPROFILE || '', 'Downloads');
 const STAGE = path.join(LIB, '_zips');
-const PY = 'C:\\Users\\终楠\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+const PY = requirePython('禁漫下载(要 OCR 解验证码 + 拼页)');
 const PORT = Number(process.env.JM_PORT || 9333);
 const urls = normTargets(process.argv.slice(2));   // JM1452133 / 纯数字 / 专辑链接 / 单话链接 都认
 const argNum = (k, d) => { const m = process.argv.find(a => a.startsWith('--' + k + '=')); const v = m ? parseInt(m.split('=')[1], 10) : NaN; return isFinite(v) ? v : d; };

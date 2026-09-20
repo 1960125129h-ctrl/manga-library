@@ -10,6 +10,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { findPython } from './lib/python.mjs';
 import { loadTables, saveTables, learn, learnChars, refreshAliases, matchWT, isAI, ratingOf, loadAliasCache, MANGA_SITE_RE } from './tags.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -31,13 +32,18 @@ try { AUTHOR_ALIAS = JSON.parse(fs.readFileSync(ALIAS_FILE, 'utf8')) || {}; } ca
 // 封面缩略图: 有 python 就顺手更新(已存在的会跳过), 失败不影响主流程
 const THUMB_W = 200;   // 缩略图宽度(px), 书架用; 阅读时仍是原图
 try {
-  const py = 'C:\\Users\\终楠\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+  const py = findPython();
   const script = path.join(HERE, 'jm', 'make-thumbs.py');
-  if (fs.existsSync(py) && fs.existsSync(script)) {
+  if (!fs.existsSync(script)) {
+    // 没装缩略图脚本: 什么都不做(不影响主流程)
+  } else if (!py) {
+    // 找不到 Python 要**说出来**, 别静默跳过 —— 否则表现为"书架卡片没图", 排查半天
+    console.log('  (缩略图跳过: 找不到 Python。装一个, 或设 MANGA_PY 指向 python.exe)');
+  } else {
     const out = execSync('"' + py + '" "' + script + '" "' + LIB + '" ' + THUMB_W, { encoding: 'utf8', env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
     if (out.trim()) console.log('  ' + out.trim());
   }
-} catch (e) { console.log('  (缩略图更新跳过: ' + String(e.message).slice(0, 60) + ')'); }
+} catch (e) { console.log('  (缩略图更新失败: ' + String(e.message).slice(0, 80) + ')'); }
 
 // 卡片封面: _thumbs/<sha1(相对路径)[0:16]>.webp
 function coverOf(relDir) {

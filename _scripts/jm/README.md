@@ -46,7 +46,10 @@ node _scripts\jm\import-zips.mjs --probe 1452133     # 只反查书名/话号
 node _scripts\build-library.mjs --lib "D:\gong zuo qu\漫画书库"   # 重建书库
 python _scripts\jm\stitch-pages.py "<LIB>\漫画\<书名>\第01話" [--dry]  # 切页拼合+像素校验
 
-Python：C:\Users\终楠\AppData\Local\Programs\Python\Python311\python.exe（EasyOCR 1.7.2）。
+Python：**自动查找**（`_scripts/lib/python.mjs`）。顺序：环境变量 `MANGA_PY` → 用户级安装目录 →
+系统级 `C:\Python3*` → PATH 上的 `python`。找不到会**明确报错**，不会静默跳过。
+依赖：`pillow`（缩略图）+ `easyocr` `opencv-python` `numpy`（验证码识别）。
+换电脑或改用户名时，这些路径不用再改。
 
 ## 3. 下载全流程（run-albums.mjs 内部 9 步）
 

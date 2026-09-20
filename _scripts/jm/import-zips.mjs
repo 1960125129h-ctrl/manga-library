@@ -5,6 +5,7 @@
 //   node import-zips.mjs --dir "C:\Users\终楠\Downloads"
 //   node import-zips.mjs --probe 1452133 # 只查这个 id 的书名与话号(不导入)
 import fs from 'node:fs';
+import { requirePython } from '../lib/python.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -14,7 +15,7 @@ const WORK = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.resolve(WORK, '..', '..');
 const CAT = '漫画';
 const ZIPS = path.join(LIB, '_zips');
-const PY = 'C:\\Users\\终楠\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+const PY = requirePython('导入 zip 包(要拼页)');
 const PORT = Number(process.env.JM_PORT || 9333);
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : d; };
