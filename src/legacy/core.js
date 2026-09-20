@@ -56,11 +56,19 @@ var RECOG_VER = "v3-20260914";
 var AUTHOR_ALIAS_FILE = {};   // _scripts\author-alias.json 的内容(UI 里合并作者会写它)
   // 模态框/提示条需要知道"是不是在下载中"(决定点遮罩是关掉还是转后台):
   // 这两件事都还在 core 里, 所以从这里注入给 ui 模块, 而不是让 ui 反向依赖下载逻辑。
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 事件接线区
+  //   约定: 一行一条接线, 按域分组(① 注入 → ② 偏好 → ③④ 阅读器 → ⑤ 书架 → ⑥ 全局 → ⑦ 启动)。
+  //   加控件时先找对应分组插进去, 别往末尾堆。
+  //   加界面按钮的完整步骤见 src/改动索引.md。
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ─── ① 模块注入: 把 core 的能力交给已抽出的模块 ─────────────────────────────────────────
   setModalHooks({
     isBusy: function () { return !!(dlState && dlState.running); },
     toBackground: function () { runInBackground(); }
   });
 
+  // ─── ② 恢复上次的偏好(阅读主题 / 侧栏 / 方向 / 模式) ─────────────────────────────────────
 try { var __rt = JSON.parse(localStorage.getItem("readerTheme") || "{}"); if (__rt.theme) S.theme = __rt.theme; if (typeof __rt.bright === "number") S.bright = __rt.bright; } catch (e) {}
 try { var __rs = JSON.parse(localStorage.getItem("readerDefaults") || "{}"); if (typeof __rs.sidebar === "boolean") S.sidebar = __rs.sidebar; if (typeof __rs.thumbs === "boolean") S.thumbs = __rs.thumbs; if (__rs.dir) S.dir = __rs.dir; if (__rs.mode) S.mode = __rs.mode; } catch (e) {}
 
@@ -462,6 +470,7 @@ initShelfSelect({ DISK: DISK });
   // 飞回去: 自己克隆一张图来飞(FLIP)。试过用 View Transition 做反向, 浏览器不给它建变形组,
   // 表现就是"啪"一下换完、看不见过程——所以这条腿改成手工克隆, 完全可控。
 
+  // ─── ③ 阅读器: 按钮接线 ────────────────────────────────────────────────────────
   elBack.onclick = flyCloseComic;
   document.getElementById("bprevch").onclick = function () { if (comic) prevChapter(false); };
   document.getElementById("bnextch").onclick = function () { if (comic) nextChapter(); };
@@ -496,6 +505,7 @@ initShelfSelect({ DISK: DISK });
   if (bb) bb.onclick = function () { bmToggle(); };
   var bt = document.getElementById("thumbtoggle");
   if (bt) bt.onclick = function () { S.thumbs = !S.thumbs; if (comic) render(); else { applyThumbs(); syncButtons(); } saveReaderDefaults(); };
+  // ─── ④ 阅读器: 滚轮缩放 / 触屏 / 全屏 ──────────────────────────────────────────────
   // 放大/缩小: 按住右键滚轮(以光标位置为锚点, 100% 起逐步缩放); 平移: 按住右键拖动
   document.addEventListener("mousedown", function (ev) { if (ev.button === 2) setRightDown(true); }, true);
   document.addEventListener("mouseup", function () { setRightDown(false); }, true);
@@ -583,6 +593,7 @@ initShelfSelect({ DISK: DISK });
   }, { passive: true });
 
   var searchTimer = 0;
+  // ─── ⑤ 书架: 搜索 / 筛选 / 主题 / 滚动 / 侧键 ───────────────────────────────────────
   elSearch.oninput = function () {
     S.q = elSearch.value;
     if (searchTimer) clearTimeout(searchTimer);
@@ -627,6 +638,7 @@ initShelfSelect({ DISK: DISK });
     if (goNext) nextPage(); else prevPage();
   };
 
+  // ─── ⑥ 全局: 键盘快捷键 ────────────────────────────────────────────────────────
   document.addEventListener("keydown", function (e) {
     if (e.target && e.target.tagName === "INPUT") return;
     if (elModal && elModal.classList.contains("on")) { if (e.key === "Escape") closeModal(); return; }
@@ -659,6 +671,7 @@ initShelfSelect({ DISK: DISK });
 
   try { window.addEventListener("beforeunload", function () { saveShelfView(true); }); } catch (e) {}
 
+  // ─── ⑦ 启动 ───────────────────────────────────────────────────────────────
   window.mlBooted = false;
   if (DISK) {
     DISK.getAll().then(function (d) {
