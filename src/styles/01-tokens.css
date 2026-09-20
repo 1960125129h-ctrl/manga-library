@@ -1,0 +1,13 @@
+/* CSS 变量 / 主题 / 背景图覆盖 —— 必须在最前面(其它文件全靠这里的变量) */
+
+/* 变量 / 主题 / 背景图(bgimg) 覆盖
+   (由 app.css 按原顺序切出; 顺序不能改 —— 文件里到处是"后面的规则故意覆盖前面的") */
+*{box-sizing:border-box}
+:root{--bg:#0a0a0a;--surface:#161616;--surface2:#202020;--surface3:#2e2e2e;--border:#1c1c1c;--border2:#303030;--fg:#d8dade;--fg2:#909090;--fg3:#606060;--accent:#3b7bf6;--accent2:#5a95f8;--card-bg:#1a1a1a;--thumb-bg:#060606}
+body[data-shelf-theme="light"]{--bg:#e8eaed;--surface:#f5f6f8;--surface2:#ffffff;--surface3:#e0e3e8;--border:#d1d5db;--border2:#c5c9cf;--fg:#11151a;--fg2:#3d434b;--fg3:#6b7280;--accent:#2f6df6;--accent2:#4a8af8;--card-bg:#ffffff;--thumb-bg:#eef0f3}
+body[data-shelf-theme="eye"]{--bg:#e2e8d8;--surface:#ebeedd;--surface2:#f2f5e6;--surface3:#dce2cc;--border:#c8cfb4;--border2:#bcc4a6;--fg:#2a3320;--fg2:#5e6a4e;--fg3:#7e8a6e;--accent:#5a9a5a;--accent2:#6aaa6a;--card-bg:#eef2e0;--thumb-bg:#d4dcc4}
+body[data-shelf-theme="paper"]{--bg:#f3ead8;--surface:#ece0c8;--surface2:#e0d3b7;--surface3:#d4c6a8;--border:#cfc0a4;--border2:#c4b498;--fg:#3d3428;--fg2:#7a6d58;--fg3:#9a8a70;--accent:#8b6f3e;--accent2:#9b7f4e;--card-bg:#ece0c8;--thumb-bg:#d8ccb0}
+*{transition:background-color 1.2s cubic-bezier(.4,0,.2,1),color 1.2s cubic-bezier(.4,0,.2,1),border-color 1.2s cubic-bezier(.4,0,.2,1)}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:14px/1.5 "Microsoft YaHei","PingFang SC",system-ui,sans-serif;overflow:hidden}
+body.bgimg{background-size:cover;background-position:center;background-attachment:fixed}
+body.bgimg button.b{background:color-mix(in srgb, var(--surface2,var(--surface)) calc(var(--bg-op,50%) * 1.5)!important, transparent);backdrop-filter:blur(calc(var(--bg-blur,12px) * 0.8));-webkit-backdrop-filter:blur(calc(var(--bg-blur,12px) * 0.8))}

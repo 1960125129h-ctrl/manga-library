@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+const p = 'library.json';
+const raw = fs.readFileSync(p, 'utf8');
+fs.mkdirSync('_backup', { recursive: true });
+const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+fs.writeFileSync('_backup/library-' + stamp + '.json', raw, 'utf8');
+const lib = JSON.parse(raw);
+const comics = lib.comics || {};
+const gone = Object.keys(comics).filter((k) => !fs.existsSync(k));
+for (const k of gone) delete comics[k];
+fs.writeFileSync(p, JSON.stringify(lib, null, 2), 'utf8');
+console.log('备份: _backup/library-' + stamp + '.json');
+console.log('清掉目录已不存在的记录 ' + gone.length + ' 条:');
+gone.forEach((k) => console.log('  - ' + k));
+console.log('剩余条目: ' + Object.keys(comics).length);

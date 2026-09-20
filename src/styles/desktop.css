@@ -1,0 +1,23 @@
+/* 桌面化手感: 去掉"浏览器页面"才有的那些行为
+   这一层不改业务, 只让交互像桌面应用而不像网页。 */
+
+/* 1) 界面文字不能随手选中
+      网页里拖着鼠标划过工具栏会选出一片蓝; 而且卡片支持 Shift 点选/拖拽排序,
+      不禁掉的话会一边拖一边选文字。表单控件、下载日志、报错文案除外(那些要能复制)。 */
+body{ user-select:none; -webkit-user-select:none; }
+input,textarea,select,[contenteditable="true"],#dllog,#dllog *,.pickable{ user-select:text; -webkit-user-select:text; }
+
+/* 2) 关掉滚动回弹与滚动链(整页橡胶带、内层滚到底还把外层带着滚 —— 典型网页行为) */
+html,body{ overscroll-behavior:none; }
+#grid,#stage,#thumblist,#sidebar,#chapters,#hlist,.view{ overscroll-behavior:contain; }
+
+/* 3) 图片不能被拖出"幽灵图" */
+img{ -webkit-user-drag:none; }
+
+/* 4) 鼠标点出来的焦点圈去掉; 键盘 Tab 过来的保留(可访问性)
+      表单控件自带 focus 样式(border + shadow), 不加 outline 免得双重 */
+:focus{ outline:none; }
+:focus-visible:not(input):not(textarea):not(select){ outline:2px solid var(--accent); outline-offset:1px; }
+
+/* 5) 触屏机器上点一下会闪的灰块 */
+*{ -webkit-tap-highlight-color:transparent; }

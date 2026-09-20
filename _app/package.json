@@ -1,0 +1,94 @@
+{
+  "name": "manga-library-v0",
+  "version": "1.0.0",
+  "description": "本地漫画书库 - 书库/阅读器/下载器",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.manga.library.v0",
+    "productName": "漫画书库重构v0",
+    "directories": {
+      "output": "../_dist"
+    },
+    "files": [
+      "**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,README,readme,*.md,*.markdown}",
+      "!**/node_modules/.bin",
+      "!**/{.git,.github,.vscode,.idea,test,tests,__tests__,coverage,docs,examples,demos}"
+    ],
+    "extraResources": [
+      {
+        "from": "../_scripts",
+        "to": "_scripts",
+        "filter": [
+          "**/*",
+          "!**/chrome-profile/**",
+          "!**/edge-profile/**",
+          "!**/jm/logs/**",
+          "!**/node_modules/**",
+          "!**/*.log",
+          "!**/tools/ffmpeg/**/bin/ffplay.exe",
+          "!**/tools/**/doc/**",
+          "!**/_历史验收脚本/**"
+        ]
+      },
+      {
+        "from": "../src",
+        "to": "src",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../书库.html",
+        "to": "书库.html"
+      },
+      {
+        "from": "../library.json",
+        "to": "library.json"
+      },
+      {
+        "from": "../角色作品表.json",
+        "to": "角色作品表.json"
+      },
+      {
+        "from": "../外部目录.json",
+        "to": "外部目录.json"
+      }
+    ],
+    "win": {
+      "target": ["portable", "nsis"],
+      "icon": "icon.ico"
+    },
+    "fileAssociations": [
+      {
+        "ext": "cbz",
+        "name": "漫画压缩包",
+        "description": "漫画压缩包 (CBZ)",
+        "icon": "icon.ico",
+        "role": "Viewer"
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "漫画书库重构v0",
+      "artifactName": "漫画书库重构v0-${version}-setup.exe"
+    },
+    "portable": {
+      "artifactName": "漫画书库重构v0-${version}-portable.exe"
+    },
+    "compression": "maximum"
+  }
+}

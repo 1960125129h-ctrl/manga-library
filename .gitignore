@@ -1,0 +1,44 @@
+# ---- 书库内容(几百 GB 级, 绝不进仓库) ----
+漫画/
+_thumbs/
+_预览/
+_预览页/
+_zips/
+_对比图/
+
+# ---- 构建产物 ----
+_dist/
+书库.html
+_manifest.json
+library.json
+角色作品表.json
+外部目录.json
+
+# ---- 运行时状态 ----
+.progress.json
+.workbench.json
+*.log
+_pkg-boot.log
+
+# ---- 依赖 ----
+node_modules/
+_app/node_modules/
+
+# ---- 抓取用的浏览器 profile(含登录态, 且被进程锁着) ----
+_scripts/jm/chrome-profile/
+_scripts/jm/edge-profile/
+_scripts/jm/logs/
+
+# ---- 备份与临时 ----
+_backup/
+_backup_*/
+_css-backup/
+_*.cjs
+_batch.json
+*.tmp
+# ---- 第三方二进制(ffmpeg/ffprobe/ffplay 三个 exe 就 295 MB, 装包时拷进来即可) ----
+_scripts/tools/
+
+# ---- 运行时日志 ----
+*.jsonl
+session*.jsonl

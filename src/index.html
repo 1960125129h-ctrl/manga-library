@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<!-- 书库 · 渲染层入口。手写文件, 不再由构建生成。 -->
+<html lang="zh-Hant">
+<head>
+<base href="../">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>漫画书库重构v0</title>
+  <link rel="stylesheet" href="src/styles/01-tokens.css">
+  <link rel="stylesheet" href="src/styles/02-shelf.css">
+  <link rel="stylesheet" href="src/styles/03-reader.css">
+  <link rel="stylesheet" href="src/styles/04-panels.css">
+  <link rel="stylesheet" href="src/styles/shell.css">
+  <link rel="stylesheet" href="src/styles/desktop.css">
+</head>
+<body>
+<div id="titlebar">
+  <button class="tb-btn tb-menu" id="tb-menu" title="菜单"><svg viewBox="0 0 16 16"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.2"/></svg></button>
+  <div class="tb-brand"><span class="tb-dot"></span><span>漫画书库</span></div>
+  <div class="tb-gap"></div>
+  <div class="tb-controls">
+    <button class="tb-btn" id="tb-min" title="最小化"><svg viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor"/></svg></button>
+    <button class="tb-btn" id="tb-max" title="最大化"><svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor"/></svg></button>
+    <button class="tb-btn close" id="tb-close" title="关闭"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"/></svg></button>
+  </div>
+</div>
+<div id="shelf" class="view">
+  <header id="shelfbar">
+    <h1>漫画书库重构v0</h1>
+    <div id="searchwrap"><input id="search" placeholder="搜索书名…   ( / )"><button id="btn-sitesearch" title="用这个关键词跨站搜索正经漫画站（再漫画 / Komiic …）">跨站搜索</button></div>
+    <button id="btn-filter" title="展开/收起筛选面板：分组 / 排序 / 作者 / 分级 / 平台"><span id="btn-filter-txt">筛选 ▾</span><span class="fbadge clean" id="btn-filter-badge"></span></button>
+    <div id="appactions" class="grp">
+      <button class="b" id="btn-download" title="下载漫画：通用站点链接 / 禁漫天堂（两个页签）"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>下载漫画</button>
+      <button class="b" id="btn-rebuild" title="全量重建：扫描整个书库，慢。下载/更新后的刷新是自动增量，不用点这个"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>更新书库</button>
+      <button class="b" id="btn-history" title="阅读历史（按最近阅读时间）"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>历史</button>
+      <button class="b" id="btn-settings" title="调整缩略图尺寸、间距、字号等"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>设置</button>
+      <button class="b" id="btn-sites" title="免费中文漫画站总览：点站名就用「下载用的那个浏览器」打开"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>漫画网站总览</button>
+      <button class="b" id="btn-theme" title="切换主题：暗黑 / 灰白 / 护眼"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span id="btn-theme-label">暗黑</span></button>
+    </div>
+    <span id="shelfstat"></span>
+  </header>
+  <div id="filterpanel"><div class="fpanel-inner">
+    <div class="frow"><span class="flabel">分组</span><div class="fchips" id="chips-group"></div></div>
+    <div class="frow"><span class="flabel">排序</span><div class="fchips" id="chips-sort"></div></div>
+    <div class="frow collapsible closed" id="frow-author"><span class="flabel" id="fl-author">作者</span><div class="fchips" id="chips-author"></div></div>
+    <div class="frow"><span class="flabel">分级</span><div class="fchips" id="chips-rating"></div></div>
+    <div class="frow collapsible closed" id="frow-work"><span class="flabel" id="fl-work">作品</span><div class="fchips" id="chips-work"></div></div>
+    <div class="frow collapsible closed" id="frow-plat"><span class="flabel" id="fl-plat">平台</span><div class="fchips" id="chips-plat"></div></div>
+  </div></div>
+  <nav id="cattabs"></nav>
+  <nav id="albumbar"></nav>
+  <div id="grid"></div>
+  <div id="selbar" class="hide"><span id="seln">已选 0 本</span><button class="b" id="selalbum">新建专辑</button><button class="b hide" id="selremovealbum">移出专辑</button><button class="b" id="seltag">加标签</button><button class="b" id="selcat">移动分类</button><button class="b" id="seldel">删除</button><button class="b ghost" id="selclear">取消</button></div>
+  <button id="totop" title="回到顶部">↑</button>
+</div>
+<div id="reader" class="view hide">
+  <aside id="sidebar">
+    <button class="sidehandle" id="sidetoggle" title="收起目录 (S)"><span>‹</span></button>
+    <h2 id="bookname"></h2>
+    <div id="chapters"></div>
+  </aside>
+  <div id="main">
+    <div id="bar">
+      <div class="grp"><button class="b" id="bback" title="返回书架 (Esc)">‹ 书架</button></div>
+      <div class="grp">
+        <button class="b" id="bprevch" title="上一话 ([)">‹ 上一话</button>
+        <button class="b" id="bnextch" title="下一话 (])">下一话 ›</button>
+      </div>
+      <div class="grp">
+        <button class="b" id="m-single" title="单页 (1)">单页</button>
+        <button class="b" id="m-double" title="双页 (2)">双页</button>
+        <button class="b" id="m-scroll" title="长条 (3)">长条</button>
+      </div>
+      <div class="grp">
+        <button class="b" id="f-width" title="适应宽度">适宽</button>
+        <button class="b" id="f-height" title="适应高度">适高</button>
+        <button class="b" id="f-original" title="原始大小">原始</button>
+      </div>
+      <div class="grp">
+        <button class="b" id="bdir" title="阅读方向">日漫「右→左」</button>
+        <button class="b" id="brev" title="章节观看顺序：正序(旧→新) / 倒序(新→旧)。X 这类站第一话是最早的图，想从最新看起就切倒序">顺序：旧→新</button>
+        <button class="b" id="bcover" title="第一页作为封面单独显示">封面独立</button>
+        <button class="b" id="bzoomout" title="缩小（以画面中心为准，每次 -25%）">－</button>
+        <button class="b" id="bzoom" title="放大（以画面中心为准，每次 +25%）">＋</button>
+        <button class="b" id="bzoomreset" title="重置画面大小（回到 100%）">⟲</button>
+      </div>
+      <div class="grp">
+        <button class="b" id="bwheel" title="滚轮翻页 开/关">滚轮翻页</button>
+        <button class="b" id="btheme" title="阅读配色与亮度（纯黑/深灰/米白纸/护眼绿）">配色</button>
+        <button class="b" id="bbm" title="给当前页加书签 (B)">☆ 书签</button>
+        <button class="b" id="bfull" title="全屏 (F)">全屏</button>
+      </div>
+      <div id="info">
+        <span id="chname">-</span>
+        <input id="pageinput" type="text" inputmode="numeric" title="输入页码后回车跳转">
+        <span id="pageinfo">/ 0</span>
+      </div>
+    </div>
+    <div id="stage" class="stage mode-single fit-height dir-rtl"></div>
+  </div>
+  <aside id="thumbs">
+    <button class="sidehandle" id="thumbtoggle" title="展开预览 (P)"><span>›</span></button>
+    <h2>预览 <button class="mini" id="prevrev" title="预览/翻页顺序">顺序</button></h2>
+    <div id="thumblist"></div>
+  </aside>
+</div>
+<div id="history" class="view hide">
+  <header id="histbar">
+    <h1>阅读历史</h1>
+    <div class="grp"><button class="b" id="hback">‹ 返回书架</button></div>
+    <span id="hstat"></span>
+  </header>
+  <div id="hlist"></div>
+</div>
+<div id="ctx"></div>
+<div id="modal"></div>
+<div id="hint"></div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

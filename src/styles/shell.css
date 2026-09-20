@@ -1,0 +1,32 @@
+/* 自绘标题栏 (frameless 窗口的顶部chrome)
+   以前 window 是系统边框, 界面看着像"网页套了个壳"; 现在这一条由我们画。 */
+
+body{ display:flex; flex-direction:column; overflow:hidden; }
+#shelf,#reader,#history{ height:auto; flex:1 1 auto; min-height:0; }
+
+#titlebar{
+  flex:0 0 34px; height:34px; display:flex; align-items:stretch; position:relative; z-index:200;
+  background:var(--surface); border-bottom:1px solid var(--border);
+  -webkit-app-region:drag;   /* 整条可拖动窗口 */
+  user-select:none; -webkit-user-select:none;
+}
+.tb-brand{ display:flex; align-items:center; gap:7px; padding-left:12px; font-size:12.5px; color:var(--fg2); letter-spacing:.3px; }
+.tb-dot{ width:8px; height:8px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent2)); }
+.tb-gap{ flex:1 1 auto; }
+.tb-controls{ display:flex; -webkit-app-region:no-drag; }
+.tb-btn{
+  width:46px; height:34px; padding:0; border:0; background:transparent; color:var(--fg2);
+  display:flex; align-items:center; justify-content:center; cursor:default; outline:none;
+  -webkit-app-region:no-drag;
+}
+.tb-menu{ width:38px; }
+.tb-menu svg{ width:14px; height:14px; }
+.tb-btn:hover{ background:var(--surface3); color:var(--fg); }
+.tb-btn.close:hover{ background:#c42b1c; color:#fff; }
+.tb-btn svg{ width:10px; height:10px; display:block; }
+
+/* 浏览器直开(没有 Electron)时这层没有意义, 由 JS 隐藏 */
+body.not-electron #titlebar{ display:none; }
+body.not-electron #shelf,body.not-electron #reader,body.not-electron #history{ height:100%; }
+/* 标题栏已经有应用名了, 书架栏里那个 h1 是重复的 -> 隐藏(浏览器直开时仍显示) */
+body:not(.not-electron) #shelfbar > h1{ display:none; }

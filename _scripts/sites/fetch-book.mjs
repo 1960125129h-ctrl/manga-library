@@ -1,0 +1,885 @@
+// 通用抓书: node fetch-book.mjs --url <来源链接> --dir <书名> [--from N] [--to M] [--author X] [--desc Y]
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync, spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { checkMeta, checkChapters, checkGalleries, checkImages } from './contract.mjs';
+const SELF = fileURLToPath(import.meta.url);
+if (process.env.JM_PROXY_READY !== '1') {   // 保证代理环境在进程启动时就位(NODE_USE_ENV_PROXY 必须启动时存在)
+  const r0 = spawnSync(process.execPath, [SELF, ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost', HTTPS_PROXY: 'http://127.0.0.1:7890', HTTP_PROXY: 'http://127.0.0.1:7890', NODE_USE_ENV_PROXY: '1', JM_PROXY_READY: '1', HTTPS_PROXY: 'http://127.0.0.1:7890', HTTP_PROXY: 'http://127.0.0.1:7890' } });
+  process.exit(r0.status || 0);
+}
+const LIB = path.resolve(SELF, '..', '..', '..');
+const CAT = '漫画';
+const argv = process.argv.slice(2);
+const arg = (k, d) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : (d === undefined ? null : d); };
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36';
+const say = (s) => console.log(s);
+let url = arg('url');
+const PROBE = argv.includes('--probe');   // 只解析不出下载: 给 App 的「通用链接」页签用
+// --pick-details: 给一批 pixiv ID, 逐个查标题+缩略图, 逐行输出(在 adapter 检查之前)
+if (argv.includes('--pick-details')) {
+  const ids = (arg('ids') || '').split(',').filter(Boolean);
+  if (!ids.length) process.exit(0);
+  const { pixiv } = await import('./index.mjs');
+  // 先看缓存: 标题+缩略图都有就直接回, 不打接口(pixiv 限流很快, 同一作者二次打开能省掉全部请求)
+  const todo = [];
+  for (const id of ids) {
+    const c = (typeof pixiv.cachedWork === 'function') ? pixiv.cachedWork(id) : null;
+    if (c && c.title && c.thumb) {
+      console.log('@@PICK@@' + JSON.stringify({ id: id, title: c.title, thumb: c.thumb, cached: true }));
+    } else {
+      todo.push({ id: id, title: (c && c.title) || '', thumb: (c && c.thumb) || '' });
+    }
+  }
+  let next = 0, rateLimited = false;
+  const worker = async () => {
+    while (next < todo.length) {
+      const it = todo[next++];
+      let retries = 0;
+      while (retries < 3) {
+        try {
+          const b = await pixiv.ajax('/ajax/illust/' + it.id);
+          const thumb = (b.urls && (b.urls.small || b.urls.thumb)) || it.thumb || '';
+          const title = b.illustTitle || it.title || '';
+          if (typeof pixiv.rememberWork === 'function') pixiv.rememberWork(it.id, title, thumb);
+          console.log('@@PICK@@' + JSON.stringify({ id: it.id, title: title, thumb: thumb }));
+          break;
+        } catch (e) {
+          if (e && e.fatal) {   // 429 限流: 别硬撞, 标记后收工
+            rateLimited = true;
+            console.log('@@PICK-ERR@@' + JSON.stringify({ msg: String(e.message || e).slice(0, 120), id: it.id }));
+            return;
+          }
+          break;
+        }
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  if (rateLimited) console.log('@@PICK-RATE@@' + JSON.stringify({ msg: 'pixiv 限流(429): 过几分钟再打开这个作者页, 已缓存的会立刻出' }));
+  process.exit(0);
+}
+
+const { pick } = await import('./index.mjs');
+// 从整段口令(如抖音复制文本)里提取 http(s) 链接, 提取不到就用原文
+{ const um = String(url || '').match(/https?:\/\/[^\s，。、；）)]+/i); if (um) url = um[0]; }
+/* ---------- 页清单(前端下载前预览用): 每页一个缩略图格子 ---------- */
+// 适配器给了 pageList() 就用它(带 thumb); 没有就退回 chapters() 的头一话, 缩略图走 App 的通用代理
+async function buildPagePreview(adapter, u) {
+  try {
+    let pages = [];
+    if (typeof adapter.pageList === 'function') {
+      // nhentai 的 pageList 收 gallery id; e-hentai 的 pageList 收整个画廊 URL —— 两个都喂, 各自取自己认的
+      const gid = (String(u).match(/\/g\/(\d+)/) || [])[1] || String(u).trim();
+      pages = await adapter.pageList(adapter.id === 'ehentai' ? u : gid);
+    } else {
+      const chs = await adapter.chapters(u);
+      if (!chs.length) return null;
+      const imgs = await adapter.images(chs[0]);
+      pages = imgs.map(function (im, i) {
+        const o = (typeof im === 'string') ? { url: im, headers: {} } : im;
+        return { n: i + 1, url: o.url, headers: o.headers || {} };
+      });
+    }
+    if (!pages || !pages.length) return null;
+    return {
+      pageUrl: u,   // 原页面地址: 预览图要按它推 Referer(防盗链)
+      book: arg('dir') || '',
+      chapterId: '',
+      pages: pages.map(function (p) {
+        // 只带前端要用的字段: 不带 headers/Cookie(预览图由 App 主进程代理拉, 前端不需要凭据)
+        const o = { n: p.n, url: p.url, thumb: p.thumb || '' };
+        if (!o.thumb) o.thumbProxy = 1;   // 没给缩略图: 让主进程把大图当缩略图拉(带 Referer), 前端不直连防盗链 CDN
+        if (p.w) { o.w = p.w; o.h = p.h; }
+        if (typeof p.cl === "number") { o.cl = p.cl; o.ct = p.ct || 0; o.cw = p.cw || 285; o.ch = p.ch || 300; }   // EH sprite: 交给主进程按这个矩形裁这一格
+        if (!o.thumb && p.thumb) o.thumb = p.thumb;   // EH 的 sprite 也要给前端一个地址(主进程按 pageUrl 带 Referer 拉)
+        return o;
+      }),
+    };
+  } catch (e) {
+    return { error: String(e && e.message || e).slice(0, 160) };
+  }
+}
+if (!url && argv.includes("--tag-next")) url = arg("tag-next");   // 续取模式: 用 next 链接当 url, 好让适配器认出来
+  // ── 浏览器标签: browsertabs:list / browsertabs:current / browsertabs:pending ──
+  // 从带 --remote-debugging-port=9333 的 Chrome 读标签, 当"容器"返回给界面, 复用同一套列表 UI。
+  // 待挑列表存在 _scripts/jm/pending.json: 收下的会累积、关弹窗不丢、已入库的自动移出。
+  if (/^browsertabs:/i.test(String(url || ''))) {
+    const fsx = await import('node:fs');
+    const PENDING = path.join(LIB, '_scripts', 'jm', 'pending.json');
+    const LIBJ = path.join(LIB, 'library.json');
+    const readPending = () => { try { const a = JSON.parse(fsx.readFileSync(PENDING, 'utf8')); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+    const writePending = (l) => { try { fsx.writeFileSync(PENDING, JSON.stringify(l, null, 1), 'utf8'); } catch (e) {} };
+    const libTxt = () => { try { return fsx.readFileSync(LIBJ, 'utf8'); } catch (e) { return ''; } };
+    const libUrls = () => { try { const j = JSON.parse(fsx.readFileSync(LIBJ, 'utf8')); const c = (j && j.comics) || {}; return new Set(Object.keys(c).map((k) => String((c[k] && c[k].source && c[k].source.url) || '').trim()).filter(Boolean)); } catch (e) { return new Set(); } };
+    const prune = () => { const set = libUrls(); const l = readPending(); const k = l.filter((x) => !set.has(String(x.url || '').trim())); if (k.length !== l.length) writePending(k); return k; };
+    const BT_PORT = 9333;
+    const mode = String(url).split(':')[1] || 'list';
+    const isWork = (u) => /e-hentai\.org\/g\/\d+\/[0-9a-f]+/i.test(u) || /nhentai\.net\/g\/\d+/i.test(u) || /pixiv\.net\/artworks\/\d+/i.test(u);
+    const isBox = (u) => /pixiv\.net\/users\/\d+/i.test(u) || /e-hentai\.org\/tag\//i.test(u);
+    const emit = (list, desc) => {
+      say('@@RESULT@@' + JSON.stringify({ ok: true, site: 'browsertabs', title: '浏览器标签', rawTitle: '', author: '', desc: desc, cover: '', chapters: list.length, url: url, tagBatch: true, galleries: list, next: '' }));
+      process.exit(0);
+    };
+    if (mode === 'pending') {
+      const list = prune();
+      say('待挑列表 ' + list.length + ' 本');
+      emit(list, '待挑列表（下载成功后自动移出）');
+    }
+    let tabs = [];
+    try {
+      const ac = new AbortController();
+      const tm = setTimeout(() => ac.abort(), 4000);
+      const r = await fetch('http://127.0.0.1:' + BT_PORT + '/json/list', { signal: ac.signal });
+      clearTimeout(tm);
+      const list = await r.json();
+      tabs = (list || []).filter((x) => x.type === 'page' && x.url && !/^(devtools:|chrome:|about:)/i.test(x.url));
+    } catch (e) {
+      say('@@RESULT@@' + JSON.stringify({ ok: false, msg: '连不上浏览器调试端口 ' + BT_PORT }));
+      process.exit(0);
+    }
+    if (mode === 'current') {
+      const probe = async (t) => new Promise((res) => {
+        let done = false, ws = null;
+        const fin = (v) => { if (done) return; done = true; try { if (ws) ws.close(); } catch (e) {} res(v); };
+        if (!t.webSocketDebuggerUrl) return fin(null);
+        try { ws = new WebSocket(t.webSocketDebuggerUrl); } catch (e) { return fin(null); }
+        const tm = setTimeout(() => fin(null), 700);
+        ws.onopen = () => { try { ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression: 'document.visibilityState', returnByValue: true } })); } catch (e) { fin(null); } };
+        ws.onmessage = (ev) => { try { const m = JSON.parse(String(ev.data)); if (m.id === 1) { clearTimeout(tm); fin(String((m.result && m.result.result && m.result.result.value) || '')); } } catch (e) {} };
+        ws.onerror = () => fin(null); ws.onclose = () => fin(null);
+      });
+      const pr = await Promise.all(tabs.map((t) => probe(t).then((v) => ({ t, v }))));
+      const vis = pr.filter((p) => p.v === 'visible');
+      if (!vis[0]) { say('@@RESULT@@' + JSON.stringify({ ok: false, msg: '没找到你正在看的那个标签' })); process.exit(0); }
+      tabs = [vis[0].t];
+    }
+    const works = tabs.filter((t) => isWork(t.url));
+    const boxes = tabs.filter((t) => isBox(t.url));
+    say('浏览器标签 ' + tabs.length + ' 个: 单作品 ' + works.length + ' 个, 容器页 ' + boxes.length + ' 个(容器页请单独粘到通用链接)');
+    const { pick: pickAdapter } = await import('./index.mjs');
+    const fresh = [];
+    const seen = {};
+    for (const t of works) {
+      const key = t.url.replace(/[?#].*$/, '');
+      if (seen[key]) continue;
+      seen[key] = 1;
+      const idm = t.url.match(/\/(?:g|artworks)\/(\d+)/);
+      fresh.push({ title: (t.title || '').replace(/\s*[-\u2013]\s*(E-Hentai|nhentai|pixiv).*$/i, '').trim() || t.url, url: t.url, thumb: '', extra: '待取封面', tabId: t.id, id: idm ? idm[1] : '' });
+    }
+    const resolveOne = async (item) => {
+      try {
+        const ad = pickAdapter(item.url);
+        if (!ad || !ad.resolve) return;
+        const m = await ad.resolve(item.url);
+        if (m && m.title) item.title = m.title;
+        if (m && m.cover) { item.thumb = m.cover; if (m.coverCrop) { item.cl = m.coverCrop.cl; item.ct = m.coverCrop.ct; item.cw = m.coverCrop.cw; item.ch = m.coverCrop.ch; } }
+        if (m && m.status) item.extra = m.status;
+        if (!item.thumb && ad.pageList) {
+          try { const pl = await ad.pageList(item.url); if (pl && pl[0] && pl[0].thumb) { item.thumb = pl[0].thumb; item.cl = pl[0].cl; item.ct = pl[0].ct || 0; item.cw = pl[0].cw || 200; item.ch = pl[0].ch || 300; } } catch (e) {}
+        }
+      } catch (e) { say('  解析失败(仍保留): ' + String(e.message || e).slice(0, 60)); }
+    };
+    let next = 0;
+    const CONC = 4;
+    await Promise.all(Array.from({ length: CONC }, async () => { while (next < fresh.length) { const it = fresh[next++]; await resolveOne(it); } }));
+    const pend = prune();
+    for (const it of fresh) if (!pend.some((x) => x.url === it.url)) pend.push(it);
+    writePending(pend);
+    const kept = prune();
+    say('新列 ' + fresh.length + ' 本, 待挑列表现在共 ' + kept.length + ' 本（容器页 ' + boxes.length + ' 个已跳过）');
+    emit(kept, '待挑列表（下载成功后自动移出）');
+  }
+const adapter = pick(url);
+if (!adapter) { say('暂不支持该站点: ' + url); if (PROBE) say('@@RESULT@@' + JSON.stringify({ ok: false, msg: '暂不支持该站点' })); process.exit(1); }
+// EH Tag 批量下载: 识别 tag 页 URL, 走批量分支
+const isTagBatch = !!(adapter.matchTag && adapter.matchTag(url));
+const skipResolve = PROBE && adapter.id === 'pixiv' && /\/users\//i.test(url);   // probe 模式下 pixiv 用户链接跳过 resolve(省一次 API)
+const meta = (isTagBatch || skipResolve) ? {} : checkMeta(await adapter.resolve(url).catch(() => ({})), adapter.id);
+const safe = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '_').replace(/[\s.]+$/, '').slice(0, 120);
+const book = arg('dir') || safe(meta.title) || '未命名';
+if (PROBE) {   // 只报元数据 + 话数
+  if (isTagBatch) {   // tag 列表: 首屏只取 4 页(100 本)就返回, 后面按需再取(界面滚到底/点按钮时)
+    say('站点: ' + adapter.id + ' | EH Tag 批量下载: ' + url);
+    const FIRST_PAGES = 4;
+    let first = [], sent = false, nextUrl = '';
+    const sendFirst = () => {
+      if (sent) return;
+      sent = true;
+      say('@@RESULT@@' + JSON.stringify({ ok: true, site: adapter.id, title: 'EH Tag 批量下载', rawTitle: '', author: '', desc: '共 ' + first.length + ' 个画廊（可继续加载）', cover: '', chapters: first.length, url: url, tagBatch: true, galleries: first, next: nextUrl }));
+    };
+    const STOP = new Error('__stop__');
+    try {
+      await adapter.tagGalleries(url, {
+        maxPages: FIRST_PAGES,
+        onBatch: function (batch, pageNo, tot, nxt) {
+          for (const g of checkGalleries(batch, adapter.id)) first.push(g);   // 契约: 缺 gid/url 直接抛, 会被下面的 catch 变成界面可见的报错
+          nextUrl = nxt || '';
+          if (pageNo >= FIRST_PAGES || !nxt) { sendFirst(); throw STOP; }
+        },
+      });
+      if (!sent) sendFirst();
+    } catch (e) {
+      if (e !== STOP) {
+        if (!sent) say('@@RESULT@@' + JSON.stringify({ ok: false, msg: '抓画廊列表失败: ' + String(e.message || e).slice(0, 120) }));
+        else say('@@WORKS-ERR@@' + JSON.stringify({ msg: String(e.message || e).slice(0, 120) }));
+      }
+    }
+    process.exit(0);
+  }
+  // 继续取下一批(界面"加载更多"/滚到底时调用): 从给定的 next 链接再取 4 页
+  if (argv.includes('--tag-next')) {
+    const start = arg('tag-next');
+    if (!start) { say('@@RESULT@@' + JSON.stringify({ ok: false, msg: '缺少 next 链接' })); process.exit(1); }
+    let out2 = [], nxt2 = '';
+    try {
+      await adapter.tagGalleries(start, {
+        maxPages: 4,
+        onBatch: function (batch, pageNo, tot, nxt) { for (const g of checkGalleries(batch, adapter.id)) out2.push(g); nxt2 = nxt || ''; },
+      });
+      say('@@RESULT@@' + JSON.stringify({ ok: true, site: adapter.id, galleries: out2, next: nxt2 }));
+    } catch (e) {
+      say('@@RESULT@@' + JSON.stringify({ ok: false, msg: '继续取失败: ' + String(e.message || e).slice(0, 120) }));
+    }
+    process.exit(0);
+  }
+
+  process.env.FETCH_PROBE = '1';
+  let n = 0, chList = null, chErr = '';
+  // pixiv 用户链接: 快速拿作品 ID 列表(不逐个查标题, 标题后台补)
+  let pickList = null;
+  if (adapter.id === 'pixiv' && /\/users\//i.test(url)) {
+    try {
+      const { pixiv } = await import('./index.mjs');
+      const uid = (url.match(/\/users\/(\d+)/) || [])[1];
+      const all = await pixiv.ajax('/ajax/user/' + uid + '/profile/all');
+      const works = [];
+      const push = (v) => { if (!v) return; const items = Array.isArray(v) ? v : Object.keys(v); items.forEach(k => works.push({id: String(k)})); };
+      push(all.illusts); push(all.manga);
+      works.sort((a,b) => parseInt(b.id) - parseInt(a.id));   // pixiv ID 越大越新
+      console.error('[pick-debug] first 3 ids:', works.slice(0,3).map(w=>w.id).join(','), 'last 3:', works.slice(-3).map(w=>w.id).join(','));
+      const here = path.dirname(SELF);
+      const cache = (() => { try { return JSON.parse(fs.readFileSync(path.join(here, 'cache-pixiv.json'), 'utf8')); } catch(e) { return {}; } })();
+      pickList = works.slice(0, 500).map(function(w) {
+        return { id: w.id, title: cache[w.id] || ('pixiv ' + w.id), thumb: '', url: 'https://www.pixiv.net/artworks/' + w.id };
+      });
+      n = works.length;
+    } catch (e) { say('pixiv 列表失败: ' + e.message); }
+  }
+  if (!pickList) {
+    try { chList = checkChapters(await adapter.chapters(url), adapter.id); n = chList.length; } catch (e) { say('取章节失败: ' + e.message); chErr = String(e && e.message || e).slice(0, 160); }
+  }
+  // 章节勾选列表: 每话带 done 标记(先按话 id 认, 老引擎书没有 id 记录就按预期话目录名兜底)
+  let chapterList = null;
+  if (chList) {
+    let doneIds = new Set(), existingDirs = new Set();
+    try { Object.keys(JSON.parse(fs.readFileSync(path.join(LIB, CAT, book, '.fetch-meta.json'), 'utf8')).ids || {}).forEach((k) => doneIds.add(String(k))); } catch (e) {}
+    try { const bp = path.join(LIB, CAT, book); for (const d of fs.readdirSync(bp)) { if (fs.statSync(path.join(bp, d)).isDirectory()) existingDirs.add(d); } } catch (e) {}
+    const expectedName = (c, i) => {
+      const t = String(c.title || '').trim();
+      const m = t.match(/^第?\s*(\d{1,4})\s*[话話卷]$/);
+      if (m) return '第' + String(parseInt(m[1], 10)).padStart(2, '0') + (/卷$/.test(t) ? '卷' : '話');
+      if (t) return String(i).padStart(2, '0') + ' ' + safe(t).slice(0, 60);
+      return '第' + String(i).padStart(2, '0') + '話';
+    };
+    chapterList = chList.map((c, i) => ({ i: i + 1, title: c.title || '', done: (!!(c.id && doneIds.has(String(c.id)))) || existingDirs.has(expectedName(c, i + 1)) }));
+  }
+  // 页预览: 单本链接也给一份页清单(--no-preview 可跳过)
+  let pagePreview = null;
+  if (!pickList && !isTagBatch && !argv.includes('--no-preview')) {
+    pagePreview = await buildPagePreview(adapter, url);
+    if (pagePreview && pagePreview.error) say('页预览取不到(不影响下载): ' + pagePreview.error);
+  }
+  say('站点: ' + adapter.id + ' | 书名: ' + book + ' | 共 ' + n + ' 话' + (pagePreview && pagePreview.pages ? ' | 页预览 ' + pagePreview.pages.length + ' 页' : ''));
+  say('@@RESULT@@' + JSON.stringify({ ok: !!(meta.title || n), site: adapter.id, title: book, rawTitle: meta.title || '', author: meta.author || '', desc: meta.desc || '', cover: meta.cover || '', chapters: n, url: url, pickList: pickList, chapterList: chapterList, pagePreview: pagePreview, msg: (chErr ? ('取章节失败: ' + chErr) : (!!(meta.title || n) ? undefined : '解析不出书名和章节，链接可能失效或格式不对')) }));
+  process.exit(0);
+}
+const judge = /^\s*$|bad request|not found|forbidden|too many requests|^\d{3}\b|^error/i.test(book);   // 错误页标题: 别拿它当书名建库
+if (!isTagBatch && judge) { say('书名看起来是错误页标题（' + book + '），拒绝建库；确认书名后用 --dir "正确书名" 再跑。'); process.exit(1); }
+
+/* ---------- 图片完整性校验: 大小 + 魔数 ---------- */
+function looksValidImage(buf) {
+  if (!buf || buf.length < 100) return false;   // 至少几百字节
+  const b = buf;
+  if (b.length >= 3 && b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return true;        // JPEG: FF D8
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return true;  // PNG: 89 50 4E 47
+  if (b.length >= 4 && b.toString('ascii', 0, 4) === 'RIFF') return true;                  // WebP: RIFF
+  if (b.length >= 4 && b.toString('ascii', 0, 4) === 'GIF8') return true;                   // GIF: GIF8
+  return false;
+}
+function fileLooksValid(p) {
+  try {
+    const st = fs.statSync(p);
+    if (st.size < 100) return false;
+    const fd = fs.openSync(p, 'r');
+    const buf = Buffer.alloc(512);
+    fs.readSync(fd, buf, 0, 512, 0);
+    fs.closeSync(fd);
+    return looksValidImage(buf);
+  } catch (e) { return false; }
+}
+/* 配额用尽 fatal 错误(连续 5 张 509/403 才抛) */
+function quotaErr() { const e = new Error('E-Hentai 图片配额用尽(sad panda)，已下载的话不会丢，等配额恢复后重跑会自动续下'); e.fatal = true; return e; }
+
+/* ---------- 动图(mp4)转 GIF: 用便携版 ffmpeg(_scripts/tools/ffmpeg) ---------- */
+let FF = null;
+function ffmpegPath() {
+  if (FF !== null) return FF;
+  FF = 'ffmpeg';
+  try {
+    const base = path.join(LIB, '_scripts', 'tools', 'ffmpeg');
+    const find = (d, depth) => {
+      if (depth > 4) return null;
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p2 = path.join(d, e.name);
+        if (e.isDirectory()) { const hit = find(p2, depth + 1); if (hit) return hit; }
+        else if (e.name.toLowerCase() === 'ffmpeg.exe') return p2;
+      }
+      return null;
+    };
+    if (fs.existsSync(base)) { const hit = find(base, 0); if (hit) FF = hit; }
+  } catch (e) {}
+  return FF;
+}
+function ffprobePath() {   // ffprobe 与 ffmpeg 同目录
+  try { return ffmpegPath().replace(/ffmpeg\.exe$/i, 'ffprobe.exe'); } catch (e) { return 'ffprobe'; }
+}
+function toGif(mp4, out) {   // out 写成 .part 临时文件, 校验后由调用方 rename
+  const args = ['-y', '-i', mp4, '-vf', "fps=12,scale='min(900,iw)':-1:flags=lanczos,zscale=primaries=bt709:transfer=bt709:matrix=bt709,format=rgb24,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a", '-loop', '0', '-f', 'gif', out];
+  try { fs.rmSync(out, { force: true }); } catch (e) {}
+  const r2 = spawnSync(ffmpegPath(), args, { encoding: 'utf8' });
+  const ok = r2.status === 0 && fs.existsSync(out) && fs.statSync(out).size > 1024;
+  return { ok: ok, why: ok ? '' : ('exit=' + r2.status + ' ' + String(r2.stderr || '').split('\n').filter(function (l) { return l.trim(); }).slice(-2).join(' / ').slice(0, 200)) };
+}
+// 动图 mp4 静态截图: 按视频时长的 1/6、3/6、5/6 处 + 末帧 各截一帧(任何长度都均匀不重复); ffprobe 不可用时退回固定秒点。
+function grabSnaps(mp4, dir, seq) {
+  // 读时长
+  let dur = 0;
+  try { const rp = spawnSync(ffprobePath(), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mp4], { encoding: 'utf8' });
+        dur = parseFloat(String(rp.stdout || '').trim()) || 0; } catch (e) {}
+  let times;
+  if (dur >= 1.5) {
+    times = [dur / 6, dur / 2, dur * 5 / 6];   // 前三个点; 第四张固定取末帧
+  } else {
+    times = [1, 3, 5];   // 拿不到时长: 退回老规律的前三个点
+  }
+  let got = 0;
+  times.forEach((t, k) => {
+    const out = path.join(dir, seq + '_' + (k + 2) + '.jpg');
+    try { fs.rmSync(out, { force: true }); } catch (e) {}
+    const tryAt = (ssArgs) => {
+      try { const r = spawnSync(ffmpegPath(), ssArgs, { encoding: 'utf8' });
+            return r.status === 0 && fs.existsSync(out) && fs.statSync(out).size > 1024; } catch (e) { return false; }
+    };
+    if (tryAt(['-y', '-ss', t.toFixed(2), '-i', mp4, '-frames:v', '1', '-q:v', '3', '-f', 'image2', out])) { got++; return; }
+    try { fs.rmSync(out, { force: true }); } catch (e) {}
+    if (tryAt(['-y', '-sseof', '-0.2', '-i', mp4, '-frames:v', '1', '-q:v', '3', '-f', 'image2', out])) got++;
+  });
+  // 第 4 张: 固定末帧
+  const lastOut = path.join(dir, seq + '_5.jpg');
+  try { fs.rmSync(lastOut, { force: true }); } catch (e) {}
+  try { const r = spawnSync(ffmpegPath(), ['-y', '-sseof', '-0.2', '-i', mp4, '-frames:v', '1', '-q:v', '3', '-f', 'image2', lastOut], { encoding: 'utf8' });
+        if (r.status === 0 && fs.existsSync(lastOut) && fs.statSync(lastOut).size > 1024) got++; } catch (e) {}
+  return got;
+}
+async function headLen(u, hd) {   // 同一张图有多档地址时, 用体积挑最大的那档
+  try { const r = await fetch(u, { headers: hd, method: 'HEAD' }); const L = parseInt(r.headers.get('content-length') || '0', 10); return isNaN(L) ? 0 : L; } catch (e) { return 0; }
+}
+// hasDir: 判定目录是否已有图; .part 临时文件不算(中断后重跑会重新下载损坏的图)
+const hasDir = (d) => { try { return fs.existsSync(d) && fs.readdirSync(d).some((f) => /\.(webp|jpg|jpeg|png|gif)$/i.test(f)); } catch (e) { return false; } };
+
+/* ---------- 通用图片下载 worker: 临时文件 + 魔数校验 + 连续509/403 fatal + 逐张进度 ---------- */
+async function downloadImagesToDir(dir, urls, ctx) {
+  ctx = ctx || {};
+  // 契约: 图片项没有可用地址时直接停。继续下会得到残页, 而残页比报错更难发现。
+  urls = checkImages(urls, adapter.id, ctx.label);
+  const merge = !!ctx.merge;
+  const seqRef = ctx.seqRef || { n: 0 };
+  const label = ctx.label || '';
+  const JOBS = Math.max(1, Math.min(12, parseInt(arg('jobs', '4'), 10) || 4));
+  let n = 0, bi = 0, failed = 0, done = 0, lastProg = 0;
+  let consecQuota = 0;   // 连续 509/403 计数(跨 worker 共享, JS 单线程 await 间安全)
+  const queue = urls.map((u, i) => ({ u: u, i: i }));
+  const emitProg = () => {
+    if (done - lastProg >= 5 || done === urls.length) {
+      lastProg = done;
+      say('@@PROG@@' + JSON.stringify({ stage: 'download', index: done, got: done, total: urls.length, bytes: bi }));
+    }
+  };
+  const worker = async () => {
+    while (queue.length) {
+      const q2 = queue.shift();
+      const u2 = typeof q2.u === 'string' ? { url: q2.u, headers: {} } : q2.u;   // 适配器可以给每张图带专属请求头
+      const hd = Object.assign({ 'User-Agent': UA, 'Referer': adapter.home || 'https://manhua.zaimanhua.com/' }, u2.headers || {});
+      let mainUrl = u2.gif ? u2.gif : u2.url;   // 动图(mp4)优先, 否则用图片地址
+      if (u2.alts && u2.alts.length) {   // 有备用地址: 挑体积最大的那档(最清晰)
+        let best = await headLen(mainUrl, hd);
+        for (const a2 of u2.alts) { const L = await headLen(a2, hd); if (L > best) { best = L; mainUrl = a2; } }
+      }
+      // 页级勾选(--pages): 文件名用真实页号(5 位补零), 空档不会把后一页顶到前面去
+      const seq = u2.pageNum ? String(u2.pageNum).padStart(5, '0')
+        : (merge ? String(++seqRef.n).padStart(4, '0') : String(q2.i + 1).padStart(3, '0'));
+      const extGuess = (String(mainUrl).split('?')[0].match(/\.(jpg|jpeg|png|webp|gif)$/i) || ['.jpg'])[0].toLowerCase();
+      // merge / 页级勾选 续跑: 目标文件已存在且大小>0 就跳过, 不重复下载
+      if (merge || u2.pageNum) {
+        const existP = path.join(dir, seq + extGuess);
+        if (fs.existsSync(existP) && fs.statSync(existP).size > 0) {
+          done++; bi += fs.statSync(existP).size; n++; emitProg(); continue;
+        }
+      }
+      let r = null, buf = null;
+      for (let attempt = 0; attempt < 3 && !r; attempt++) {   // 网络抖动自己重试, 别直接丢图
+        try {
+          const rr = await fetch(mainUrl, { headers: hd });
+          if (rr.status === 509 || rr.status === 403) {          // 配额/封禁: 连续 5 张才 fatal
+            consecQuota++;
+            if (consecQuota >= 5) throw quotaErr();
+            await new Promise((res) => setTimeout(res, 800 * (attempt + 1)));
+            continue;
+          }
+          consecQuota = 0;
+          if (rr.ok) { buf = Buffer.from(await rr.arrayBuffer()); r = rr; }
+          
+        } catch (e) { if (e && e.fatal) throw e;  await new Promise((res2) => setTimeout(res2, 700 * (attempt + 1))); }
+      }
+      if (!r) { failed++; done++; emitProg(); continue; }
+      if (u2.gif) {   // 动图: 下 mp4 -> ffmpeg 转 GIF(写 .part, 校验后 rename)
+        const tmp = path.join(dir, '__dy_' + q2.i + '.mp4');
+        const out = path.join(dir, seq + '_1.gif');   // _1 让 GIF 在文件排序里排第一, 静态图 _2~_5 跟后
+        const partOut = out + '.part';
+        fs.writeFileSync(tmp, buf);
+        let g = toGif(tmp, partOut);
+        if (!g.ok) {   // 转换失败: 重下一次 mp4 再转
+          try {
+            const r3 = await fetch(mainUrl, { headers: hd });
+            if (r3.ok) { const b3 = Buffer.from(await r3.arrayBuffer()); fs.writeFileSync(tmp, b3); g = toGif(tmp, partOut); }
+          } catch (e3) {}
+        }
+        const snaps = grabSnaps(tmp, dir, seq);   // 同一 mp4 截 4 张静态, 在挪走 tmp 前截
+        try { fs.renameSync(tmp, path.join(dir, seq + '.mp4')); } catch (e2) { try { fs.rmSync(tmp, { force: true }); } catch (e2b) {} }   // 保留原 mp4(不在图片扩展名里, 阅读器不显示)
+        if (!g.ok || !fileLooksValid(partOut)) {
+          // 诊断: 校验失败时保留文件头, 看 ffmpeg 到底写出了什么
+          try { const hx = fs.readFileSync(partOut).slice(0, 16).toString('hex'); say('    [诊断] partOut hex: ' + hx + ' size=' + fs.statSync(partOut).size); } catch (eD) {}
+          try { fs.rmSync(partOut, { force: true }); } catch (e3) {} say('    动图转 GIF 失败: ' + g.why); failed++; done++; emitProg(); continue; }
+        fs.renameSync(partOut, out);
+        n++; bi += fs.statSync(out).size;
+        for (let sk = 2; sk <= snaps + 1; sk++) { const sp = path.join(dir, seq + '_' + sk + '.jpg'); try { n++; bi += fs.statSync(sp).size; } catch (e4) {} }
+      } else {
+        const ext = (String(mainUrl).split('?')[0].match(/\.(jpg|jpeg|png|webp|gif)$/i) || ['.jpg'])[0].toLowerCase();
+        const finalP = path.join(dir, seq + ext);
+        const partP = finalP + '.part';
+        if (!looksValidImage(buf)) {   // 太小或魔数不符: 丢弃, 不写正式文件
+          try { fs.rmSync(partP, { force: true }); } catch (e3) {}
+          say('    图片校验失败(太小或魔数不符), 已丢弃: ' + seq + ext);
+          failed++; done++; emitProg(); continue;
+        }
+        fs.writeFileSync(partP, buf);
+        fs.renameSync(partP, finalP);   // 原子 rename: 不会出现"半张正式图"
+        n++; bi += buf.length;
+      }
+      done++; emitProg();
+    }
+  };
+  await Promise.all(Array.from({ length: JOBS }, () => worker()));
+  return { n: n, bi: bi, failed: failed, nextSeq: seqRef.n };
+}
+
+/* ---------- 把一本书写进 library.json(去重 + 限长 + 备份 + 原子写) ---------- */
+function writeLibraryEntries(entries) {
+  // entries: [{ book, meta, sourceUrl }]
+  const libFile = path.join(LIB, 'library.json');
+  const lib = JSON.parse(fs.readFileSync(libFile, 'utf8'));
+  try {   // 写之前备份原文件
+    fs.mkdirSync(path.join(LIB, '_backup'), { recursive: true });
+    fs.copyFileSync(libFile, path.join(LIB, '_backup', 'library.json.bak'));
+  } catch (eb) { say('备份 library.json 失败(忽略): ' + eb.message); }
+  const plat = '漫画站';
+  const BIG = { pixiv: 'pixiv', x: 'X', twitter: 'X', douyin: '抖音', weibo: '微博' };
+  for (const en of entries) {
+    const p = BIG[adapter.id] || (adapter.id === 'ehentai' ? 'E-Hentai' : plat);
+    const key = CAT + '/' + en.book;
+    const prev = lib.comics[key] || {};
+    let tags = Array.isArray(prev.tags) ? prev.tags.slice() : [];
+    if (tags.indexOf(p) < 0) tags.push(p);
+    ((en.meta && en.meta.tags) || []).forEach((t) => { const s = String(t || '').trim(); if (s && tags.indexOf(s) < 0) tags.push(s); });
+    const removedT = Array.isArray(prev.tagsRemoved) ? prev.tagsRemoved : [];
+    tags = tags.filter((t) => removedT.indexOf(t) < 0);
+    tags = Array.from(new Set(tags));          // 完整去重
+    if (tags.length > 100) tags = tags.slice(0, 100);   // 上限 100
+    let cats = Array.isArray(prev.categories) ? prev.categories.slice() : [];
+    if (cats.indexOf(p) < 0) cats.push(p);
+    cats = Array.from(new Set(cats));           // categories 去重
+    lib.comics[key] = Object.assign({ favorite: false, categories: [], tags: [], note: '' }, prev, {
+      author: prev.author || (en.meta && en.meta.author) || '',
+      desc: prev.desc || (en.meta && en.meta.desc) || '',
+      source: { site: adapter.id, url: en.sourceUrl },
+      tags: tags,
+      categories: cats,
+    });
+    fs.mkdirSync(path.join(LIB, CAT, en.book), { recursive: true });
+  }
+  if (!Array.isArray(lib.categories)) lib.categories = [];
+  const pAll = BIG[adapter.id] || (adapter.id === 'ehentai' ? 'E-Hentai' : plat);
+  if (lib.categories.indexOf(pAll) < 0) lib.categories.push(pAll);
+  // 原子写: 先 .tmp 再 rename
+  const tmpF = libFile + '.tmp';
+  fs.writeFileSync(tmpF, JSON.stringify(lib, null, 2), 'utf8');
+  fs.renameSync(tmpF, libFile);
+}
+/* 末尾重建: 异步 spawn, 不阻塞下载进程; 完成后发 @@REBUILT@@ */
+function rebuildAsync(onlyBook) {
+  return new Promise((res) => {
+    const args = [path.join(LIB, '_scripts', 'build-library.mjs'), '--lib', LIB, '--offline'];
+    if (onlyBook) args.push('--only', onlyBook);
+    const bp = spawn(process.execPath, args, { stdio: 'inherit' });
+    bp.on('exit', (code) => res(code === 0));
+  });
+}
+
+/* ================= EH Tag 批量下载 ================= */
+async function runTagBatch(tagUrl) {
+  say('识别为 EH Tag 批量下载: ' + tagUrl);
+  let galleries = [];
+  try { galleries = checkGalleries(await adapter.tagGalleries(tagUrl), adapter.id); } catch (e) {
+    say('tag 列表获取失败: ' + e.message);
+    say('@@DONE@@' + JSON.stringify({ chapters: 0, images: 0, bytes: 0, out: '', book: '' }));
+    process.exit(e && e.fatal ? 2 : 1);
+  }
+  // 前端勾选: --pick gid1,url1;gid2,url2  只下选中的
+  const pickArg = arg('pick');
+  if (pickArg) {
+    const want = {};
+    pickArg.split(';').filter(Boolean).forEach(function (p) {
+      const parts = p.split('|');
+      want[parts[0]] = true;
+    });
+    galleries = galleries.filter(function (g) { return want[g.gid] || want[g.url]; });
+    say('已勾选 ' + galleries.length + ' 个画廊（从列表里筛出）');
+  }
+  if (!galleries.length) { say('这个 tag 下没有任何画廊（或勾选后一个都没剩）'); say('@@DONE@@' + JSON.stringify({ chapters: 0, images: 0, bytes: 0, out: '', book: '' })); process.exit(1); }
+  say('@@TAGSTART@@' + JSON.stringify({ total: galleries.length }));
+  const entries = [];
+  let totalImgs = 0, totalBytes = 0, doneN = 0;
+  for (const g of galleries) {
+    doneN++;
+    const bName = safe(g.title);
+    const bDir = path.join(LIB, CAT, bName);
+    say('@@CH@@' + JSON.stringify({ index: doneN, label: bName }));
+    let success = false;
+    for (let attempt = 0; attempt < 2 && !success; attempt++) {
+      if (attempt > 0) { say('  重试第 ' + attempt + ' 次…'); await new Promise(function (r) { setTimeout(r, 2000); }); }
+      try {
+        if (hasDir(bDir)) { say('  已存在, 跳过: ' + bName); success = true; break; }
+        const gMeta = await adapter.resolve(g.url);
+        const chaps = await adapter.chapters(g.url);
+        for (const c of chaps) {
+          const imgs = await adapter.images(c);
+          if (!imgs.length) continue;
+          const cdir = path.join(bDir, '全本');
+          fs.mkdirSync(cdir, { recursive: true });
+          const res = await downloadImagesToDir(cdir, imgs, { label: bName });
+          totalImgs += res.n; totalBytes += res.bi;
+          if (res.n < imgs.length) say('  缺页 ' + (imgs.length - res.n) + ' 张');
+        }
+        entries.push({ book: bName, meta: gMeta, sourceUrl: g.url });
+        say('  完成: ' + bName);
+        success = true;
+      } catch (e) {
+        if (e && e.fatal) { say('  ' + bName + ' 失败(致命): ' + String(e.message).slice(0, 120)); throw e; }
+        say('  ' + bName + ' 失败(第' + (attempt + 1) + '次): ' + String(e.message).slice(0, 120));
+      }
+    }
+    say('@@TAGPROG@@' + JSON.stringify({ done: doneN, total: galleries.length, title: bName }));
+  }
+  if (entries.length) {
+    try { writeLibraryEntries(entries); } catch (e) { say('写 library.json 失败: ' + e.message); }
+  }
+  // 增量重建: 只重建本次下到的每个画廊文件夹, 不全库重扫
+  let ok = true;
+  for (const e of entries) {
+    try { const r = await rebuildAsync(CAT + '/' + e.book); if (!r) ok = false; } catch (e2) { ok = false; }
+  }
+  say('@@PROG@@' + JSON.stringify({ stage: 'organize', got: 1, total: 1 }));
+  say('@@REBUILT@@' + JSON.stringify({ ok: ok }));
+  say('完成: 批量 ' + doneN + '/' + galleries.length + ' 个画廊, 共 ' + totalImgs + ' 张图');
+  say('@@DONE@@' + JSON.stringify({ chapters: entries.length, images: totalImgs, bytes: totalBytes, out: path.join(LIB, CAT), book: '' }));
+  process.exit(totalImgs ? 0 : 1);
+}
+if (isTagBatch) { await runTagBatch(url); process.exit(0); }
+
+/* ================= 单画廊/单本正常流程 ================= */
+const list = checkChapters(await adapter.chapters(url), adapter.id);
+// nhentai: 把 v2 的 pages(每页 number/path)挂到章节对象上 —— 按页勾选和精确地址都靠它
+if (adapter.id === 'nhentai') {
+  for (const c of list) {
+    if (Array.isArray(c.pageUrls) && c.pageUrls.length) continue;
+    try {
+      const pg = await adapter.pageList(String(c.id));
+      if (pg.length) { c.pageUrls = pg; break; }   // 页清单挂 pageUrls: pages 这个字段是「页数」
+    } catch (e) { say('取页清单失败(退回逐页探测): ' + String(e.message).slice(0, 100)); }
+  }
+}
+if (!list.length) {
+  say('站点没给章节表（共 0 话），不建目录、不写书库。');
+  say('常见原因：这本是付费/受限内容、需要登录、地区限制，或者地址不是目录页。换一个来源或换本书吧。');
+  process.exit(1);
+}
+// 前端勾选: --pick id1,id2  只下选中的话(pixiv 用户作品集等)
+const pickCh = arg('pick');
+if (pickCh) {
+  const want = {};
+  pickCh.split(',').filter(Boolean).forEach(function (x) { want[x.trim()] = true; });
+  const before = list.length;
+  const filtered = list.filter(function (c) { return want[String(c.id)]; });
+  if (filtered.length < list.length) { say('已勾选 ' + filtered.length + ' / ' + before + ' 话（从列表里筛出）'); list.length = 0; list.push.apply(list, filtered); }
+}
+const from = parseInt(arg('from', '1'), 10), to = parseInt(arg('to', '99999'), 10);
+// --pages "1,3,5-8": 前端勾选的页号(1-based), 页级勾选时只下这些页
+const PAGESEL = arg('pages');
+const pageSet = new Set();
+if (PAGESEL) String(PAGESEL).split(',').forEach((p) => {
+  const r = p.trim(); if (!r) return;
+  const m = r.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (m) { for (let k = +m[1]; k <= +m[2]; k++) pageSet.add(k); }
+  else if (/^\d+$/.test(r)) pageSet.add(+r);
+});
+// --chapters "1,3,5-8": 前端勾选的话序号(1-based), 任意子集; 不传=全部
+const CHSEL = arg('chapters');
+const chSet = new Set();
+if (CHSEL) String(CHSEL).split(',').forEach((p) => {
+  const r = p.trim(); if (!r) return;
+  const m = r.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (m) { for (let k = +m[1]; k <= +m[2]; k++) chSet.add(k); }
+  else if (/^\d+$/.test(r)) chSet.add(+r);
+});
+
+/* ---------- 分组: 站点把章节分成「连载 / 单行本 / 番外篇 / 其他系列」时, 按组分书 ---------- */
+const groupOf = (c) => String(c.group || '').trim();
+const groups = [];
+for (const c of list) { const g = groupOf(c); if (groups.indexOf(g) < 0) groups.push(g); }
+const countOf = (g) => list.filter((c) => groupOf(c) === g).length;
+const mainGroup = groups.slice().sort((a, b) => countOf(b) - countOf(a))[0] || '';
+const onlyG = String(arg('group', '') || '').split(/[,，\s]+/).filter(Boolean);
+const skipG = String(arg('skip-group', '') || '').split(/[,，\s]+/).filter(Boolean);
+if (!onlyG.length && skipG.indexOf('单行本') < 0) skipG.push('单行本');   // 单行本=正篇合订, 默认跳过
+const useGroup = (g) => (onlyG.length ? onlyG.indexOf(g) >= 0 : skipG.indexOf(g) < 0);
+const bookOf = (g) => ((g === mainGroup || !g) ? book : book + ' · ' + safe(g));
+
+say('站点: ' + adapter.id + ' | 书名: ' + book + ' | 共 ' + list.length + ' 话');
+if (groups.length > 1 || (groups[0] || '')) {
+  for (const g of groups) say('  「' + (g || '未分组') + '」' + countOf(g) + ' 话' + (useGroup(g) ? '' : ' → 跳过') + '   → ' + CAT + '/' + bookOf(g));
+}
+
+/* ---------- 命名: 第N话/第N卷这种规范名照旧; 番外/插图/附录等用站点真实标题(带两位序号保序) ---------- */
+function chDirName(c, n) {
+  const t = String(c.title || '').trim();
+  const m = t.match(/^第?\s*(\d{1,4})\s*[话話卷]$/);
+  if (m) return '第' + String(parseInt(m[1], 10)).padStart(2, '0') + (/卷$/.test(t) ? '卷' : '話');
+  if (t) return String(n).padStart(2, '0') + ' ' + safe(t).slice(0, 60);
+  return '第' + String(n).padStart(2, '0') + '話';
+}
+const plan = [], usedName = {};
+for (const g of groups) {
+  if (!useGroup(g)) continue;
+  const inGroup = list.filter((c) => groupOf(c) === g).slice().sort((a, b) => a.order - b.order || a.index - b.index);
+  const bdir = path.join(LIB, CAT, bookOf(g));
+  inGroup.forEach((c, i) => {
+    let name = chDirName(c, i + 1);
+    if (usedName[bookOf(g) + '/' + name]) { let k = 2; while (usedName[bookOf(g) + '/' + name + ' (' + k + ')']) k++; name += ' (' + k + ')'; }
+    usedName[bookOf(g) + '/' + name] = 1;
+    plan.push({ c: c, book: bookOf(g), dir: path.join(bdir, name), label: name });
+  });
+}
+/* ---------- --merge: 不按话分文件夹, 所有图片合并到一本里的一个文件夹 ---------- */
+const MERGE = argv.includes('--merge');
+if (MERGE) {
+  const mdir = path.join(LIB, CAT, book, '全部');
+  plan.length = 0;
+  list.slice().sort((a, b) => a.index - b.index).forEach((c) => plan.push({ c: c, book: book, dir: mdir, label: '全部' }));
+  say('--merge: 所有话的图片合并到 ' + CAT + '/' + book + '/全部');
+}
+plan.sort((a, b) => a.c.index - b.c.index);
+
+const FORCE = argv.includes('--force');   // 已经下过的话也重下(覆盖), 用来替换成更清晰的版本
+/* 已下过的判定改成"按作品 id 认", 不再只看目录名 */
+const META_F = path.join(LIB, CAT, book, '.fetch-meta.json');
+let idMap = {};
+try { idMap = JSON.parse(fs.readFileSync(META_F, 'utf8')); } catch (e) { idMap = {}; }
+const ids = (idMap && idMap.ids && typeof idMap.ids === 'object') ? idMap.ids : {};
+const todo = [], renames = [], pageTargets = new Map();
+let skippedAll = 0, skippedFull = 0;   // 统计「已经下过、这轮不用动」的话, 用来把退出码判成成功
+/* 页级勾选(--pages): 这本书整本可能已经下过, 但用户点的是"只要这几页", 所以必须单独走一条路
+   —— 先看该话目录有没有这些页(按 5 位页号命名的文件), 缺哪页补哪页; 有了就跳过。
+   注意不能走下面"整本已入库直接跳过"的分支, 否则页级勾选在已下载的书上会失效(以前就是这样, 会退 1)。 */
+const fileAt = (dir, f) => path.join(dir, Array.isArray(f) ? f.join(path.sep) : f);
+function existingPages(dir, nums) {
+  const out = new Set();
+  for (const n of nums) {
+    const seq = String(n).padStart(5, '0');
+    for (const ext of ['webp', 'jpg', 'jpeg', 'png', 'gif']) {
+      const pth = fileAt(dir, seq + '.' + ext);
+      try { if (fs.existsSync(pth) && fs.statSync(pth).size > 100) { out.add(n); break; } } catch (e) {}
+    }
+  }
+  return out;
+}
+for (const it of plan) {
+  if (it.c.index < from || it.c.index > to) continue;
+  if (pageSet.size) {   // 页级勾选: 无条件进 todo(目录里已有的话由后面的逐页过滤处理)
+    try { fs.rmSync(it.dir, { recursive: true, force: true }); } catch (e) {}   // 勾选的页重下(覆盖), 没勾的不管
+    pageTargets.set(it, pageSet);
+    todo.push(it);
+    continue;
+  }
+  if (chSet.size) {
+    // 勾选模式: 勾到的话一律重下(覆盖已下载/没下完的); 没勾到的跳过
+    if (!chSet.has(it.c.index)) continue;
+    try { fs.rmSync(it.dir, { recursive: true, force: true }); } catch (e) {}
+    todo.push(it); continue;
+  }
+  const cid = it.c.id ? String(it.c.id) : '';
+  const known = (cid && ids[cid]) ? path.join(path.dirname(it.dir), ids[cid]) : '';
+  if (FORCE) {                       // --force: 先把这个目录清干净, 免得旧文件残留混进来
+    try { fs.rmSync(it.dir, { recursive: true, force: true }); } catch (e) {}
+    todo.push(it); continue;
+  }
+  if (known && hasDir(known)) {
+    if (path.basename(known) !== path.basename(it.dir)) renames.push({ from: known, to: it.dir });
+    skippedAll++; skippedFull++;
+    continue;
+  }
+  if (hasDir(it.dir)) { skippedAll++; skippedFull++; continue; }
+  todo.push(it);
+}
+if (renames.length) {   // 两阶段改名, 避免互相覆盖
+  const tmp = [];
+  renames.forEach((r, i) => { try { fs.renameSync(r.from, r.from + '.__rn' + i); tmp.push({ t: r.from + '.__rn' + i, to: r.to }); } catch (e) {} });
+  let ok = 0;
+  tmp.forEach((t) => { try { fs.renameSync(t.t, t.to); ok++; } catch (e) {} });
+  if (ok) say('按最新顺序校正了 ' + ok + ' 个话目录名(内容不变)');
+}
+say('待下载 ' + todo.length + ' 话 (跳过已入库 ' + (plan.length - todo.length) + ')' + (skippedFull ? ' —— 已入库的话不会重下, 只补缺的' : ''));
+say('@@START@@' + JSON.stringify({ total: todo.length, book: book, out: path.join(LIB, CAT, book), site: adapter.id, chapters: list.length }));
+let done = 0, gotImages = 0, gotBytes = 0, didDownload = 0;
+let fileSeq = 0;
+// --merge 续跑: 统计目标目录已有图片数, fileSeq 从该数量开始接续编号(中断重跑不覆盖旧文件)
+if (MERGE && todo.length) {
+  const mdir = path.join(LIB, CAT, book, '全部');
+  let existing = 0;
+  try { existing = fs.readdirSync(mdir).filter((f) => /\.(webp|jpg|jpeg|png|gif)$/i.test(f)).length; } catch (e) {}
+  fileSeq = existing;
+  if (existing) say('--merge 续跑: 已有 ' + existing + ' 张, 从 ' + (existing + 1) + ' 继续编号');
+}
+const seqRef = { n: fileSeq };
+for (const it of todo) {
+  const dir = it.dir;
+  say('@@CH@@' + JSON.stringify({ index: it.c.index, label: it.label }));
+  try {
+    let urls = await adapter.images(it.c);
+    if (!urls.length) { say('  ' + it.label + ' 没拿到图片'); say('@@CHERR@@' + JSON.stringify({ index: it.c.index, label: it.label, message: '没拿到图片' })); continue; }
+    // 页级勾选: 只留选中的页; 文件名按真实页号(00005.webp), 未勾选的不下载
+    if ((pageTargets.get(it) || pageSet).size) {
+      const want = pageTargets.get(it) || pageSet;
+      const before2 = urls.length;
+      const all = urls.map(function (u2, i2) {
+        const o = (typeof u2 === 'string') ? { url: u2 } : u2;
+        return Object.assign({}, o, { pageNum: o.pageNum || (i2 + 1) });
+      }).filter(function (o) { return want.has(o.pageNum); });
+      const have = existingPages(dir, Array.from(want));
+      urls = all.filter(function (o) { return !have.has(o.pageNum); });
+      say('  按页勾选: ' + all.length + ' / ' + before2 + ' 页 (' + Array.from(want).sort(function (a2, b2) { return a2 - b2; }).join(',') + ')' + (have.size ? '，磁盘已有 ' + have.size + ' 页，跳过' : ''));
+      if (!all.length) { say('  ' + it.label + ' 勾选的页都不存在'); say('@@CHERR@@' + JSON.stringify({ index: it.c.index, label: it.label, message: '勾选的页号超出范围' })); continue; }
+      if (!urls.length) {   // 勾的页都已经在磁盘上: 不算失败, 直接跳过(重跑同一次勾选时就会走到这里)
+        say('  勾选的页都已存在，跳过');
+        for (const o of all) { try { gotBytes += fs.statSync(path.join(dir, String(o.pageNum).padStart(5, '0') + (String(o.url).match(/\.(webp|jpg|jpeg|png|gif)$/i) || ['.webp'])[0])).size; } catch (e3) {} }
+        gotImages += all.length; done++; didDownload++;
+        say('@@CHDONE@@' + JSON.stringify({ index: it.c.index, label: it.label, got: 0, expected: 0, bytes: 0, failed: 0 }));
+        continue;
+      }
+    }
+    fs.mkdirSync(dir, { recursive: true });
+    const res = await downloadImagesToDir(dir, urls, { merge: MERGE, seqRef: seqRef, label: it.label });
+    say('  ' + it.label + ' OK ' + res.n + '/' + urls.length + ' 张 (' + (res.bi / 1048576).toFixed(1) + ' MB)' + (res.failed ? ', 失败 ' + res.failed + ' 张' : ''));
+    if (res.n < urls.length) say('  缺页 ' + (urls.length - res.n) + ' 张 (已下载的不会丢, 重跑会自动续下)');
+    say('@@CHDONE@@' + JSON.stringify({ index: it.c.index, label: it.label, got: res.n, expected: urls.length, bytes: res.bi, failed: res.failed }));
+    done++; gotImages += res.n; gotBytes += res.bi; didDownload++;
+  } catch (e) {
+    say('  ' + it.label + ' 失败: ' + String(e.message).slice(0, 120));
+    say('@@CHERR@@' + JSON.stringify({ index: it.c.index, label: it.label, message: String(e.message).slice(0, 160) }));
+    if (e && e.fatal) {   // 配额/权限这类: 后面的话也别试了, 早点收工
+      say('检测到"再试也没用"的错误, 本轮提前收工。已下载的话不会丢, 下次跑会自动跳过续下。');
+      break;
+    }
+  }
+}
+// 写 library.json(简介/来源/作者): 去重 + 限长 + 备份 + 原子写
+try {
+  const libFile = path.join(LIB, 'library.json');
+  const lib = JSON.parse(fs.readFileSync(libFile, 'utf8'));
+  try {
+    fs.mkdirSync(path.join(LIB, '_backup'), { recursive: true });
+    fs.copyFileSync(libFile, path.join(LIB, '_backup', 'library.json.bak'));
+  } catch (eb) {}
+  const booksUsed = [];
+  for (const it of plan) {   // 只给"确实有图入库"的书建条目, 免得失败一次就留下空书
+    if (booksUsed.indexOf(it.book) >= 0) continue;
+    let has = false;
+    try { has = fs.readdirSync(path.dirname(it.dir)).some((f) => /^(\d|第)/.test(f)); } catch (e) { has = false; }
+    if (has || hasDir(it.dir)) booksUsed.push(it.book);
+  }
+  // 记下 id -> 目录名, 下次重跑按 id 判"下过没", 不受序号变动影响
+  try {
+    const outIds = {};
+    for (const it of plan) {
+      if (!it.c.id) continue;
+      const nm = path.basename(it.dir);
+      if (fs.existsSync(it.dir) || hasDir(it.dir)) outIds[String(it.c.id)] = nm;
+    }
+    fs.mkdirSync(path.join(LIB, CAT, book), { recursive: true });
+    fs.writeFileSync(path.join(LIB, CAT, book, '.fetch-meta.json'), JSON.stringify({ site: adapter.id, ids: outIds, at: Date.now() }), 'utf8');
+  } catch (e) { say('写 .fetch-meta.json 失败: ' + e.message); }
+  if (!booksUsed.length) say('这一轮没有任何图片入库, 不建目录也不写 library.json。');
+  // 平台归类: 大平台单独算, 其它漫画站统一「漫画站」
+  const BIG = { pixiv: 'pixiv', x: 'X', twitter: 'X', douyin: '抖音', weibo: '微博' };
+  const plat = BIG[adapter.id] || (adapter.id === 'ehentai' ? 'E-Hentai' : '漫画站');
+  for (const b of booksUsed) {          // 按组分书时, 每个分书都要有自己的条目
+    const key = CAT + '/' + b;
+    const prev = lib.comics[key] || {};
+    const tags = (prev.tags || []).slice();
+    if (tags.indexOf(plat) < 0) tags.push(plat);        // 自动打上平台标签
+    // 站点的 tag: 适配器给的(如 E-Hentai 画廊标签) + 章节标题里的 #话题
+    const autoTags = [];
+    ((meta && meta.tags) || []).forEach((t) => { const s = String(t || '').trim(); if (s && autoTags.indexOf(s) < 0) autoTags.push(s); });
+    for (const it2 of todo) {
+      const mm2 = String(it2.label || '').match(/#[^\s#]{2,30}/g) || [];
+      mm2.forEach((x) => { const s2 = x.slice(1).trim(); if (s2 && autoTags.indexOf(s2) < 0) autoTags.push(s2); });
+    }
+    const removedT = Array.isArray(prev.tagsRemoved) ? prev.tagsRemoved : [];   // 本地删掉的 tag 不再自动加回来
+    for (const t3 of autoTags) { if (removedT.indexOf(t3) < 0 && tags.indexOf(t3) < 0) tags.push(t3); }
+    let dedupTags = Array.from(new Set(tags));          // 完整去重
+    if (dedupTags.length > 100) dedupTags = dedupTags.slice(0, 100);   // 上限 100
+    const cats = Array.from(new Set((prev.categories || []).concat([plat])));  // categories 去重
+    lib.comics[key] = Object.assign({ favorite: false, categories: [], tags: [], note: '' }, prev, {
+      author: prev.author || meta.author || '',
+      desc: prev.desc || (meta.desc || ''),
+      source: { site: adapter.id, url: url },
+      tags: dedupTags,
+      categories: cats,
+    });
+    fs.mkdirSync(path.join(LIB, CAT, b), { recursive: true });
+  }
+  if (!Array.isArray(lib.categories)) lib.categories = [];
+  if (lib.categories.indexOf(plat) < 0) lib.categories.push(plat);   // 分类栏里补上这个平台
+  // 原子写: 先 .tmp 再 rename(崩溃不会损坏整库)
+  const tmpF = libFile + '.tmp';
+  fs.writeFileSync(tmpF, JSON.stringify(lib, null, 2), 'utf8');
+  fs.renameSync(tmpF, libFile);
+} catch (e) { say('写 library.json 失败: ' + e.message); }
+// 只重建这一本(增量): 异步 spawn, 不阻塞下载进程; 完成后发 @@REBUILT@@
+const rebuiltOk = await rebuildAsync(CAT + '/' + book);
+say('@@REBUILT@@' + JSON.stringify({ ok: rebuiltOk }));
+say('完成: 下载 ' + done + '/' + todo.length + ' 话');
+say('@@DONE@@' + JSON.stringify({ chapters: done, images: gotImages, bytes: gotBytes, out: path.join(LIB, CAT, book), book: book }));
+if (skippedAll && !done && !gotImages) say('这本已经完整下过了，没有需要补的（已下过的话不会重下；要重下请加 --force 或按页勾选）。');
+process.exit(done || gotImages || skippedAll ? 0 : 1);   // 一张都没下到且本来也没有 = 失败, 让上层能看出来
