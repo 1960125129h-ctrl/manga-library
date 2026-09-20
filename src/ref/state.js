@@ -16,6 +16,13 @@ export const W = {
 
   sel: [],            // 选中的图 id(画板/批量操作用)
   wallLoaded: 0,      // 图墙已经铺了多少张(无限滚动往里加)
+
+  // ---- 画板 ----
+  // 视口: 画板是一块无限画布, 所有图都用一个 transform 承载 "随便摆"
+  btx: 0, bty: 0, bk: 1,     // translate x/y + scale
+  bFlip: false,              // 整板水平镜像(查对称用)
+  bGray: false,              // 整板去色(查明度关系用)
+  bTop: -1,                  // 选中图的 z(置顶用)
 };
 
 export const WALL_STEP = 120;   // 每次多铺多少张

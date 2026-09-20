@@ -42,3 +42,5 @@ _scripts/tools/
 # ---- 运行时日志 ----
 *.jsonl
 session*.jsonl
+_scripts/jm/.app-pid
+_scripts/jm/.app-port

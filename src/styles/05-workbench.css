@@ -59,3 +59,33 @@
 .wb-pick-cell{background:var(--surface2);border:1px solid var(--border);border-radius:7px;overflow:hidden;padding-bottom:5px}
 .wb-pick-cell img{display:block;width:100%;height:150px;object-fit:contain;background:var(--thumb-bg,#111)}
 .wb-pick-cell .wb-pick-btn{display:block;margin:5px auto 0}
+
+/* ---- 画板(主窗口内的参考板) ---- */
+.wb-board{position:absolute;inset:0;display:flex;flex-direction:column}
+.wb-board.hide{display:none}
+.wb-tools{display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap}
+.wb-tool{background:var(--surface2);border:1px solid var(--border2);color:var(--fg2);font:inherit;font-size:12px;
+  padding:4px 11px;border-radius:7px;cursor:pointer}
+.wb-tool:hover{border-color:var(--accent);color:var(--fg)}
+
+/* 视口: 一块无限画布, 所有图共用一个 transform */
+.wb-boardhost{flex:1;min-height:0;position:relative;overflow:hidden;background:var(--thumb-bg,#0d0d0f);
+  cursor:grab;touch-action:none}
+.wb-boardhost:active{cursor:grabbing}
+.wb-canvas{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+.wb-canvas.panning{cursor:grabbing}
+.wb-canvas.flip{transform-origin:0 0}
+.wb-canvas.flip .wb-bitem img{transform:scaleX(-1)}
+.wb-canvas.gray .wb-bitem img{filter:grayscale(1)}
+.wb-canvas.gray.flip .wb-bitem img{filter:grayscale(1)}
+
+/* 板上的一张图 */
+.wb-bitem{position:absolute;background:var(--surface2);border:1px solid var(--border);border-radius:6px;
+  overflow:hidden;cursor:move;user-select:none}
+.wb-bitem.sel{outline:2px solid var(--accent);outline-offset:1px}
+.wb-bitem.dead{opacity:.4}
+.wb-bitem img{display:block;width:100%;height:auto;pointer-events:none;-webkit-user-drag:none}
+.wb-bbar{position:absolute;left:0;right:0;bottom:0;padding:3px 7px;font-size:10px;color:#ddd;
+  background:linear-gradient(transparent,rgba(0,0,0,.72));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  opacity:0;transition:opacity .15s}
+.wb-bitem:hover .wb-bbar{opacity:1}

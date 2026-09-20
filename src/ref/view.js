@@ -11,10 +11,14 @@ import { applyFilter } from './filter.js';
 import * as store from './store.js';
 import * as wall from './wall.js';
 import * as picker from './picker.js';
+import * as inbox from './inbox.js';
+import * as actions from './actions.js';
+import * as board from './board.js';
 
 let root = null;
 let CTX = {};
-let elTabWall, elTabPick, elSearch, elStat, elWall, elPick;
+let elTabWall, elTabBoard, elTabInbox, elTabPick, elSearch, elStat;
+let elWall, elPick, elInbox, elBoardWrap, elBoard, elTools;
 
 export function initView(el, ctx) {
   root = el; CTX = ctx || {};
@@ -25,12 +29,15 @@ export function initView(el, ctx) {
     list: listImages,
     onOpen: (img) => { if (CTX.onOpenInReader) CTX.onOpenInReader(img); },
     onToggleSel: (img) => { toggleSel(img.id); },
-    onContext: (img, ev) => { if (CTX.onImageContext) CTX.onImageContext(img, ev); },
+    onContext: (img, ev) => actions.imageMenu(img, ev.clientX, ev.clientY),
   });
   picker.initPicker(elPick, {
-    onAdd: (book, ci, pi) => { store.addImage(book, ci, pi); refresh(); },
-    onAdded: (n) => { refresh(); if (CTX.onHint) CTX.onHint('已加入 ' + n + ' 张'); },
+    // 新加进来的图先进收件箱 —— 采集和整理分开做
+    onAdd: (book, ci, pi) => { const im = store.addImage(book, ci, pi); store.addToInbox(im.id); refresh(); },
+    onAdded: (n) => { refresh(); if (CTX.onHint) CTX.onHint('已加入 ' + n + ' 张(在收件箱)'); },
   }, CTX.comics || []);
+  inbox.initInbox(elInbox, { onImageMenu: (img, ev) => actions.imageMenu(img, ev.clientX, ev.clientY), onChanged: refresh });
+  board.initBoard(elBoard, { onImageMenu: (img, ev) => actions.imageMenu(img, ev.clientX, ev.clientY) });
 
   onChange(refresh);
   refresh();
@@ -44,8 +51,10 @@ function buildShell() {
   const tabs = document.createElement('div');
   tabs.className = 'wb-tabs';
   elTabWall = mkTab('图墙', () => { setView('wall'); });
+  elTabBoard = mkTab('画板', () => { setView('board'); });
+  elTabInbox = mkTab('收件箱', () => { setView('inbox'); });
   elTabPick = mkTab('挑选', () => { setView('pick'); });
-  tabs.appendChild(elTabWall); tabs.appendChild(elTabPick);
+  tabs.appendChild(elTabWall); tabs.appendChild(elTabBoard); tabs.appendChild(elTabInbox); tabs.appendChild(elTabPick);
 
   elSearch = document.createElement('input');
   elSearch.className = 'wb-search';
@@ -62,9 +71,29 @@ function buildShell() {
   body.className = 'wb-body';
   elWall = document.createElement('div'); elWall.className = 'wb-wall';
   elPick = document.createElement('div'); elPick.className = 'wb-pick';
-  body.appendChild(elWall); body.appendChild(elPick);
+  elInbox = document.createElement('div'); elInbox.className = 'wb-pick wb-inbox';
+
+  elBoardWrap = document.createElement('div'); elBoardWrap.className = 'wb-board';
+  elTools = document.createElement('div'); elTools.className = 'wb-tools';
+  elBoard = document.createElement('div'); elBoard.className = 'wb-boardhost';
+  elBoardWrap.appendChild(elTools); elBoardWrap.appendChild(elBoard);
+  buildTools();
+
+  body.appendChild(elWall); body.appendChild(elBoardWrap); body.appendChild(elInbox); body.appendChild(elPick);
 
   root.replaceChildren(bar, body);
+}
+
+// 画板工具栏。只放"看的时候要反复切"的东西; 一次性的动作走右键菜单。
+function buildTools() {
+  const mk = (text, fn, title) => { const b = document.createElement('button'); b.className = 'wb-tool'; b.textContent = text; b.title = title || ''; b.onclick = fn; return b; };
+  elTools.appendChild(mk('重置视图', () => { board.resetView(); }, '视口回到 100% 原点'));
+  elTools.appendChild(mk('－', () => { board.zoomBy(1 / 1.15); }, '缩小'));
+  elTools.appendChild(mk('＋', () => { board.zoomBy(1.15); }, '放大'));
+  elTools.appendChild(mk('⇋ 镜像', () => { board.toggleFlip(); }, '整板水平镜像(查对称)'));
+  elTools.appendChild(mk('◐ 去色', () => { board.toggleGray(); }, '整板去色(查明度关系)'));
+  elTools.appendChild(mk('▥ 并排对比', () => { board.arrangeCompare(); }, '排成两列、同一比例对齐'));
+  elTools.appendChild(mk('移出选中', () => { const n = board.removeSelFromBoard(); if (CTX.onHint && n) CTX.onHint('已从画板移出 ' + n + ' 张'); }));
 }
 
 function mkTab(text, fn) {
@@ -129,10 +158,16 @@ export function refresh() {
   const st = store.stats();
   elStat.textContent = '共 ' + st.total + ' 张 · 收藏 ' + st.fav + (st.dead ? (' · 失效 ' + st.dead) : '');
   elTabWall.classList.toggle('on', W.view === 'wall');
+  elTabBoard.classList.toggle('on', W.view === 'board');
+  elTabInbox.classList.toggle('on', W.view === 'inbox');
   elTabPick.classList.toggle('on', W.view === 'pick');
   elWall.classList.toggle('hide', W.view !== 'wall');
+  elBoardWrap.classList.toggle('hide', W.view !== 'board');
+  elInbox.classList.toggle('hide', W.view !== 'inbox');
   elPick.classList.toggle('hide', W.view !== 'pick');
   if (W.view === 'pick') picker.renderPicker();
+  if (W.view === 'inbox') inbox.renderInbox();
+  if (W.view === 'board') board.renderBoard();
   wall.renderWall();
   const brand = document.querySelector('#titlebar .tb-brand span:last-child');
   if (brand) brand.textContent = (W.mode === 'workbench') ? '工作台' : '漫画书库';
