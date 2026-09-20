@@ -257,13 +257,13 @@ node _scripts\jm\make-fixture.mjs --remove
 
 | 项 | 状态 |
 |---|---|
-| frameless 窗口 + 自绘标题栏 | ✅ 已验证(最大化/还原真点过) |
-| 原生菜单(快捷键 + 标题栏菜单按钮) | ✅ 菜单项桥到已有按钮 |
-| 去网页味(选中/回弹/图拖/焦点圈) | ✅ 读计算样式验证 |
-| 托盘图标 | ✅ 已验证 |
-| 任务栏下载进度 | ✅ 输入事件已验证(prog 事件带 got/total 流过) |
-| 文件关联(.cbz 导入) | ✅ 已验证(含嵌套目录压平与页序) |
-| 打包发布 | ✅ 安装包 + 便携版均已产出并验证可启动 |
+| frameless 窗口 + 自绘标题栏 |  已验证(最大化/还原真点过) |
+| 原生菜单(快捷键 + 标题栏菜单按钮) |  菜单项桥到已有按钮 |
+| 去网页味(选中/回弹/图拖/焦点圈) |  读计算样式验证 |
+| 托盘图标 |  已验证 |
+| 任务栏下载进度 |  输入事件已验证(prog 事件带 got/total 流过) |
+| 文件关联(.cbz 导入) |  已验证(含嵌套目录压平与页序) |
+| 打包发布 |  安装包 + 便携版均已产出并验证可启动 |
 
 ## 打包
 
@@ -284,7 +284,7 @@ cd 'D:\gong zuo qu\漫画书库重构v0\_app'
 
 ## 从 core.js 抽模块的方法
 
-### ⚠️ 先纠正一个曾经的错误判据（2026-09-20）
+###  先纠正一个曾经的错误判据（2026-09-20）
 
 文档早先写过"按**传递闭包**量, 闭包>50 的 77 个函数共约 180 KB 搬不动"。**这个判据是错的**,
 它把"连通性"当成了"抽取成本"。真正决定成本的只有一件事:
@@ -335,7 +335,7 @@ node --experimental-vm-modules _scripts\jm\extract-batch.mjs _batch.json
 - 生成后做 `vm.SourceTextModule` 语法检查（ESM 也能查）
 - core 侧做完残留扫描：这批函数不该再在 core 里被定义
 
-### ⚠️ 两个"会自己烂掉的断言"（同一天连踩两次）
+###  两个"会自己烂掉的断言"（同一天连踩两次）
 
 守卫里写过的健全性断言，两次都因为重构本身而失效：
 
@@ -349,7 +349,7 @@ node --experimental-vm-modules _scripts\jm\extract-batch.mjs _batch.json
 （`FNRE.exec('  async function foo() {}')?.[1] === 'foo'`），要么做**自洽校验**
 （解析结果必须与文件里的函数声明行一一对应）。这两种永远成立。
 
-### ⚠️ 按逗号切声明要按"顶层逗号"（同一天第三个同类坑）
+###  按逗号切声明要按"顶层逗号"（同一天第三个同类坑）
 
 `export const S = { ci: 0, pi: 0, mode: "single", ... }` 直接 `split(',')`，
 对象键 `ci`/`pi`/`mode`/`dir`/`q` 全被当成了"导出名"——生成器据此把一个模块的
@@ -385,7 +385,7 @@ initSettings({ DISK, renderShelf, renderCatTabs, /* ... */ });
 
 `SET` 用 `export let`：重置按钮会整体替换它，core 那边靠 ES 实时绑定始终看到最新对象。
 
-### ⚠️ 抽一个域时，依赖要查**四类**（①②③ 下载面板踩的，④ 阅读器踩的）
+###  抽一个域时，依赖要查**四类**（①②③ 下载面板踩的，④ 阅读器踩的）
 
 只查"core 顶层名"是不够的，会漏三类，而且都是运行时才炸：
 
@@ -399,7 +399,7 @@ initSettings({ DISK, renderShelf, renderCatTabs, /* ... */ });
 ②靠"拿本模块文本去比对所有已抽模块的导出名"来查；
 ③靠"拿被搬走的名字去 core 剩余文本里搜一遍"来查。
 
-### ⚠️ 第④类：`async function` 会被朴素正则漏掉（阅读器那一轮踩的）
+###  第④类：`async function` 会被朴素正则漏掉（阅读器那一轮踩的）
 
 扫 core 顶层声明的正则是 `^\s*function\s+(\w+)`。**它匹配不到 `async function delImage()`** ——
 于是 `delImage` / `delChapter` 既不在"core 顶层名"里，也就没被算成待注入依赖。
@@ -415,7 +415,7 @@ initSettings({ DISK, renderShelf, renderCatTabs, /* ... */ });
    import 进来的 / `init*` 注入的，剩下还命中 core 顶层名的就是漏项。**不需要启动 App**，
    秒级跑完，已并入 `verify-all`。
 
-### ⚠️ 这个守卫自己也漏报过一次（2026-09-20，同一天内）
+###  这个守卫自己也漏报过一次（2026-09-20，同一天内）
 
 第一版守卫把"**已经搬到别的模块的名字**"一律当放行(`MOVED.has(x) -> continue`)，理由是
 "它们不再是 core 的事了"。结果 `library/store.js` 的 `cur()` 用了 `comic`(已搬到
@@ -438,7 +438,7 @@ initSettings({ DISK, renderShelf, renderCatTabs, /* ... */ });
 2. `local`(本模块声明)必须收全：行内声明(`for (var i = 0, d = x)`)、多声明符、箭头参数都要覆盖，
    漏收就会把局部变量当成漏 import。
 
-### ⚠️ "按值注入"有四个坑（书架渲染这一块全踩了一遍）
+###  "按值注入"有四个坑（书架渲染这一块全踩了一遍）
 
 `let X = ctx.X` 只是**注入那一刻的快照**。所以：
 
@@ -470,16 +470,16 @@ initSettings({ DISK, renderShelf, renderCatTabs, /* ... */ });
 
 | 部分 | 状态 |
 |---|---|
-| 入口 / 装配 / 数据加载 | ✅ 已模块化 |
-| shared/ | ✅ 9 个模块（含 ctx-menu） |
-| app/ | ✅ state + actions + boot |
-| shelf/ | ✅ 11 个模块 |
-| reader/ | ✅ 7 个模块 |
-| library/store.js | ✅ 书库存取层 |
-| settings/ · download/ | ✅ |
-| **legacy/core.js** | ✅ **已抽空**：2914 行 → **718 行 / 0 个函数** |
-| core.js 的接线整理 | ⏳ 见下（这是**重写**，不是搬代码） |
-| styles/ | ⏳ 已外链，仍是单文件，待按域拆 |
+| 入口 / 装配 / 数据加载 |  已模块化 |
+| shared/ |  9 个模块（含 ctx-menu） |
+| app/ |  state + actions + boot |
+| shelf/ |  11 个模块 |
+| reader/ |  7 个模块 |
+| library/store.js |  书库存取层 |
+| settings/ · download/ |  |
+| **legacy/core.js** |  **已抽空**：2914 行 → **718 行 / 0 个函数** |
+| core.js 的接线整理 |  见下（这是**重写**，不是搬代码） |
+| styles/ |  已外链，仍是单文件，待按域拆 |
 
 ### core.js 现在是什么
 
@@ -502,7 +502,7 @@ initSettings({ DISK, renderShelf, renderCatTabs, /* ... */ });
 
 ### 下一步(按性价比)
 
-1. **styles/ 按域拆** —— 唯一的"按域"遗留项；⚠️ 层叠顺序，见开头那节
+1. **styles/ 按域拆** —— 唯一的"按域"遗留项； 层叠顺序，见开头那节
 2. 接线整理（上面那条，属于重写）
 3. 若继续拆模块：`download/panel.js`（75.9 KB）和 `shelf/render.js`（35.6 KB）
    是现在最大的两个文件，可以按页签/按渲染部件再分

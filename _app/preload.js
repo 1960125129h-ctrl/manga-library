@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('mangaLib', {
   /* 工作台(美术参考): 虚拟引用的图 + 参考板 + 收件箱 */
   getWorkbench: () => ipcRenderer.invoke('wb:get'),
   saveWorkbench: (wb) => ipcRenderer.invoke('wb:save', wb),
+  imageColors: (src, opts) => ipcRenderer.invoke('ref:imageColors', src, opts),
   saveLibrary: (lib) => ipcRenderer.invoke('state:library', lib),
   rescan: (opts) => ipcRenderer.invoke('lib:rescan', opts),
   bookTimes: () => ipcRenderer.invoke('lib:bookTimes'),

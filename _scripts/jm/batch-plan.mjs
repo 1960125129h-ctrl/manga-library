@@ -105,7 +105,7 @@ for (const v of [...needVar].sort()) {
   const re = new RegExp('(^|[^.\\w$])' + v + '\\s*(=(?!=)|\\+=|-=|\\*=|/=|%=|\\+\\+|--)(?![=])');
   const assg = [];
   L.forEach((l, i) => { if (!re.test(l)) return; if (i === declLine[v] && /^\s{0,2}(var|let|const)\b/.test(l)) return; assg.push('L' + (i + 1)); });
-  console.log('  ' + v.padEnd(16) + '声明L' + String(declLine[v] + 1).padStart(5) + (assg.length ? ('  赋值 ' + assg.join(',')) : '  只读') + (declLine[v] > initLine ? '   ⚠声明在 init 之后' : ''));
+  console.log('  ' + v.padEnd(16) + '声明L' + String(declLine[v] + 1).padStart(5) + (assg.length ? ('  赋值 ' + assg.join(',')) : '  只读') + (declLine[v] > initLine ? '   声明在 init 之后' : ''));
 }
 console.log('');
 const mustExport = [];

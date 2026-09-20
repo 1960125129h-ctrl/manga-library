@@ -323,6 +323,7 @@ export function openSettings() {
     netHint.textContent = '联网刷新：新书名第一次出现时补日/英别名，之后缓存。';
     pAdvanced.appendChild(netHint);
 
+    if (DISK && DISK.webStatus) {
     var webSep = document.createElement('div'); webSep.style.cssText = 'border-top:1px solid var(--border);margin:12px 0;padding-top:10px;font-weight:600;font-size:14px';
     webSep.textContent = '局域网访问（手机看书库）';
     pAdvanced.appendChild(webSep);
@@ -362,6 +363,8 @@ export function openSettings() {
         webInfo.innerHTML = '已开启<br>手机浏览器打开:<br><b style="color:#4f8;font-size:16px">http://' + st.ip + ':' + st.port + '</b><br>密码: ' + (st.password || '');
       }
     });
+    }
+
 
     // batch tools
     var ltool = document.createElement('label'); ltool.textContent = '批量工具'; pAdvanced.appendChild(ltool);

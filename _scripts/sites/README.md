@@ -13,6 +13,6 @@
 ## 常用命令
 - 下载/续下：`node _scripts\sites\fetch-book.mjs --url <地址> [--dir 书名] [--from N --to M]`
 - 重下覆盖（换成更清晰的版本）：加 `--force`
-- 全部图片合并到一个文件夹：加 `--merge`（已经下好的书可在书库页右键「📦 合并成一个文件夹」）
+- 全部图片合并到一个文件夹：加 `--merge`（已经下好的书可在书库页右键「 合并成一个文件夹」）
 - 只枚举不下载（数一下多少话）：`--from 99999 --to 99999`
 - 登录/取 cookie：`node _scripts\jm\site-login.mjs <域名>`（写进 `_scripts\sites\cookies\<域名>.txt`）

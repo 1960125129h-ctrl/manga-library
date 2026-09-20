@@ -32,7 +32,10 @@ try {
   if (!cards) throw new Error('先跑 node _scripts\jm\make-fixture.mjs');
 
   // 进阅读器
-  await p.ev('(function(){var c=document.querySelector("#grid > *"); if(c) c.click();})()', 2);
+  await p.ev(`(function(){
+    var c=document.querySelector(${JSON.stringify('#grid .card[data-dir$="测试用书"]')});
+    if(c) c.click();
+  })()`, 2);
   await sleep(2500);
   chk('已进入阅读器', String(await ev('!document.getElementById("reader").classList.contains("hide")')) === 'true');
 

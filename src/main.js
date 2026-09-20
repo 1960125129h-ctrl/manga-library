@@ -12,9 +12,16 @@ import { loadManifest } from './lib/manifest.js';
 import { initTitlebar } from './shell/titlebar.js';
 import { initMenu } from './shell/menu.js';
 import { watchDuplicateIds } from './shared/domcheck.js';
+import { isElectron } from './lib/ipc.js';
+
+function registerServiceWorker() {
+  if (isElectron() || !('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/service-worker.js').catch(() => {}); });
+}
 
 async function boot() {
   // 窗口 chrome 先立起来: 它不依赖书库数据, 数据读失败也要能用(至少能关窗口)
+  registerServiceWorker();
   initTitlebar();
   initMenu();
   watchDuplicateIds();   // id 撞车巡检(界面变动后节流扫描, 只在真撞了才警告)

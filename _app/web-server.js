@@ -276,7 +276,7 @@ function cardHtml(b){
   if(prog){var p=JSON.parse(prog);pct=Math.round(p.pi/(p.total||1)*100);}
   var bar=pct?'<div class="bar"><i style="width:'+pct+'%"></i></div>':'';
   var ptext=pct?pct+"%":"刚开";
-  var star=fav?'<span style="color:#f55">★</span>':'';
+  var star=fav?'<span style="color:#f55">已藏</span>':'';
   return '<div class="card" data-dir="'+b.dir+'" onclick="openBook(\\''+b.dir+'\\')" ontouchstart="cardTouchStart(event,\\''+b.dir+'\\')" ontouchend="cardTouchEnd()" ontouchmove="cardTouchMove()"><div class="cov"><img loading="lazy" src="/img?dir='+encodeURIComponent(b.dir)+'&cover=1"></div>'+bar+'<div class="meta"><div class="t">'+b.name+'</div><div class="p">'+b.pages+'页 · '+ptext+' '+star+'</div></div></div>';
 }
 var lpTimer=null,lpDir=null,lpMoved=false;
@@ -287,7 +287,7 @@ function lpShowMenu(dir,x,y){
   if(lpMoved)return;
   var fav=ls("m_fav_"+dir)==="1";
   var m=document.getElementById("ctxMenu");
-  m.innerHTML='<div onclick="lpFav(\\''+dir+'\\')">'+(fav?"★ 取消收藏":"☆ 加入收藏")+'</div><div class="danger" onclick="lpDelete(\\''+dir+'\\')">🗑 删除本书</div>';
+  m.innerHTML='<div onclick="lpFav(\\''+dir+'\\')">'+(fav?"取消收藏":"加入收藏")+'</div><div class="danger" onclick="lpDelete(\\''+dir+'\\')"> 删除本书</div>';
   m.style.display="block";
   m.style.left=Math.min(x,innerWidth-180)+"px";
   m.style.top=Math.min(y,innerHeight-120)+"px";

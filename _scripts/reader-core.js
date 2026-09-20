@@ -1305,7 +1305,7 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
     showModal(function (box) {
       var h = document.createElement("h3"); h.textContent = "漫画网站总览"; box.appendChild(h);
       var s = document.createElement("div"); s.className = "sub";
-      s.textContent = "点站名就用「下载用的那个浏览器」打开；带 ✔ 的是已适配自动下载（可直接贴链接），带「站内搜索」的会出现在跨站搜索面板里。";
+      s.textContent = "点站名就用「下载用的那个浏览器」打开；带  的是已适配自动下载（可直接贴链接），带「站内搜索」的会出现在跨站搜索面板里。";
       box.appendChild(s);
       var lb = document.createElement("label"); lb.textContent = "用哪个浏览器打开"; box.appendChild(lb);
       var sel = document.createElement("select");
@@ -1320,7 +1320,7 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
         grp.list.forEach(function (it) {
           var row = document.createElement("div"); row.className = "siterow";
           var nm = document.createElement("button"); nm.className = "sitename";
-          nm.textContent = it.n + (it.done ? " ✔" : "");
+          nm.textContent = it.n + (it.done ? " " : "");
           nm.title = it.u ? ("用 " + (browser === "edge" ? "Edge" : "Chrome") + " 打开 " + it.u) : "还没填域名";
           nm.onclick = function () {
             if (!it.u) { hint("这个站还没填域名"); return; }
@@ -1624,7 +1624,7 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
     if (!LIBRARY) return;
     var e = libEntry(dir);
     fillCtx([
-      { t: e.favorite ? "★  取消收藏" : "☆  加入收藏", f: function () { toggleFav(dir); } },
+      { t: e.favorite ? "取消收藏" : "加入收藏", f: function () { toggleFav(dir); } },
       { t: "备注…", f: function () { editNote(dir); } },
       { t: "重命名…", f: function () { renameBookDir(dir); } },
       { t: "编辑分类与标签…", f: function () { openEditor(dir); } },
@@ -1635,11 +1635,11 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
           else hint("仅桌面版支持");
         } },
       { t: "复制书名", f: function () { copyText(dir); } },
-      { t: "🔍 检查是否有更新（原站）", f: function () { checkUpdate(dir); } },
+      { t: " 检查是否有更新（原站）", f: function () { checkUpdate(dir); } },
       { t: "跨站检查更新…", f: function () { multiUpdate(dir); } },
       { t: ((manifestOf(dir) || {}).rating === "18+") ? "分级：改为非 18+" : "分级：标为 18+", f: function () { setRating(dir, (manifestOf(dir) || {}).rating !== "18+"); } },
       { t: "分级：恢复自动判定", f: function () { setRating(dir, null); } },
-      { t: "📦 合并成一个文件夹（图片全进 全部\\）", f: function () { mergeBook(dir); } },
+      { t: " 合并成一个文件夹（图片全进 全部\\）", f: function () { mergeBook(dir); } },
       { t: "管理图包…", f: function () { openImageManager(dir); } },
       { t: "清除手动排序", f: function () { var o = manualOrder(); delete o[dir]; saveManualOrder(o); renderShelf(); hint("已清除这一本的手动排序"); } },
       { t: "删除本书（含文件）…", f: function () { confirmDelete(dir); } }
@@ -2421,7 +2421,7 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
     }
     syncButtons(); bmSync();
   }
-  function bmSync() { var b = document.getElementById('bbm'); if (!b) return; var on = comic ? bmFind(comic.dir, S.ci, S.pi) >= 0 : false; b.textContent = on ? '★ 已书签' : '☆ 书签'; b.classList.toggle('on', on); }
+  function bmSync() { var b = document.getElementById('bbm'); if (!b) return; var on = comic ? bmFind(comic.dir, S.ci, S.pi) >= 0 : false; b.textContent = on ? '已书签' : '书签'; b.classList.toggle('on', on); }
   function openByDir(dir, ci, pi) {
     bmJump = true; bmDir = dir; bmAt = (typeof ci === 'number') ? { ci: ci, pi: pi || 0 } : null;
     for (var i = 0; i < COMICS.length; i++) {
@@ -2459,7 +2459,7 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
     var m = meta(), q = S.q.trim().toLowerCase();
     var a = bmAll().filter(function (x) { return !q || String(x.name).toLowerCase().indexOf(q) >= 0; });
     elGrid.innerHTML = '';
-    if (!a.length) { var d = document.createElement('div'); d.id = 'empty'; d.textContent = '还没有书签。阅读时点右上「☆ 书签」即可添加。'; elGrid.appendChild(d); }
+    if (!a.length) { var d = document.createElement('div'); d.id = 'empty'; d.textContent = '还没有书签。阅读时点右上「书签」即可添加。'; elGrid.appendChild(d); }
     a.forEach(function (x) {
       var c = null;
       for (var i = 0; i < COMICS.length; i++) if (COMICS[i].dir === x.dir) c = COMICS[i];
@@ -2470,7 +2470,7 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
       else { var nn = document.createElement('div'); nn.className = 'none'; nn.textContent = '原书已不在库中'; tp.appendChild(nn); }
       el.appendChild(tp);
       var mt = document.createElement('div'); mt.className = 'cmeta';
-      var t = document.createElement('div'); t.className = 'ctitle'; t.textContent = '🔖 ' + x.name; mt.appendChild(t);
+      var t = document.createElement('div'); t.className = 'ctitle'; t.textContent = ' ' + x.name; mt.appendChild(t);
       var sub = document.createElement('div'); sub.className = 'csub'; sub.textContent = (x.ch || '') + ' · 第' + (x.pi + 1) + '/' + (x.total || '?') + '页'; mt.appendChild(sub);
       var tm = document.createElement('div'); tm.className = 'cread'; tm.textContent = fmtTime(x.t); mt.appendChild(tm);
       el.appendChild(mt);
@@ -2671,8 +2671,8 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
       libSave(); renderShelf(); saveShelfView(true); hint("已" + (d < 0 ? "左移" : "右移") + "：「" + cat + "」");
     };
     fillCtx([
-      { t: "◀ 左移一位", f: function () { move(-1); } },
-      { t: "▶ 右移一位", f: function () { move(1); } },
+      { t: " 左移一位", f: function () { move(-1); } },
+      { t: " 右移一位", f: function () { move(1); } },
       { t: "重命名分类…", f: function () {
           askText("重命名分类", cat, function (v) {
             var i = LIBRARY.categories.indexOf(cat);
@@ -3112,7 +3112,7 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
       S2.running = true;
       bgBtn.style.display = "";
       var bd3 = document.getElementById("btn-download");
-      if (bd3) { bd3.classList.add("running"); bd3.textContent = "⏳ 下载中…"; }
+      if (bd3) { bd3.classList.add("running"); bd3.textContent = " 下载中…"; }
       goBtn.style.display = "none";
       // pixiv 用户链接: 保存名用作者名; EH tag: 自动按画廊标题建文件夹
       var saveName = ni.value.trim() || r.title || "批量下载";
@@ -3442,8 +3442,8 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
       window.mangaLib.onDownload(function (ev) {
         if (!ev) return;
         if (ev.type === "batch-start") { line("开始下载 " + ev.total + " 本"); }
-        else if (ev.type === "work-start") { line("▶ " + (ev.index + 1) + "/" + ev.total + "　" + ev.title); if (dlinfoL) dlinfoL.textContent = "第 " + (ev.index + 1) + " / " + ev.total + " 本　" + ev.title; }
-        else if (ev.type === "work-done") { line((ev.ok ? "✔ " : "✘ ") + (ev.index + 1) + "/" + ev.total + "　" + ev.title + (ev.ok ? ("　" + (ev.images || 0) + " 张") : "　失败"), ev.ok ? "#8bc98b" : "#e08a8a"); }
+        else if (ev.type === "work-start") { line(" " + (ev.index + 1) + "/" + ev.total + "　" + ev.title); if (dlinfoL) dlinfoL.textContent = "第 " + (ev.index + 1) + " / " + ev.total + " 本　" + ev.title; }
+        else if (ev.type === "work-done") { line((ev.ok ? " " : "✘ ") + (ev.index + 1) + "/" + ev.total + "　" + ev.title + (ev.ok ? ("　" + (ev.images || 0) + " 张") : "　失败"), ev.ok ? "#8bc98b" : "#e08a8a"); }
         else if (ev.type === "chapter-start") { if (dlinfoL) dlinfoL.textContent = "第 " + ((ev.work || 0) + 1) + " 本：" + ev.label; }
         else if (ev.type === "prog") { bar.style.width = (ev.total ? Math.round((ev.got || 0) / ev.total * 100) : 0) + "%"; if (dlinfoR) dlinfoR.textContent = (ev.got || 0) + " / " + (ev.total || "?") + " 张"; }
         else if (ev.type === "log") { dlLog(S2, "  " + ev.line); }
@@ -4287,7 +4287,7 @@ mk("列出开着的标签", "把浏览器里开着的作品页一次性收进待
     var ch = comic.chapters[S.ci];
     var f = imgFile(ch, idx);
     fillCtx([
-      { t: "🖼 设为本书封面", f: function () {
+      { t: " 设为本书封面", f: function () {
           var e = libEntry(comic.dir);
           if (!e) { hint("需要桌面版才能保存封面"); return; }
           e.coverOverride = { ci: S.ci, pi: idx };
@@ -4295,12 +4295,12 @@ mk("列出开着的标签", "把浏览器里开着的作品页一次性收进待
           invalidateCard(comic.dir); renderShelf();
           hint("已设为本书封面");
         } },
-      { t: "📂 在文件夹中打开", f: function () {
+      { t: " 在文件夹中打开", f: function () {
           if (!DISK || !DISK.reveal || !LIBROOT || !f) { hint("仅桌面版支持"); return; }
           var dir = f.indexOf("/") >= 0 ? f.slice(0, f.lastIndexOf("/")) : "";
           DISK.reveal(LIBROOT + "\\" + comic.dir + (dir ? "\\" + dir.replace(/\//g, "\\") : ""));
         } },
-      { t: "🗑 删除这张图（含文件）", f: function () { delImage(idx); } }
+      { t: " 删除这张图（含文件）", f: function () { delImage(idx); } }
     ], x, y);
   }
   async function delImage(idx) {
@@ -4465,13 +4465,13 @@ mk("列出开着的标签", "把浏览器里开着的作品页一次性收进待
     if (!ch) return;
     var label = chLabel(ch);
     fillCtx([
-      { t: "📖 打开这一话", f: function () { S.ci = idx; S.pi = 0; render(); renderChapters(); } },
-      { t: "📂 在文件夹中打开", f: function () {
+      { t: " 打开这一话", f: function () { S.ci = idx; S.pi = 0; render(); renderChapters(); } },
+      { t: " 在文件夹中打开", f: function () {
           if (!ch.path) { hint("这一话没有独立文件夹"); return; }
           if (DISK && DISK.reveal && LIBROOT) DISK.reveal(LIBROOT + "\\" + comic.dir + "\\" + ch.path);
           else hint("仅桌面版支持");
         } },
-      { t: "🗑 删除这一话（含文件）…", f: function () { delChapter(idx); } }
+      { t: " 删除这一话（含文件）…", f: function () { delChapter(idx); } }
     ], x, y);
   }
   async function delChapter(idx) {

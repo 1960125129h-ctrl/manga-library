@@ -35,7 +35,10 @@
 .wb-cell img{display:block;width:100%;height:240px;object-fit:contain;background:var(--thumb-bg,#111);pointer-events:none}
 .wb-none{height:240px;display:flex;align-items:center;justify-content:center;color:var(--fg3);font-size:12px}
 .wb-cell-lab{padding:5px 8px;font-size:11px;color:var(--fg2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wb-cell-fav{position:absolute;top:6px;right:7px;color:#f5c451;font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.7)}
+.wb-cell-fav{position:absolute;top:6px;right:7px;color:#ffc53d;background:rgba(0,0,0,.58);border:1px solid rgba(255,197,61,.55);border-radius:5px;padding:0 5px;font-size:13px;line-height:1.3;text-shadow:0 1px 4px rgba(0,0,0,.9)}
+.wb-cell.onboard{border-color:var(--accent)}
+.wb-cell-board{position:absolute;left:6px;top:6px;background:rgba(0,0,0,.68);border:1px solid var(--border2);
+  border-radius:5px;padding:2px 6px;font-size:10px;color:var(--fg2)}
 .wb-more{grid-column:1/-1;text-align:center;padding:16px;color:var(--accent);cursor:pointer;font-size:13px}
 .wb-empty{grid-column:1/-1;padding:48px 24px;text-align:center;color:var(--fg3);font-size:13px;line-height:1.9}
 .wb-dim{color:var(--fg3);opacity:.75;font-size:12px}
@@ -72,6 +75,10 @@
 .wb-boardhost{flex:1;min-height:0;position:relative;overflow:hidden;background:var(--thumb-bg,#0d0d0f);
   cursor:grab;touch-action:none}
 .wb-boardhost:active{cursor:grabbing}
+.wb-boardhost.panning,.wb-boardhost.panning .wb-canvas{cursor:grabbing}
+.wb-boardhost.dragging-img,.wb-boardhost.dragging-img .wb-bitem{cursor:grabbing !important}
+.wb-zoomread{position:absolute;left:10px;top:8px;z-index:20;pointer-events:none;background:rgba(0,0,0,.62);
+  border:1px solid var(--border2);border-radius:6px;padding:3px 8px;color:#ddd;font-size:11px}
 .wb-canvas{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .wb-canvas.panning{cursor:grabbing}
 .wb-canvas.flip{transform-origin:0 0}
@@ -89,3 +96,29 @@
   background:linear-gradient(transparent,rgba(0,0,0,.72));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   opacity:0;transition:opacity .15s}
 .wb-bitem:hover .wb-bbar{opacity:1}
+.wb-resize{position:absolute;right:4px;bottom:4px;width:11px;height:11px;border-right:2px solid var(--accent);
+  border-bottom:2px solid var(--accent);background:transparent;display:none;cursor:nwse-resize;z-index:4}
+.wb-bitem.sel .wb-resize,.wb-bitem:hover .wb-resize{display:block}
+
+/* ---- 取色与调色板 ---- */
+.wb-tool.on{border-color:var(--accent);color:var(--accent)}
+.wb-board-main{flex:1;min-height:0;display:flex;min-width:0}
+.wb-board-main .wb-boardhost{flex:1;min-width:0}
+.wb-boardhost.pick,.wb-boardhost.pick .wb-bitem{cursor:crosshair}
+.wb-palette{width:220px;flex:0 0 220px;border-left:1px solid var(--border);background:var(--surface);
+  overflow:auto;padding:10px}
+.wb-palette-section{margin:0 0 14px}
+.wb-palette-section h4{margin:0 0 8px;font-size:12px;color:var(--fg3);font-weight:600}
+.wb-current-color{display:flex;align-items:center;gap:9px;min-width:0}
+.wb-swatch{display:block;border:1px solid var(--border2);padding:0;cursor:pointer;border-radius:7px}
+.wb-swatch:hover{border-color:var(--accent)}
+.wb-swatch.large{width:54px;height:54px}
+.wb-swatch.palette{width:100%;height:42px}
+.wb-swatch.small{width:18px;height:18px;border-radius:4px}
+.wb-color-code{font-size:11px;color:var(--fg2);font-family:Consolas,'Courier New',monospace}
+.wb-recent-colors{display:flex;flex-wrap:wrap;gap:4px}
+.wb-palette-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.wb-palette-cell{min-width:0}
+.wb-palette-cell .wb-color-code{display:block;text-align:center;margin-top:3px;white-space:nowrap}
+.wb-palette-empty{font-size:12px;color:var(--fg3);padding:8px 2px}
+.wb-palette-status{font-size:11px;color:var(--fg3);border-top:1px solid var(--border);padding-top:8px;line-height:1.5}

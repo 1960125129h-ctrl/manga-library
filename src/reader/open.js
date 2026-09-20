@@ -18,11 +18,34 @@ import { SET } from '../settings/panel.js';
 import { imgFile, nOf, chLabel, pageList } from '../shared/chapter.js';
 import { enc } from '../shared/text.js';
 import { hint } from '../shared/ui.js';
+import { resetReaderFullscreen } from '../reader/fullscreen.js';
 import { card } from '../shelf/render.js';
 
 // ---- 本模块持有的状态(所有读写点都在本模块内) ----
 let lastVT = 0, VT_ON = true, vtBusy = false;   // 视图过渡节流: 连打时跳过 / 上一个还没跑完就直改
 let bmJump = false, bmDir = null, bmAt = null;  // 书签跳转: 跳转期间及停留期间都不写进度
+
+function focusOpenedPage(pi) {
+  requestAnimationFrame(function () {
+    var stage = document.getElementById("stage");
+    if (!stage) return;
+    if (S.mode === "scroll") {
+      var im = stage.querySelector('.scrollimg[data-i="' + pi + '"]');
+      if (!im) return;
+      var go = function () {
+        var w = im.closest(".pagewrap") || im;
+        w.scrollIntoView({ block: "start" });
+      };
+      if (im.complete) go();
+      else {
+        im.addEventListener("load", go, { once: true });
+        im.addEventListener("error", go, { once: true });
+      }
+    } else {
+      stage.scrollTo({ left: 0, top: 0 });
+    }
+  });
+}
 
 export function vtWrap(fn) {
   try {
@@ -46,6 +69,7 @@ export function openByDir(dir, ci, pi) {
     openComic(COMICS[i]);
     if (typeof ci === 'number') { S.ci = Math.max(0, Math.min(ci, COMICS[i].chapters.length - 1)); S.pi = Math.max(0, pi || 0); }
     renderChapters(); render();
+    focusOpenedPage(S.pi);
     bmJump = false;
     return true;
   }
@@ -162,7 +186,8 @@ export function openComic(c) {
   setComic(c);
   NAVFWD.length = 0;   // 新开一本书, 清掉"前进"记录(和浏览器一致)
   var p = prog(c.dir);
-  S.ci = 0; S.pi = 0; S.mode = "single"; S.fit = "height"; S.dir = "rtl"; S.cover = false; S.sidebar = true; S.wheel = true;
+  const mobileTouch = !(window.mangaLib && window.mangaLib.isElectron) && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  S.ci = 0; S.pi = 0; S.mode = "single"; S.fit = "height"; S.dir = "rtl"; S.cover = false; S.sidebar = !mobileTouch; S.thumbs = false; S.wheel = true;
   var bigPlat = isBigPlat(c.dir);      // X/微博/抖音/pixiv: 新书默认"从最新看起"
   S.rev = bigPlat; S.prevRev = bigPlat;
   if (bigPlat && c.chapters.length) S.pi = Math.max(0, nOf(c.chapters[0]) - 1);   // 倒序时从最后一页(最新那张)进
@@ -260,6 +285,7 @@ export function flyCloseComic() {
   setTimeout(function () { try { fly.remove(); } catch (e) {} }, 460);
 }
 export function closeComic() {
+  resetReaderFullscreen();
   save();
   if (comic) NAVFWD.push(comic.dir);
   var dir = comic ? comic.dir : null;

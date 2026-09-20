@@ -37,7 +37,7 @@ export function showCtx(x, y, dir) {
   if (!LIBRARY) return;
   var e = libEntry(dir);
   fillCtx([
-    { t: e.favorite ? "★  取消收藏" : "☆  加入收藏", f: function () { toggleFav(dir); } },
+    { t: e.favorite ? "取消收藏" : "加入收藏", f: function () { toggleFav(dir); } },
     { t: "备注…", f: function () { editNote(dir); } },
     { t: "重命名…", f: function () { renameBookDir(dir); } },
     { t: "编辑分类与标签…", f: function () { openEditor(dir); } },
@@ -48,11 +48,11 @@ export function showCtx(x, y, dir) {
         else hint("仅桌面版支持");
       } },
     { t: "复制书名", f: function () { copyText(dir); } },
-    { t: "🔍 检查是否有更新（原站）", f: function () { checkUpdate(dir); } },
+    { t: "检查是否有更新（原站）", f: function () { checkUpdate(dir); } },
     { t: "跨站检查更新…", f: function () { multiUpdate(dir); } },
     { t: ((manifestOf(dir) || {}).rating === "18+") ? "分级：改为非 18+" : "分级：标为 18+", f: function () { setRating(dir, (manifestOf(dir) || {}).rating !== "18+"); } },
     { t: "分级：恢复自动判定", f: function () { setRating(dir, null); } },
-    { t: "📦 合并成一个文件夹（图片全进 全部\\）", f: function () { mergeBook(dir); } },
+    { t: "合并成一个文件夹（图片全进 全部\\）", f: function () { mergeBook(dir); } },
     { t: "管理图包…", f: function () { openImageManager(dir); } },
     { t: "清除手动排序", f: function () { var o = manualOrder(); delete o[dir]; saveManualOrder(o); renderShelf(); hint("已清除这一本的手动排序"); } },
     { t: "删除本书（含文件）…", f: function () { confirmDelete(dir); } }

@@ -162,8 +162,10 @@ const META = (() => { try { return JSON.parse(fs.readFileSync(path.join(LIB, 'li
 const META_COMICS = META.comics || {};
 function scanLibrary(lib) {
   const comics = [];
+  const rootIgnore = new Set(['icons', 'src', 'node_modules', '_backup', '_dist', '_visual-check']);
   for (const ent of fs.readdirSync(lib, { withFileTypes: true })) {
     if (!ent.isDirectory()) continue;
+    if (rootIgnore.has(ent.name)) continue;
     if (ent.name.charAt(0) === '_' || ent.name.charAt(0) === '.') continue;
     const full = path.join(lib, ent.name);
     if (isCategoryDir(full)) {
@@ -691,7 +693,7 @@ p('        <button class="b" id="brev" title="章节观看顺序：正序(旧→
   p('      <div class="grp">');
   p('        <button class="b" id="bwheel" title="滚轮翻页 开/关">滚轮翻页</button>');
   p('        <button class="b" id="btheme" title="阅读配色与亮度（纯黑/深灰/米白纸/护眼绿）">配色</button>');
-  p('        <button class="b" id="bbm" title="给当前页加书签 (B)">☆ 书签</button>');
+  p('        <button class="b" id="bbm" title="给当前页加书签 (B)">书签</button>');
   p('        <button class="b" id="bfull" title="全屏 (F)">全屏</button>');
   p('      </div>');
   p('      <div id="info">');

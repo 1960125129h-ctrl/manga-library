@@ -32,7 +32,7 @@ export function bmToggle() {
   }
   syncButtons(); bmSync();
 }
-export function bmSync() { var b = document.getElementById('bbm'); if (!b) return; var on = comic ? bmFind(comic.dir, S.ci, S.pi) >= 0 : false; b.textContent = on ? '★ 已书签' : '☆ 书签'; b.classList.toggle('on', on); }
+export function bmSync() { var b = document.getElementById('bbm'); if (!b) return; var on = comic ? bmFind(comic.dir, S.ci, S.pi) >= 0 : false; b.textContent = on ? '已书签' : '书签'; b.classList.toggle('on', on); }
 
 /* ---------- 预览栏右键菜单: 删除这一张图 ---------- */
 export function showImgCtx(x, y, idx) {
@@ -40,7 +40,7 @@ export function showImgCtx(x, y, idx) {
   var ch = comic.chapters[S.ci];
   var f = imgFile(ch, idx);
   fillCtx([
-    { t: "🖼 设为本书封面", f: function () {
+    { t: "设为本书封面", f: function () {
         var e = libEntry(comic.dir);
         if (!e) { hint("需要桌面版才能保存封面"); return; }
         e.coverOverride = { ci: S.ci, pi: idx };
@@ -48,12 +48,12 @@ export function showImgCtx(x, y, idx) {
         invalidateCard(comic.dir); renderShelf();
         hint("已设为本书封面");
       } },
-    { t: "📂 在文件夹中打开", f: function () {
+    { t: "在文件夹中打开", f: function () {
         if (!DISK || !DISK.reveal || !LIBROOT || !f) { hint("仅桌面版支持"); return; }
         var dir = f.indexOf("/") >= 0 ? f.slice(0, f.lastIndexOf("/")) : "";
         DISK.reveal(LIBROOT + "\\" + comic.dir + (dir ? "\\" + dir.replace(/\//g, "\\") : ""));
       } },
-    { t: "🗑 删除这张图（含文件）", f: function () { delImage(idx); } }
+    { t: "删除这张图（含文件）", f: function () { delImage(idx); } }
   ], x, y);
 }
 
@@ -196,13 +196,13 @@ function showChCtx(x, y, idx) {
   if (!ch) return;
   var label = chLabel(ch);
   fillCtx([
-    { t: "📖 打开这一话", f: function () { S.ci = idx; S.pi = 0; render(); renderChapters(); } },
-    { t: "📂 在文件夹中打开", f: function () {
+    { t: "打开这一话", f: function () { S.ci = idx; S.pi = 0; render(); renderChapters(); } },
+    { t: "在文件夹中打开", f: function () {
         if (!ch.path) { hint("这一话没有独立文件夹"); return; }
         if (DISK && DISK.reveal && LIBROOT) DISK.reveal(LIBROOT + "\\" + comic.dir + "\\" + ch.path);
         else hint("仅桌面版支持");
       } },
-    { t: "🗑 删除这一话（含文件）…", f: function () { delChapter(idx); } }
+    { t: "删除这一话（含文件）…", f: function () { delChapter(idx); } }
   ], x, y);
 }
 

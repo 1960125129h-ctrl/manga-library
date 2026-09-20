@@ -50,6 +50,9 @@ export function render() {
   if (!comic) return;
   clamp();
   elStage.className = "stage mode-" + S.mode + " fit-" + S.fit + " dir-" + S.dir + (S.zoom ? " zoom" : "");
+  var readerEl = document.getElementById("reader");
+  readerEl.dataset.mode = S.mode;
+  readerEl.dataset.dir = S.dir;
   refit();   // 换了模式/适配方式就按真实可用尺寸重算一遍
   elStage.innerHTML = "";
   setElCanvas(document.createElement("div")); elCanvas.id = "canvas";

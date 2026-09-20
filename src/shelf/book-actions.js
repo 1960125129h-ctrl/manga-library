@@ -206,8 +206,8 @@ export function manageCat(cat, x, y) {
     libSave(); renderShelf(); saveShelfView(true); hint("已" + (d < 0 ? "左移" : "右移") + "：「" + cat + "」");
   };
   fillCtx([
-    { t: "◀ 左移一位", f: function () { move(-1); } },
-    { t: "▶ 右移一位", f: function () { move(1); } },
+    { t: "左移一位", f: function () { move(-1); } },
+    { t: "右移一位", f: function () { move(1); } },
     { t: "重命名分类…", f: function () {
         askText("重命名分类", cat, function (v) {
           var i = LIBRARY.categories.indexOf(cat);

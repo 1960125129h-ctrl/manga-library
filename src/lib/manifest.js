@@ -9,7 +9,10 @@ import { call, isElectron } from './ipc.js';
 
 export async function loadManifest() {
   if (!isElectron()) {
-    throw new Error('浏览器直开模式不支持: 书库数据需由主进程提供, 请用桌面版启动');
+    const response = await fetch('../_manifest.json', { cache: 'no-store' });
+    if (!response.ok) throw new Error('浏览器读取书库数据失败: HTTP ' + response.status);
+    const data = await response.json();
+    return Array.isArray(data.comics) ? data.comics : [];
   }
   const r = await call('readManifest');
   if (!r || !r.ok) throw new Error((r && r.msg) || '主进程读取书库数据失败');

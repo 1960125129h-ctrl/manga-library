@@ -33,7 +33,7 @@ const HOOK = `(function(){
   };
 })();`;
 // 页面内取数据: 图文作品按发布时间排好, 每张图给出候选地址和动图 mp4
-const READ = `(function(){
+export const READ = `(function(){
   var items = [];
   function walk(o, d) {
     if (!o || d > 16) return;
@@ -42,19 +42,67 @@ const READ = `(function(){
     if (Array.isArray(o.images) && o.images.length) items.push(o);
     for (var k in o) { if (k === 'images' || k === 'author' || k === 'music') continue; walk(o[k], d + 1); }
   }
-  // var dbg = { all: [] };
-  (window.__cap || []).forEach(function (c) {
-    // var before = items.length;
+  var pages = [];
+  function readCapture(c) {
+    if (!c || !c.j) return;
     walk(c.j, 0);
-    // var found = items.length - before;
-    // if (found > 0) dbg.all.push({ u: String(c.u || '').slice(0, 150), found: found });
-  });
+    var j = c.j;
+    var isPost = String(c.u || '').indexOf('/aweme/v1/web/aweme/post/') >= 0 ||
+      (Array.isArray(j.aweme_list) && Object.prototype.hasOwnProperty.call(j, 'has_more'));
+    if (isPost) {
+      pages.push({
+        u: String(c.u || '').slice(0, 180),
+        status: Number(j.status_code || 0),
+        hasMore: (j.has_more === true || Number(j.has_more) === 1) ? 1 : 0,
+        cursor: Number(j.max_cursor || 0),
+        minCursor: Number(j.min_cursor || 0),
+        count: Array.isArray(j.aweme_list) ? j.aweme_list.length : 0
+      });
+    }
+  }
+  (window.__cap || []).forEach(readCapture);
+  try { if (window._ROUTER_DATA) walk(window._ROUTER_DATA, 0); } catch (e) {}
+  try {
+    var renderEl = document.getElementById('RENDER_DATA');
+    if (renderEl && renderEl.textContent) {
+      var renderJson = JSON.parse(decodeURIComponent(renderEl.textContent));
+      walk(renderJson, 0);
+    }
+  } catch (e) {}
+
+  function scrollMetrics() {
+    var win = window, doc = document.documentElement, body = document.body;
+    var cands = [
+      { name: 'documentElement', el: doc, top: win.scrollY || doc.scrollTop || 0, h: doc.scrollHeight, c: doc.clientHeight },
+      { name: 'body', el: body, top: body.scrollTop || win.scrollY || 0, h: body.scrollHeight, c: body.clientHeight }
+    ];
+    var nodes = document.querySelectorAll('main,[class*=scroll],[class*=container],[data-e2e*=scroll]');
+    for (var i = 0; i < Math.min(nodes.length, 120); i++) {
+      var el = nodes[i];
+      if (el.scrollHeight <= el.clientHeight + 100) continue;
+      cands.push({ name: el.tagName + '.' + String(el.className || '').slice(0, 24), el: el, top: el.scrollTop || 0, h: el.scrollHeight, c: el.clientHeight });
+    }
+    cands.sort(function (a, b) { return (b.h - b.c) - (a.h - a.c); });
+    var best = cands[0] || {};
+    return {
+      name: best.name || '',
+      top: Math.round(best.top || 0),
+      height: best.h || 0,
+      client: best.c || 0,
+      innerWidth: win.innerWidth,
+      innerHeight: win.innerHeight,
+      remaining: Math.max(0, (best.h || 0) - (best.top || 0) - (best.c || 0)),
+      ended: /暂时没有更多了|已经到底了|没有更多内容|已经到最后/.test(body.innerText)
+    };
+  }
+
   var seen = {}, out = [];
   items.forEach(function (a) {
-    if (seen[a.aweme_id]) return;
-    seen[a.aweme_id] = 1;
+    var id = String(a.aweme_id || '');
+    if (!id || seen[id]) return;
+    seen[id] = 1;
     out.push({
-      id: String(a.aweme_id), desc: String(a.desc || ''), t: a.create_time || 0, type: a.aweme_type,
+      id: id, desc: String(a.desc || ''), t: a.create_time || 0, type: a.aweme_type,
       sec: (a.author && a.author.sec_uid) || '', nick: (a.author && a.author.nickname) || '',
       imgs: (a.images || []).map(function (im) {
         var v = im.video && im.video.play_addr && im.video.play_addr.url_list;
@@ -63,7 +111,38 @@ const READ = `(function(){
     });
   });
   out.sort(function (x, y) { return (y.t || 0) - (x.t || 0); });
-  return JSON.stringify({ url: location.href, title: document.title, items: out });
+  pages.sort(function (a, b) { return (b.cursor || 0) - (a.cursor || 0); });
+  return JSON.stringify({
+    url: location.href,
+    title: document.title,
+    items: out,
+    pages: pages,
+    page: pages[0] || null,
+    anyMore: pages.some(function (p) { return p.hasMore === 1; }),
+    caps: (window.__cap || []).length,
+    scroll: scrollMetrics()
+  });
+})()`;
+const FALLBACK_SCROLL = `(function(d){
+  window.scrollBy({ top: d, behavior: 'smooth' });
+  var nodes = Array.prototype.slice.call(document.querySelectorAll('main,[class*=scroll],[class*=container]'), 0, 120);
+  nodes.sort(function(a,b){
+    return (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight);
+  });
+  for (var i = 0; i < Math.min(4, nodes.length); i++) {
+    var el = nodes[i];
+    if (el.scrollHeight > el.clientHeight + 100) el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + d);
+  }
+  return true;
+})(900)`;
+const JUMP_BOTTOM = `(function(){
+  window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+  var nodes = Array.prototype.slice.call(document.querySelectorAll('main,[class*=scroll],[class*=container]'), 0, 120);
+  nodes.sort(function(a,b){
+    return (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight);
+  });
+  for (var i = 0; i < Math.min(4, nodes.length); i++) nodes[i].scrollTop = nodes[i].scrollHeight;
+  return true;
 })()`;
 async function withPage(fn) {
   const p = await openPage(Number(process.env.JM_PORT || 9333));
@@ -72,40 +151,92 @@ async function withPage(fn) {
 /* 同一次运行里 resolve+chapters 会连着调: 缓存住, 别把同一个页面加载两遍(省 10 秒以上) */
 let CACHE = { url: '', at: 0, rounds: -1, data: null };
 const CACHE_MS = 90000;
-// 同一次运行要滚几轮: 单条作品页第一批数据里就有, 不用滚; 主页要滚(解析模式少滚一点)
-function wantRounds(url) { return itemOf(url) ? 0 : (process.env.FETCH_PROBE === '1' ? 3 : 6); }
+// 同一次运行要滚几轮: 单条作品页第一批数据里就有, 不用滚; 预览模式少量采样; 正式下载持续滚到底
+function wantRounds(url) { return itemOf(url) ? 0 : (process.env.FETCH_PROBE === '1' ? 8 : 0); }
+async function readPage(p) {
+  try { return JSON.parse(String(await p.ev(READ) || '') || '{}'); } catch (e) { return null; }
+}
 async function grab(url, rounds) {
   if (CACHE.data && CACHE.url === url && (rounds || 0) <= CACHE.rounds && Date.now() - CACHE.at < CACHE_MS) return CACHE.data;
   const got = await withPage(async (p) => {
     await p.send('Page.addScriptToEvaluateOnNewDocument', { source: HOOK }).catch(() => {});
     await p.send('Page.navigate', { url: url }).catch(() => {});
-    // 不再死等固定秒数: 每 250ms 探一次, 有数据就走(一般 2~4 秒出)
-    let best = null;
-    for (let i = 0; i < 60; i++) {
+    let best = null, partial = null;
+    for (let i = 0; i < 80; i++) {
       await sleep(250);
-      let j = null;
-      try { j = JSON.parse(String(await p.ev(READ) || '') || '{}'); } catch (e) {}
-      if (j && j.items && j.items.length) { best = j; break; }
-    }
-    if (!best) throw new Error('没读到抖音数据（可能需要登录：先在调试浏览器登录抖音，或页面被风控了）');
-    // if (best.dbg) {
-      // console.log('[抖音调试] 找到图文对象的响应:');
-      // (best.dbg.all || []).forEach(function (x) { console.log('  [' + x.found + '个] ' + x.u); });
-    // }
-    // 往下滚: 大距离快滚 + 短间隔探测, 连着 3 轮没新增就停
-    let idle = 0, last = best.items.length;
-    for (let r = 0; r < 300 && idle < 15; r++) {
-      await p.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 500, y: 500, deltaX: 0, deltaY: 5000 }).catch(() => {});
-      let grew = false;
-      for (let k = 0; k < 10; k++) {
-        await sleep(300);
-        let j = null;
-        try { j = JSON.parse(String(await p.ev(READ) || '') || '{}'); } catch (e) {}
-        if (j && j.items && j.items.length > last) { last = j.items.length; best = j; grew = true; break; }
+      const j = await readPage(p);
+      if (j) {
+        partial = j;
+        if (j.items && j.items.length) { best = j; break; }
       }
-      if (grew) idle = 0; else idle++;
     }
-    // if (best.dbg) { console.log('[抖音调试-滚动后] 最终 items ' + best.items.length + ' 个'); }
+    if (!best) {
+      let debug = '';
+      if (partial) {
+        const s = partial.scroll || {};
+        debug = ` caps=${partial.caps || 0}, pages=${(partial.pages || []).length}, top=${s.top || 0},height=${s.height || 0}`;
+      }
+      throw new Error('没读到抖音数据（可能需要登录：先在调试浏览器登录抖音，或页面被风控了）' + debug);
+    }
+
+    const one = itemOf(url) || itemOf(best.url || '');
+    if (!one) {
+      const maxRounds = rounds > 0 ? rounds : 300;
+      const idleLimit = rounds > 0 ? 6 : 12;
+      let idle = 0;
+      let lastCount = best.items.length;
+      let lastTop = (best.scroll && best.scroll.top) || 0;
+      let lastHeight = (best.scroll && best.scroll.height) || 0;
+      for (let r = 0; r < maxRounds; r++) {
+        const beforeScroll = best.scroll || {};
+        const cx = Math.round((beforeScroll.innerWidth || 1200) / 2);
+        const cy = Math.round((beforeScroll.innerHeight || 800) * 0.55);
+        const delta = 750 + Math.round(Math.random() * 450);
+        await p.send('Input.dispatchMouseEvent', {
+          type: 'mouseWheel', x: cx, y: cy, deltaX: 0, deltaY: delta
+        }).catch(() => {});
+
+        let grew = false, moved = false;
+        for (let k = 0; k < 12; k++) {
+          await sleep(350);
+          const j = await readPage(p);
+          if (!j) continue;
+          const s = j.scroll || {};
+          if (Math.abs((s.top || 0) - lastTop) > 30 || (s.height || 0) > lastHeight + 100) moved = true;
+          best = j;
+          lastTop = s.top || 0;
+          lastHeight = s.height || 0;
+          if ((j.items || []).length > lastCount) { lastCount = j.items.length; grew = true; break; }
+        }
+
+        if (!grew) {
+          await p.ev(FALLBACK_SCROLL).catch(() => {});
+          await sleep(800);
+          const j = await readPage(p);
+          if (j) {
+            const s = j.scroll || {};
+            if (Math.abs((s.top || 0) - lastTop) > 30 || (s.height || 0) > lastHeight + 100) moved = true;
+            best = j;
+            lastTop = s.top || 0;
+            lastHeight = s.height || 0;
+            if ((j.items || []).length > lastCount) { lastCount = j.items.length; grew = true; }
+          }
+        }
+
+        if (grew) { idle = 0; continue; }
+        if ((idle + 1) % 3 === 0) await p.ev(JUMP_BOTTOM).catch(() => {});
+        idle++;
+        const s = best.scroll || {};
+        const serverEnded = (best.pages && best.pages.length && !best.anyMore) ||
+          (best.page && best.page.hasMore === 0);
+        if ((s.ended || serverEnded) && idle >= 2) break;
+        if (idle >= idleLimit) break;
+      }
+
+      await sleep(900);
+      const finalData = await readPage(p);
+      if (finalData && (finalData.items || []).length >= best.items.length) best = finalData;
+    }
     return best;
   });
   CACHE = { url: url, at: Date.now(), rounds: rounds || 0, data: got };

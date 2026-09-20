@@ -52,6 +52,7 @@ function cell(img) {
   const d = document.createElement('div');
   d.className = 'wb-cell' + (W.sel.indexOf(img.id) >= 0 ? ' sel' : '');
   d.dataset.id = img.id;
+  d.classList.toggle('onboard', !!hooks.isOnBoard && hooks.isOnBoard(img.id));
 
   const src = store.imageSrc(img);
   if (src) {
@@ -72,6 +73,13 @@ function cell(img) {
   lab.textContent = store.imageLabel(img);
   d.appendChild(lab);
 
+  if (hooks.isOnBoard && hooks.isOnBoard(img.id)) {
+    const boardTag = document.createElement('span');
+    boardTag.className = 'wb-cell-board';
+    boardTag.textContent = '参考板';
+    d.appendChild(boardTag);
+  }
+
   if (img.fav) {
     const f = document.createElement('span');
     f.className = 'wb-cell-fav'; f.textContent = '★';
@@ -80,7 +88,8 @@ function cell(img) {
 
   d.onclick = (ev) => {
     if (ev.shiftKey || ev.ctrlKey || ev.metaKey) { hooks.onToggleSel && hooks.onToggleSel(img); return; }
-    hooks.onOpen && hooks.onOpen(img, ev);
+    if (hooks.onQuickAdd) hooks.onQuickAdd(img, ev);
+    else hooks.onOpen && hooks.onOpen(img, ev);
   };
   d.oncontextmenu = (ev) => { ev.preventDefault(); hooks.onContext && hooks.onContext(img, ev); };
   return d;

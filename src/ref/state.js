@@ -22,6 +22,7 @@ export const W = {
   btx: 0, bty: 0, bk: 1,     // translate x/y + scale
   bFlip: false,              // 整板水平镜像(查对称用)
   bGray: false,              // 整板去色(查明度关系用)
+  bPick: false,              // 吸色模式(点击图片取色)
   bTop: -1,                  // 选中图的 z(置顶用)
 };
 

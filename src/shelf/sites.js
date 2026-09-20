@@ -8,6 +8,7 @@
 import { openDownload, setJmBusy } from '../download/panel.js';
 import { manifestOf } from '../library/store.js';
 import { showModal, hint, closeModal } from '../shared/ui.js';
+import { SITES, SS_SITES } from './site-data.js';
 
 export function openSitesDialog() {
   var browser = "chrome";
@@ -15,7 +16,7 @@ export function openSitesDialog() {
   showModal(function (box) {
     var h = document.createElement("h3"); h.textContent = "漫画网站总览"; box.appendChild(h);
     var s = document.createElement("div"); s.className = "sub";
-    s.textContent = "点站名就用「下载用的那个浏览器」打开；带 ✔ 的是已适配自动下载（可直接贴链接），带「站内搜索」的会出现在跨站搜索面板里。";
+    s.textContent = "点站名就用「下载用的那个浏览器」打开；带  的是已适配自动下载（可直接贴链接），带「站内搜索」的会出现在跨站搜索面板里。";
     box.appendChild(s);
     var lb = document.createElement("label"); lb.textContent = "用哪个浏览器打开"; box.appendChild(lb);
     var sel = document.createElement("select");
@@ -30,7 +31,7 @@ export function openSitesDialog() {
       grp.list.forEach(function (it) {
         var row = document.createElement("div"); row.className = "siterow";
         var nm = document.createElement("button"); nm.className = "sitename";
-        nm.textContent = it.n + (it.done ? " ✔" : "");
+        nm.textContent = it.n + (it.done ? " " : "");
         nm.title = it.u ? ("用 " + (browser === "edge" ? "Edge" : "Chrome") + " 打开 " + it.u) : "还没填域名";
         nm.onclick = function () {
           if (!it.u) { hint("这个站还没填域名"); return; }

@@ -56,6 +56,17 @@ export function loadWorkbench(wb) {
     im.fav = !!im.fav;
   }
   WB.inbox = WB.inbox.filter((id) => !!WB.images[id]);
+  for (const b of Object.values(WB.boards)) {
+    if (!b || typeof b !== 'object') continue;
+    b.items = Array.isArray(b.items) ? b.items.filter((it) => it && WB.images[it.id]) : [];
+    b.items.forEach((it, i) => {
+      if (typeof it.x !== 'number' || !Number.isFinite(it.x)) it.x = 0;
+      if (typeof it.y !== 'number' || !Number.isFinite(it.y)) it.y = 0;
+      if (typeof it.w !== 'number' || !it.w || !Number.isFinite(it.w)) it.w = 260;
+      if (typeof it.s !== 'number' || it.s <= 0 || !Number.isFinite(it.s)) it.s = 1;
+      if (typeof it.z !== 'number' || it.z <= 0 || !Number.isFinite(it.z)) it.z = i + 1;
+    });
+  }
   dirty = false;
 }
 
@@ -207,7 +218,8 @@ export function boardAdd(boardId, imageId2, pos) {
   if (!b || !WB.images[imageId2]) return false;
   if ((b.items || []).some((it) => it.id === imageId2)) return false;
   b.items = b.items || [];
-  b.items.push({ id: imageId2, x: (pos && pos.x) || 0, y: (pos && pos.y) || 0, s: 1, z: b.items.length + 1 });
+  b.items.push({ id: imageId2, x: (pos && pos.x) || 0, y: (pos && pos.y) || 0,
+    w: (pos && pos.w) || 260, s: 1, z: b.items.length + 1 });
   dirty = true; saveWorkbench();
   return true;
 }

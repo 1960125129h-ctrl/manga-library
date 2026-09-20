@@ -50,7 +50,7 @@ try {
   if (!cards) throw new Error('先跑 node _scripts\jm\make-fixture.mjs');
 
   // ---------- 1. 书架右键菜单 + 图片管理器(openImageManager 经 import 走通) ----------
-  await rclick('#grid > *', 0);
+  await rclick('#grid .card[data-dir$="测试用书"]', 0);
   chk('右键书本弹出上下文菜单', await ctxOn());
   const items = await ctxText();
   chk('菜单里有「管理图包…」', items.indexOf('管理图包') >= 0, items.slice(0, 60) + '…');
@@ -69,7 +69,10 @@ try {
   chk('图片管理器能关掉', String(await ev('document.getElementById("modal").classList.contains("on")')) === 'false');
 
   // ---------- 2. 进入阅读器 ----------
-  await p.ev('(function(){var c=document.querySelector("#grid > *"); if(c) c.click();})()', 2);
+  await p.ev(`(function(){
+    var c=document.querySelector(${JSON.stringify('#grid .card[data-dir$="测试用书"]')});
+    if(c) c.click();
+  })()`, 2);
   await sleep(2500);
   chk('已进入阅读器', String(await ev('!document.getElementById("reader").classList.contains("hide")')) === 'true');
 
@@ -102,12 +105,12 @@ try {
 
   // ---------- 4. 书签(bmToggle / bmFind / bmSync) ----------
   const bm0 = String(await ev('document.getElementById("bbm").textContent'));
-  chk('书签按钮初始是未加', bm0.indexOf('☆') >= 0, bm0);
+  chk('书签按钮初始是未加', bm0 === '书签', bm0);
 
   await ev('document.getElementById("bbm").click()');
   await sleep(500);
   const bm1 = String(await ev('document.getElementById("bbm").textContent'));
-  chk('点一下变成已书签', bm1.indexOf('★') >= 0, bm1);
+  chk('点一下变成已书签', bm1 === '已书签', bm1);
 
   const saved = String(await ev('(function(){try{var a=JSON.parse(localStorage.getItem("bookmarks")||"[]");return a.length+"|"+(a[0]?(a[0].dir||"")+"|"+a[0].ci+"|"+a[0].pi:"");}catch(e){return "err";}})()'));
   chk('书签落盘到 localStorage', saved.indexOf('|') > 0 && !/^0\|/.test(saved), saved);
@@ -115,7 +118,7 @@ try {
   await ev('document.getElementById("bbm").click()');
   await sleep(500);
   const bm2 = String(await ev('document.getElementById("bbm").textContent'));
-  chk('再点一下取消书签', bm2.indexOf('☆') >= 0, bm2);
+  chk('再点一下取消书签', bm2 === '书签', bm2);
 
   // ---------- 5. 缩略图栏右键菜单(showImgCtx) ----------
   await ev('(function(){var b=document.getElementById("thumbtoggle"); if(b) b.click();})()');

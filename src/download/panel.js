@@ -923,8 +923,8 @@ export function showWorkList(S2, r, items, ui, ni, fi, ti, mc, cancelBtn, goBtn,
     window.mangaLib.onDownload(function (ev) {
       if (!ev) return;
       if (ev.type === "batch-start") { line("开始下载 " + ev.total + " 本"); }
-      else if (ev.type === "work-start") { line("▶ " + (ev.index + 1) + "/" + ev.total + "　" + ev.title); if (dlinfoL) dlinfoL.textContent = "第 " + (ev.index + 1) + " / " + ev.total + " 本　" + ev.title; }
-      else if (ev.type === "work-done") { line((ev.ok ? "✔ " : "✘ ") + (ev.index + 1) + "/" + ev.total + "　" + ev.title + (ev.ok ? ("　" + (ev.images || 0) + " 张") : "　失败"), ev.ok ? "#8bc98b" : "#e08a8a"); }
+      else if (ev.type === "work-start") { line((ev.index + 1) + "/" + ev.total + "　" + ev.title); if (dlinfoL) dlinfoL.textContent = "第 " + (ev.index + 1) + " / " + ev.total + " 本　" + ev.title; }
+      else if (ev.type === "work-done") { line((ev.ok ? "完成 " : "失败 ") + (ev.index + 1) + "/" + ev.total + "　" + ev.title + (ev.ok ? ("　" + (ev.images || 0) + " 张") : "　失败"), ev.ok ? "#8bc98b" : "#e08a8a"); }
       else if (ev.type === "chapter-start") { if (dlinfoL) dlinfoL.textContent = "第 " + ((ev.work || 0) + 1) + " 本：" + ev.label; }
       else if (ev.type === "prog") { bar.style.width = (ev.total ? Math.round((ev.got || 0) / ev.total * 100) : 0) + "%"; if (dlinfoR) dlinfoR.textContent = (ev.got || 0) + " / " + (ev.total || "?") + " 张"; }
       else if (ev.type === "log") { dlLog(S2, "  " + ev.line); }
@@ -1051,7 +1051,7 @@ export function showPickList(S2, r, items, ui, ni, fi, ti, mc, cancelBtn, goBtn,
     S2.running = true;
     bgBtn.style.display = "";
     var bd3 = document.getElementById("btn-download");
-    if (bd3) { bd3.classList.add("running"); bd3.textContent = "⏳ 下载中…"; }
+    if (bd3) { bd3.classList.add("running"); bd3.textContent = "下载中…"; }
     goBtn.style.display = "none";
     // pixiv 用户链接: 保存名用作者名; EH tag: 自动按画廊标题建文件夹
     var saveName = ni.value.trim() || r.title || "批量下载";
@@ -1116,7 +1116,7 @@ export function onDlEvent(ev) {
     var sum = ev.summary || {};
     s.incr = !!ev.incremental;   // 后端是否已增量重建好这本书
     s.head.textContent = "下载完成";
-    dlSetStage(s, 4, "下载完成 ✓", 100);
+    dlSetStage(s, 4, "下载完成", 100);
     dlLog(s, "合计: " + sum.chapters + " 话 / " + sum.images + " 张 / " + fmtBytes(sum.bytes) + (s.incr ? "（已增量重建）" : ""), "ok");
     dlDone(s, true);
   }

@@ -4,7 +4,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const { cpSync } = require('node:fs');
-const { pathToFileURL } = require('node:url');
+const { pathToFileURL, fileURLToPath } = require('node:url');
 
 const DEFAULT_LIB = path.resolve(__dirname, '..');
 
@@ -571,6 +571,9 @@ ipcMain.handle('wb:save', async (e, wb) => {
   await writeJSON(wbJson(), wb);
   return { ok: true, images: Object.keys(wb.images).length };
 });
+const { registerRefColorIpc } = require('./ref-colors.js');
+registerRefColorIpc({ ipcMain, libRoot: () => LIB, loadSharp, logLine });
+
 
 ipcMain.handle('state:progress', async (e, dir, val) => {
   const p = readJSON(progJson(), {});

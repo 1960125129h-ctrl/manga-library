@@ -20,7 +20,7 @@ export function renderBookmarks() {
   var m = meta(), q = S.q.trim().toLowerCase();
   var a = bmAll().filter(function (x) { return !q || String(x.name).toLowerCase().indexOf(q) >= 0; });
   elGrid.innerHTML = '';
-  if (!a.length) { var d = document.createElement('div'); d.id = 'empty'; d.textContent = '还没有书签。阅读时点右上「☆ 书签」即可添加。'; elGrid.appendChild(d); }
+  if (!a.length) { var d = document.createElement('div'); d.id = 'empty'; d.textContent = '还没有书签。阅读时点右上“书签”即可添加。'; elGrid.appendChild(d); }
   a.forEach(function (x) {
     var c = null;
     for (var i = 0; i < COMICS.length; i++) if (COMICS[i].dir === x.dir) c = COMICS[i];
@@ -31,7 +31,7 @@ export function renderBookmarks() {
     else { var nn = document.createElement('div'); nn.className = 'none'; nn.textContent = '原书已不在库中'; tp.appendChild(nn); }
     el.appendChild(tp);
     var mt = document.createElement('div'); mt.className = 'cmeta';
-    var t = document.createElement('div'); t.className = 'ctitle'; t.textContent = '🔖 ' + x.name; mt.appendChild(t);
+    var t = document.createElement('div'); t.className = 'ctitle'; t.textContent = x.name; mt.appendChild(t);
     var sub = document.createElement('div'); sub.className = 'csub'; sub.textContent = (x.ch || '') + ' · 第' + (x.pi + 1) + '/' + (x.total || '?') + '页'; mt.appendChild(sub);
     var tm = document.createElement('div'); tm.className = 'cread'; tm.textContent = fmtTime(x.t); mt.appendChild(tm);
     el.appendChild(mt);
