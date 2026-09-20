@@ -37,6 +37,9 @@ import { initCtxMenu, fillCtx, hideCtx, showCtx } from '../shared/ctx-menu.js';
 import { initAppActions, showChapterPicker, runInBackground, jmAppend, PVCLOSE, doRebuild, syncJmBtn,
          JM_LOG, setJQ } from '../app/actions.js';
 import { initBoot, afterBoot } from '../app/boot.js';
+// 工作台(美术参考)。对这个文件的改动只有这一行 import + 下面一行 init 调用 ——
+// 工作台自己造自己的 DOM、自己接自己的按钮、自己取自己的数据。
+import { initWorkbench } from '../ref/index.js';
 
 var RECOG_VER = "v3-20260914";
 (function () {
@@ -342,7 +345,8 @@ try { var __rs = JSON.parse(localStorage.getItem("readerDefaults") || "{}"); if 
     initCtxMenu({ DISK: DISK, elCtx: elCtx });
     initAppActions({ DISK: DISK, PVQ: PVQ, DL_SVG: DL_SVG });
     initBoot({ COMICS: COMICS, GROUP_DIM_LABEL: GROUP_DIM_LABEL, LIBTITLE: LIBTITLE, STANDALONE: STANDALONE, elBack: elBack, elReader: elReader, elSearch: elSearch, elSearchWrap: elSearchWrap, elShelf: elShelf, elSortWrap: elSortWrap });
-    initShelfSelect({ DISK: DISK });
+    initWorkbench({ DISK: DISK, COMICS: COMICS, hint: hint });
+initShelfSelect({ DISK: DISK });
     initLibraryStore({ COMICS: COMICS, DISK: DISK, autoAuthor: autoAuthor, pages: pages });
     initShelfRender(Object.assign({},
       {COMICS: COMICS, GROUP_DIM_LABEL: GROUP_DIM_LABEL, GROUP_DIM_ORDER: GROUP_DIM_ORDER, SORT_ITEMS: SORT_ITEMS, VTID: VTID, elAlbumBar: elAlbumBar, elCatTabs: elCatTabs, elSearch: elSearch, elStat: elStat},

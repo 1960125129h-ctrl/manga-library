@@ -126,9 +126,18 @@ for (const f of MODULES) {
     for (const q of String(m[1]).split(',')) { const n = q.trim().match(/^([A-Za-z_$][\w$]*)/); if (n) local.add(n[1]); }
   }
   for (const m of raw.matchAll(/catch\s*\(\s*([A-Za-z_$][\w$]*)/g)) local.add(m[1]);
-  // import 进来的
+  // import 进来的。注意 `X as Y` 要把**两边都**记上:
+  //   · Y 是本模块可用的名字
+  //   · X 是对源模块导出的引用 —— 它在源码里以裸标识符出现, 不记就会被当成"忘了 import"
+  //     (第一版只记 Y, 于是 import { refresh as initViewRefresh } 被误报成漏了 refresh)
   for (const m of raw.matchAll(/import\s*\{([^}]*)\}/g)) {
-    for (const q of String(m[1]).split(',')) { const n = q.trim().replace(/^.*\s+as\s+/, '').match(/^([A-Za-z_$][\w$]*)/); if (n) local.add(n[1]); }
+    for (const q of String(m[1]).split(',')) {
+      const raw2 = q.trim();
+      const orig = raw2.match(/^([A-Za-z_$][\w$]*)/);
+      const alias = raw2.match(/\sas\s+([A-Za-z_$][\w$]*)/);
+      if (orig) local.add(orig[1]);
+      if (alias) local.add(alias[1]);
+    }
   }
   // 注入进来的: 模块顶层 let 行 + 从 ctx/o/c 赋值的
   const inj = new Set();
