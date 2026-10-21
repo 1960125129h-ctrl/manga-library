@@ -9,7 +9,7 @@ const WORK = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.resolve(WORK, '..', '..');
 const APP = path.join(LIB, '_app');
 const ELECTRON = path.join(APP, 'node_modules/electron/dist/electron.exe');
-const out = process.argv[2] || path.join(LIB, '_预览', 'app.png');
+const out = process.argv[2] || path.join(LIB, '_visual-check', 'app.png');
 const W = parseInt(process.argv[3] || '1400', 10);
 const H = parseInt(process.argv[4] || '900', 10);
 

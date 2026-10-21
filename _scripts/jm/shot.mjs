@@ -1,5 +1,5 @@
 // shot.mjs —— 一条命令把 HTML 截成 PNG(内部用 Electron, 不开调试端口)
-// 用法: node _scripts\jm\shot.mjs --html "D:/.../书库.html" --out "_预览/x.png" [--w 1400] [--h 900] [--wait 3000] [--js 脚本.js] [--show]
+// 用法: node _scripts\jm\shot.mjs --html "D:/.../书库.html" --out "_visual-check/x.png" [--w 1400] [--h 900] [--wait 3000] [--js 脚本.js] [--show]
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,7 +19,7 @@ if (!args.length || args.includes('--help')) {
   process.exit(args.length ? 0 : 1);
 }
 const hasOut = args.includes('--out');
-if (!hasOut) args.push('--out', path.join(LIB, '_预览', 'shot-' + Date.now() + '.png'));
+if (!hasOut) args.push('--out', path.join(LIB, '_visual-check', 'shot-' + Date.now() + '.png'));
 
 const p = spawn(ELECTRON, [MAIN, ...args], { stdio: 'inherit', cwd: LIB });
 p.on('exit', (code) => process.exit(code === 0 ? 0 : 1));

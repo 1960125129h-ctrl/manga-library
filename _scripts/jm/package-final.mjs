@@ -12,7 +12,7 @@ const stage = path.join(root, '_backup', `package-stage-${stamp}`);
 const zip = path.join(root, '_backup', `workbench-douyin-final-${stamp}.zip`);
 
 const includeDirs = ['src', '_app', '_scripts', '_visual-check', 'icons'];
-const skipDirs = new Set(['node_modules', '.git', '_backup', '_css-backup', '_thumbs', '_预览', '漫画']);
+const skipDirs = new Set(['node_modules', '.git', '_backup', '_archive', '_cache', '_thumbs', '漫画']);
 const skipFiles = new Set(['.app-pid']);
 
 function copyFile(from, to) {

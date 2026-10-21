@@ -25,14 +25,14 @@ _pkg-boot.log
 node_modules/
 _app/node_modules/
 
-# ---- 抓取用的浏览器 profile(含登录态, 且被进程锁着) ----
-_scripts/jm/chrome-profile/
-_scripts/jm/edge-profile/
+# ---- 抓取用的浏览器 profile(含登录态, 且被进程锁着) 与临时产物, 统一在 _cache/ ----
+_cache/
 _scripts/jm/logs/
 
 # ---- 备份与临时 ----
 _backup/
 _backup_*/
+_archive/
 _css-backup/
 _*.cjs
 _batch.json

@@ -31,8 +31,8 @@
         "to": "_scripts",
         "filter": [
           "**/*",
-          "!**/chrome-profile/**",
-          "!**/edge-profile/**",
+          "!**/_cache/**",
+          "!**/_archive/**",
           "!**/jm/logs/**",
           "!**/node_modules/**",
           "!**/*.log",

@@ -9,9 +9,11 @@ import { cleanProfileCache, profileSizeMB } from './profile-cache.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', '..');
 
+// 2026-10-21 起 profile 统一放项目根的 _cache/(原来散在 _scripts/jm 下)
+const CACHE = path.join(ROOT, '_cache');
 const targets = [
-  { 名字: 'Chrome(chrome-profile)', 目录: path.join(HERE, 'chrome-profile') },
-  { 名字: 'Edge(edge-profile)', 目录: path.join(HERE, 'edge-profile') }
+  { 名字: 'Chrome(_cache/chrome-profile)', 目录: path.join(CACHE, 'chrome-profile') },
+  { 名字: 'Edge(_cache/edge-profile)', 目录: path.join(CACHE, 'edge-profile') }
 ];
 
 let anyLocked = 0, totalFreed = 0;

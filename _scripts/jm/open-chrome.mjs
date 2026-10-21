@@ -8,7 +8,8 @@ import { cleanProfileCache } from './profile-cache.mjs';
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const WORK = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.resolve(WORK, '..', '..');
-const PROFILE = path.join(WORK, 'chrome-profile');
+const CACHE = path.join(LIB, '_cache');   // 登录态与临时产物统一放项目根的 _cache/(不再散在 _scripts/jm 里)
+const PROFILE = path.join(CACHE, 'chrome-profile');
 const PORT = 9333;
 const ARGV = process.argv.slice(2);
 const argOf = (k, dv) => { const i = ARGV.indexOf('--' + k); return i >= 0 ? ARGV[i + 1] : dv; };
@@ -74,7 +75,8 @@ for (let i = 0; i < 30; i++) {
 }
 await cdp.send('Page.bringToFront');
 const html = String(await ev('document.documentElement.outerHTML') || '');
-fs.writeFileSync(path.join(WORK, 'home.html'), html, 'utf8');
+fs.mkdirSync(CACHE, { recursive: true });
+fs.writeFileSync(path.join(CACHE, 'home.html'), html, 'utf8');
 console.log('title=' + title + ' len=' + html.length + ' 已登录=' + (/退出|登出/i.test(html)));
 console.log('loginHref=' + JSON.stringify((html.match(/href="[^"]*login[^"]*"/i) || [])[0] || 'none'));
 // 顺手把弹窗关掉、过 18 岁、并尝试用浏览器已保存的账号登录

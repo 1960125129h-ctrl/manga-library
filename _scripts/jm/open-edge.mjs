@@ -11,7 +11,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.JM_PORT || '9334', 10);
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const SRC = path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'Edge', 'User Data');
-const DST = path.join(HERE, 'edge-profile');
+const DST = path.join(HERE, '..', '..', '_cache', 'edge-profile');   // 与 chrome-profile 一起放项目根的 _cache/
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function activeProfile() {
