@@ -156,8 +156,10 @@ function isCategoryDir(dir) {
   if (hasImgDirect(dir)) return false;
   let subs;
   try {
+    // 只跳过「点开头」(系统/隐藏)。**不再跳过 `_` 开头** —— 书的名字完全可以以 _ 开头
+    // (曾经有一本 `_Rossi_ by Rodol from Patreon` 30 张图, 就是被这条规则静默吞掉的)
     subs = fs.readdirSync(dir, { withFileTypes: true })
-      .filter(e => e.isDirectory() && e.name.charAt(0) !== '.' && e.name.charAt(0) !== '_');
+      .filter(e => e.isDirectory() && e.name.charAt(0) !== '.');
   } catch (e) { return false; }
   if (!subs.length) return false;
   return subs.every(e => !hasImgDirect(path.join(dir, e.name)));
@@ -168,16 +170,19 @@ const META = (() => { try { return JSON.parse(fs.readFileSync(path.join(LIB, 'li
 const META_COMICS = META.comics || {};
 function scanLibrary(lib) {
   const comics = [];
-  const rootIgnore = new Set(['icons', 'src', 'node_modules', '_backup', '_dist', '_visual-check']);
+  // 根目录下这些是程序自己的东西, 不是书。改成显式名单(原来是「_ 开头一律跳过」,
+  // 那条规则会误伤名字以 _ 开头的书, 也让新增系统目录时必须记得加名单)
+  const rootIgnore = new Set(['icons', 'src', 'docs', 'node_modules', '_app', '_scripts', '_thumbs',
+    '_backup', '_dist', '_visual-check', '_cache', '_archive', '_preview', '_预览', '_预览页', '_对比图', '_旧文件', '_zips']);
   for (const ent of fs.readdirSync(lib, { withFileTypes: true })) {
     if (!ent.isDirectory()) continue;
     if (rootIgnore.has(ent.name)) continue;
-    if (ent.name.charAt(0) === '_' || ent.name.charAt(0) === '.') continue;
+    if (ent.name.charAt(0) === '.') continue;   // 隐藏/系统目录; 根下 _ 开头的靠上面那份名单排除
     const full = path.join(lib, ent.name);
     if (isCategoryDir(full)) {
       for (const sub of fs.readdirSync(full, { withFileTypes: true })) {
         if (!sub.isDirectory()) continue;
-        if (sub.name.charAt(0) === '_' || sub.name.charAt(0) === '.') continue;
+        if (sub.name.charAt(0) === '.') continue;   // 书名可以以 _ 开头, 不能当噪声跳过
         const c = scanComic(path.join(full, sub.name), ent.name + '/' + sub.name);
         if (c) comics.push(c);
       }
