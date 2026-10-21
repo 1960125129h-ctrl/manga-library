@@ -17,6 +17,7 @@ library.json
 # ---- 运行时状态 ----
 .progress.json
 .workbench.json
+reader-prefs.json
 *.log
 _pkg-boot.log
 
