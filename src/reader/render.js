@@ -46,10 +46,15 @@ export function renderPaged() {
   elCanvas.appendChild(wrap);
   preload();
 }
+// 「整页」只在单页模式有意义(双页要各占一半、长条是连续流), 其他模式自动按适高渲染.
+// 这里只影响"怎么画", 不改 S.fit, 这样切回单页还能记住用户选的整页.
+export function effFit() {
+  return (S.fit === "page" && S.mode !== "single") ? "height" : S.fit;
+}
 export function render() {
   if (!comic) return;
   clamp();
-  elStage.className = "stage mode-" + S.mode + " fit-" + S.fit + " dir-" + S.dir + (S.zoom ? " zoom" : "");
+  elStage.className = "stage mode-" + S.mode + " fit-" + effFit() + " dir-" + S.dir + (S.zoom ? " zoom" : "");
   var readerEl = document.getElementById("reader");
   readerEl.dataset.mode = S.mode;
   readerEl.dataset.dir = S.dir;
@@ -111,6 +116,12 @@ export function syncButtons() {
   document.getElementById("f-width").classList.toggle("on", S.fit === "width");
   document.getElementById("f-height").classList.toggle("on", S.fit === "height");
   document.getElementById("f-original").classList.toggle("on", S.fit === "original");
+  var bp2 = document.getElementById("f-page");
+  if (bp2) {
+    bp2.classList.toggle("on", S.fit === "page");
+    bp2.disabled = S.mode !== "single";          // 双页/长条下不可用
+    bp2.title = S.mode === "single" ? "整页：宽和高都不超出显示范围，并且放大到能放下的最大尺寸" : "整页只在单页模式可用（双页/长条下自动按适高显示）";
+  }
   document.getElementById("bcover").classList.toggle("on", S.cover);
   var bz2 = document.getElementById("bzoom"); if (bz2) bz2.classList.toggle("on", !!S.zoom);
   var bz2o = document.getElementById("bzoomout"); if (bz2o) bz2o.classList.toggle("on", !!S.zoom);

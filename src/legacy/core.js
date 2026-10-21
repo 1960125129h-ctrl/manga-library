@@ -568,6 +568,11 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
   document.getElementById("m-scroll").onclick = function () { S.mode = "scroll"; render(); saveReaderDefaults(); };
   document.getElementById("f-width").onclick = function () { S.fit = "width"; render(); };
   document.getElementById("f-height").onclick = function () { S.fit = "height"; render(); };
+  var fPage = document.getElementById("f-page");
+  if (fPage) fPage.onclick = function () {
+    if (S.mode !== "single") { hint("整页只在单页模式可用，先切到单页"); return; }
+    S.fit = "page"; render();
+  };
   document.getElementById("f-original").onclick = function () { S.fit = "original"; render(); };
   document.getElementById("bcover").onclick = function () { S.cover = !S.cover; render(); };
   document.getElementById("sidetoggle").onclick = function () { S.sidebar = !S.sidebar; syncButtons(); save(); saveReaderDefaults(); };

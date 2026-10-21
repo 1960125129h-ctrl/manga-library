@@ -32,7 +32,9 @@ export function zoomStep(d) {
 export function applyZoom(z) {
   S.zscale = z; S.zoom = Math.abs(z - 1) > 0.001;
   elStage.style.setProperty("--zscale", String(z));
-  var cls = "stage mode-" + S.mode + " fit-" + S.fit + " dir-" + S.dir;
+  // 与 render.js 的 effFit() 保持一致: 整页在非单页模式下按适高渲染
+  var _fit = (S.fit === "page" && S.mode !== "single") ? "height" : S.fit;
+  var cls = "stage mode-" + S.mode + " fit-" + _fit + " dir-" + S.dir;
   elStage.className = cls + (S.zoom ? " zoom" : "");
   var i, ims = elStage.querySelectorAll("img.pageimg");
   if (!S.zoom) {

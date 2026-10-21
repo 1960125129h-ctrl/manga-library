@@ -46,6 +46,11 @@ button.b.on{background:linear-gradient(135deg,var(--accent),var(--accent2));colo
 #stage.fit-contain .pageimg{max-width:var(--sw);max-height:var(--sh);width:auto;height:auto;object-fit:contain}
 #stage.fit-width .pageimg{width:var(--sw);height:auto;max-height:none;object-fit:contain}
 #stage.fit-width .pagewrap{width:var(--sw)}
+/* 整页: 把页面框撑成整个可用区, 图片 object-fit:contain ->
+   宽高两个方向都不超出, 同时放大到能放下的最大尺寸(比显示区小的图也会被放大,
+   这是它和「适高」唯一的实质差别: 适高只加 max-*, 小图不放大) */
+#stage.fit-page .pagewrap{width:var(--sw);height:var(--sh);max-width:none;max-height:none}
+#stage.fit-page .pageimg{width:100%;height:100%;max-width:none;max-height:none;object-fit:contain}
 #stage.fit-original .pageimg{max-width:none;max-height:none;width:auto;height:auto}
 /* 双页: 两张并排, 每张最多占一半可用宽 */
 #stage.mode-double .pagewrap{width:var(--sw);justify-content:center}
