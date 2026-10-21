@@ -113,7 +113,8 @@ export async function delImage(idx) {
   S.pi = Math.max(0, Math.min(S.pi, Math.max(0, nOf(comic.chapters[S.ci] || {}) - 1)));
   applyThumbs(); renderChapters(); render();
   hint("已删除这张图" + (r.renamed ? "（剩余图片已重排编号）" : ""));
-  if (DISK.rescan) { try { await DISK.rescan({ quiet: true, offline: true }); } catch (e2) {} }
+  // 只重建这一本(--only 增量), 不再全库重建: 全量 711 本约 9.4 秒, 单本约 2.7 秒
+  if (DISK.rescan) { try { await DISK.rescan({ quiet: true, offline: true, dirs: [comic.dir] }); } catch (e2) {} }
 }
 export async function delChapter(idx) {
   if (!comic) return;
@@ -132,7 +133,7 @@ export async function delChapter(idx) {
   S.pi = 0;
   renderChapters(); render();
   hint("已删除这一话：" + label + (comic.chapters.length ? "" : "（这本书已经没有章节了）"));
-  if (DISK.rescan) { try { await DISK.rescan({ quiet: true, offline: true }); } catch (e2) {} }   // 只重建书库.html, 不跳回主页
+  if (DISK.rescan) { try { await DISK.rescan({ quiet: true, offline: true, dirs: [comic.dir] }); } catch (e2) {} }   // 只重建这一本(增量), 不跳回主页
 }
 export function flyOpenComic(c, coverImg) {
   if (!SET.flyAnim || !coverImg || !coverImg.getBoundingClientRect) { openComic(c); return; }

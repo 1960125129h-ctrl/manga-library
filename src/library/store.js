@@ -6,7 +6,7 @@
 // 搬走这一层, 其余函数的依赖面会立刻变窄。
 //
 // 归属划分:
-//   · CACHE / saveTimer / libTimer 由本模块持有 —— 它们会被整体重新赋值或重设定时器,
+//   · CACHE / saveTimers / libTimer 由本模块持有 —— 它们会被整体重新赋值或重设定时器,
 //     不能按值注入给别的模块; core 启动时用 setCACHE() 把进度灌进来。
 //   · PKEY / MKEY / CN_D / CN_U 只在这里用, 一起搬走。
 //   · CMAP 依赖 COMICS, 所以在 initLibraryStore 里建(dir -> 条目 的查找表)。
@@ -23,7 +23,7 @@ import { SEARCH_HAY, setSearchHay } from '../shelf/state.js';   // buildSearchHa
 
 // ---- 本模块持有的状态 ----
 export let CACHE = null;      // 进度缓存(library.json 的 progress; 桌面版启动时灌入)
-let saveTimer = null;         // 进度落盘的防抖定时器
+let saveTimers = Object.create(null);   // 进度落盘的防抖定时器, 按书分桶(一本一个): 换书时不会把上一本还没落盘的定时器 clearTimeout 掉
 let libTimer = null;          // library.json 落盘的防抖定时器
 
 // ---- 只在本模块使用的常量 ----
@@ -40,8 +40,12 @@ export function prog(dir) {
 export function setProg(dir, o) {
   if (CACHE) {
     CACHE[dir] = o;
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () { DISK.setProgress(dir, o); }, 350);
+    var t0 = saveTimers[dir];
+    if (t0) clearTimeout(t0);
+    saveTimers[dir] = setTimeout(function () {
+      delete saveTimers[dir];
+      DISK.setProgress(dir, o);
+    }, 350);
     return;
   }
   try { localStorage.setItem(PKEY + dir, JSON.stringify(o)); } catch (e) {}

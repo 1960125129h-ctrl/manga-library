@@ -482,15 +482,22 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
     function cur() {
       try { return localStorage.getItem("shelfTheme") || "dark"; } catch (e) { return "dark"; }
     }
+    var THEME_NAME = { dark:"暗黑", light:"灰白", eye:"护眼", paper:"米纸" };
     function apply(t) {
       document.body.setAttribute("data-shelf-theme", t === "dark" ? "" : t);
       var current = t;
-      bt.innerHTML = themes.map(function(k){
+      // 只重画色点, 不动按钮里那个写主题名的 span(#btn-theme-label):
+      // 原来整块 bt.innerHTML 替换把这个 span 一起销毁 -> 按钮上的文字启动就消失
+      var dots = bt.querySelector(".tb-dots");
+      if (!dots) { dots = document.createElement("span"); dots.className = "tb-dots"; bt.insertBefore(dots, bt.firstChild); }
+      dots.innerHTML = themes.map(function(k){
         return '<span data-t="'+k+'" style="display:inline-block;width:16px;height:16px;border-radius:50%;background:'+colors[k]+';border:2px solid '+(k===current?'var(--accent)':'var(--border2)')+';margin:0 2px;transition:all .3s;vertical-align:middle;cursor:pointer"></span>';
       }).join('');
-      bt.querySelectorAll('span').forEach(function(s){
+      dots.querySelectorAll('span').forEach(function(s){
         s.onclick = function(e){ e.stopPropagation(); apply(s.dataset.t); };
       });
+      var lab = document.getElementById("btn-theme-label");
+      if (lab) lab.textContent = THEME_NAME[t] || "暗黑";
       try { localStorage.setItem("shelfTheme", t); } catch (e) {}
     }
     apply(cur());

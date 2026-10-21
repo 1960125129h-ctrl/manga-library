@@ -146,8 +146,8 @@ export async function mergeBook(dir) {
   var r = null;
   try { r = await DISK.mergeBook(dir); } catch (e) { r = { ok: false, msg: String(e && e.message ? e.message : e) }; }
   if (!r || !r.ok) { hint("合并失败: " + ((r && r.msg) || "未知错误")); return; }
-  hint((r.msg || "已合并") + "　正在重建书库…");
-  if (DISK.rescan) { try { await DISK.rescan({ quiet: true }); } catch (e2) {} }
+  hint((r.msg || "已合并") + "　正在重建这本书…");
+  if (DISK.rescan) { try { await DISK.rescan({ quiet: true, dirs: [dir] }); } catch (e2) {} }
   hint("已合并: " + dir + "（图片都在 全部\\ 里，连续编号）");
 }
 export function setRating(dir, manual) {   // manual: true=18+ / false=全年龄 / null=恢复自动
@@ -199,7 +199,7 @@ export function confirmDelete(dir) {
         }
         hint("已删除：" + dir);
         closeModal();
-        if (DISK && DISK.rescan) await DISK.rescan({ offline: true });
+        if (DISK && DISK.rescan) await DISK.rescan({ offline: true, dirs: [dir] });   // 目录已删, 增量扫描会把这本书从 manifest 摘掉
         else { invalidateCard(dir); renderShelf(); }
       } catch (err) {
         del.disabled = false; del.textContent = "删除";

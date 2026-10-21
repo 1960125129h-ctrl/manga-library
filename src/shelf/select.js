@@ -166,7 +166,8 @@ export function deleteMany(list, done) {
         if (removed[COMICS[k].dir]) COMICS.splice(k, 1);
       }
     }
-    if (DISK && DISK.rescan) { try { await DISK.rescan({ offline: true }); } catch (e2) {} }
+    var gone = arr.filter(function (d) { return bad.indexOf(d) < 0; });
+    if (DISK && DISK.rescan) { try { await DISK.rescan({ offline: true, dirs: gone }); } catch (e2) {} }
     arr.forEach(function (d) { invalidateCard(d); });
     renderShelf();
     hint("已删除 " + ok + " 本" + (bad.length ? "，" + bad.length + " 本失败" : ""));

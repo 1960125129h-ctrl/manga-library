@@ -54,7 +54,7 @@ function watchLibrary() {
 }
 
 /* 删章节/删图/重命名后: 异步增量重建该书, 期间静默文件监听(不阻塞 IPC) */
-function rebuildBook(dir) {
+function rebuildBookOnce(dir) {
   try {
     const script = path.join(LIB, '_scripts', 'build-library.mjs');
     if (!fs.existsSync(script)) return Promise.resolve(false);
@@ -66,6 +66,36 @@ function rebuildBook(dir) {
       p2.on('exit', (code) => res(code === 0));
     });
   } catch (e) { return Promise.resolve(false); }
+}
+/* 单飞化: 同一本书的重建请求合并成一轮。
+   批量删图会连续触发几十次 deleteImage, 原来就是几十个 node 子进程一起扫同一本书;
+   现在第一个请求真跑, 其余只把 dirty 置位, 跑完补一轮, 调用方都等到最后一起返回。 */
+const rebuildState = new Map();   // dir -> { running, dirty, waiters }
+function rebuildBook(dir) {
+  const key = String(dir);
+  let st = rebuildState.get(key);
+  if (!st) { st = { running: false, dirty: false, waiters: [] }; rebuildState.set(key, st); }
+  return new Promise((resolve) => {
+    st.waiters.push(resolve);
+    if (st.running) { st.dirty = true; return; }   // 已有一轮在跑: 记脏, 跑完再补
+    const step = () => {
+      st.running = true;
+      rebuildBookOnce(key).then((ok) => {
+        st.running = false;
+        if (st.dirty) { st.dirty = false; step(); return; }
+        rebuildState.delete(key);
+        const ws = st.waiters.splice(0);
+        for (const w of ws) w(ok);
+      }, () => {
+        st.running = false;
+        if (st.dirty) { st.dirty = false; step(); return; }
+        rebuildState.delete(key);
+        const ws = st.waiters.splice(0);
+        for (const w of ws) w(false);
+      });
+    };
+    step();
+  });
 }
 
 /* ---------- 文件关联: 双击压缩包用本应用打开 ----------
@@ -581,11 +611,18 @@ const { registerRefColorIpc } = require('./ref-colors.js');
 registerRefColorIpc({ ipcMain, libRoot: () => LIB, loadSharp, logLine });
 
 
+// 进度落盘: 排队执行。原来是 readJSON -> 改一个键 -> await writeJSON 的无锁读改写,
+// 两次 invoke 的 await 窗口重叠时, 后一个的整份快照会覆盖前一个刚写的键 -> 偶发丢进度。
+let progChain = Promise.resolve();
 ipcMain.handle('state:progress', async (e, dir, val) => {
-  const p = readJSON(progJson(), {});
-  p[dir] = val;
-  await writeJSON(progJson(), p);
-  return true;
+  const run = progChain.then(async () => {
+    const p = readJSON(progJson(), {});
+    p[dir] = val;
+    await writeJSON(progJson(), p);
+  });
+  progChain = run.catch(() => {});   // 队列不因一次写失败而卡死
+  try { await run; return true; }
+  catch (err) { logLine('书库', '[进度落盘失败] ' + dir + ' ' + String((err && err.message) || err)); return false; }
 });
 
 ipcMain.handle('state:library', async (e, lib) => {
@@ -629,6 +666,14 @@ ipcMain.handle('lib:rescan', async (e, opts) => {
     // 关键: Electron 作为 Node 跑脚本必须带 ELECTRON_RUN_AS_NODE, 否则子进程不退出, 回调永不触发, 界面点了没反应
     const args = [script, '--lib', LIB];
     if (opts && opts.offline) args.push('--offline');
+    // 只重建这几本(--only 是增量: 其余书从现有 _manifest.json 沿用)。
+    // 允许调用方传 dirs: [书目录] —— 删页/删话/删书/合并文件夹这类只影响一本书的操作,
+    // 原来一律走全量重建(711 本 9.4 秒), 现在只扫那一本(约 2.7 秒, 且大头是 node 启动)。
+    // 书目录名里带逗号/全角逗号的, --only 的分隔符会把它切断 -> 宁可变慢也不冒摘错书的风险, 退回全量。
+    let onlyDirs = (opts && Array.isArray(opts.dirs)) ? opts.dirs.filter((d) => typeof d === 'string' && d.trim()) : [];
+    if (onlyDirs.length && onlyDirs.some((d) => /[,，]/.test(d))) onlyDirs = [];
+    if (onlyDirs.length && opts.dirs.length && onlyDirs.length !== opts.dirs.length) onlyDirs = [];
+    if (onlyDirs.length) args.push('--only', onlyDirs.join(','));
     execFile(process.execPath, args, { cwd: LIB, timeout: 120000, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }, (err, stdout, stderr) => {
       if (err) finish({ ok: false, msg: String(stderr || err.message).slice(0, 800) });
       else {
@@ -1643,7 +1688,7 @@ ipcMain.handle('lib:deleteChapter', async (e, dir, chPath) => {
 });
 
 /* 删除某一张图: 删完把同一文件夹里剩下的图重新编号, 免得阅读器按序号取图错位 */
-ipcMain.handle('lib:deleteImage', async (e, dir, rel) => {
+ipcMain.handle('lib:deleteImage', async (e, dir, rel, opts) => {
   try {
     if (!dir || typeof dir !== 'string' || !rel || typeof rel !== 'string') return { ok: false, msg: '无效参数' };
     const root = path.resolve(LIB);
@@ -1671,8 +1716,10 @@ ipcMain.handle('lib:deleteImage', async (e, dir, rel) => {
       });
     } catch (e2) {}
     logLine('书库', '[删除图片] ' + dir + ' \\ ' + rel + (renamed ? '（剩余已重排编号）' : ''));
-    rebuildBook(dir);   // 删除并重编号后校正页数/阅读进度(异步, 不阻塞 IPC)
-    return { ok: true, renamed: renamed, rebuilt: true };
+    // 批量删图时调用方传 { rebuild: false }: 不要每删一张就起一轮重建, 由收尾那次统一重建
+    const wantRebuild = !(opts && opts.rebuild === false);
+    if (wantRebuild) rebuildBook(dir);   // 删除并重编号后校正页数/阅读进度(异步, 不阻塞 IPC)
+    return { ok: true, renamed: renamed, rebuilt: wantRebuild };
   } catch (err) {
     return { ok: false, msg: String(err && err.message || err) };
   }

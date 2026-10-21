@@ -44,9 +44,16 @@ export function showImgCtx(x, y, idx) {
         var e = libEntry(comic.dir);
         if (!e) { hint("需要桌面版才能保存封面"); return; }
         e.coverOverride = { ci: S.ci, pi: idx };
-        if (DISK && DISK.saveLibrary) { try { DISK.saveLibrary(LIBRARY); } catch (err) {} }
         invalidateCard(comic.dir); renderShelf();
-        hint("已设为本书封面");
+        // saveLibrary 是 ipcRenderer.invoke, 返回 Promise: 拒绝进不了 try/catch, 必须挂 then/catch,
+        // 否则会先弹「已设为本书封面」而盘上什么都没写
+        var psave = (DISK && DISK.saveLibrary) ? DISK.saveLibrary(LIBRARY) : null;
+        if (psave && typeof psave.then === 'function') {
+          psave.then(function () { hint("已设为本书封面"); },
+                     function (err) { hint("封面保存失败: " + ((err && err.message) || err)); });
+        } else {
+          hint("已设为本书封面");
+        }
       } },
     { t: "在文件夹中打开", f: function () {
         if (!DISK || !DISK.reveal || !LIBROOT || !f) { hint("仅桌面版支持"); return; }
@@ -175,13 +182,13 @@ export function openImageManager(dir) {
           var rel = imgFile(chObj, pis[pi2]);
           if (!rel) { failCount++; continue; }
           try {
-            var r = await DISK.deleteImage(dir, rel);
+            var r = await DISK.deleteImage(dir, rel, { rebuild: false });   // 批量删: 每张都重建会起几十个 node 子进程
             if (r && r.ok) { okCount++; } else { failCount++; }
           } catch (e) { failCount++; }
         }
       }
 
-      if (DISK.rescan) { try { await DISK.rescan({ quiet: true, offline: true }); } catch (e) {} }
+      if (DISK.rescan) { try { await DISK.rescan({ quiet: true, offline: true, dirs: [dir] }); } catch (e) {} }
       closeModal();
       hint("删除完成: 成功 " + okCount + (failCount ? ", 失败 " + failCount : "") + "，刷新中…");
       setTimeout(function(){ location.reload(); }, 800);

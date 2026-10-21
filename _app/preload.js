@@ -60,7 +60,7 @@ contextBridge.exposeInMainWorld('mangaLib', {
   onJm: (cb) => { ipcRenderer.removeAllListeners('jm:event'); ipcRenderer.on('jm:event', (e, d) => cb(d)); },
   deleteComic: (dir) => ipcRenderer.invoke('lib:delete', dir),
   deleteChapter: (dir, ch) => ipcRenderer.invoke('lib:deleteChapter', dir, ch),
-  deleteImage: (dir, rel) => ipcRenderer.invoke('lib:deleteImage', dir, rel),
+  deleteImage: (dir, rel, opts) => ipcRenderer.invoke('lib:deleteImage', dir, rel, opts),   // opts.rebuild=false: 批量删图时不要每张都重建
   renameBook: (oldDir, newName) => ipcRenderer.invoke('lib:renameBook', oldDir, newName),
   mergeBook: (dir) => ipcRenderer.invoke('lib:mergeBook', dir),
   siteSearch: (kw, sites) => ipcRenderer.invoke('site:search', kw, sites),
