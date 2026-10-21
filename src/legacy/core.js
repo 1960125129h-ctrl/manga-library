@@ -32,6 +32,7 @@ import { initReaderOpen, vtWrap, openComic, closeComic, flyOpenComic, flyCloseCo
 import { initReaderZoom, applyZoom, centerCanvas, zoomStep, zoomAt, onWheel, refit } from '../reader/zoom.js';
 import { initReaderNav, nextPage, prevPage, nextChapter, prevChapter, cur, pages, clamp, openThemeDialog, bgParallax } from '../reader/nav.js';
 import { initReaderTouch } from '../reader/touch.js';
+import { loadPrefs } from '../reader/prefs.js';
 import { initReaderFullscreen } from '../reader/fullscreen.js';
 import { initCtxMenu, fillCtx, hideCtx, showCtx } from '../shared/ctx-menu.js';
 // JM_LOG 只需读(传给 initDownload); setJQ 是给下面这段队列订阅回调用的 —— JQ 由
@@ -71,21 +72,11 @@ var AUTHOR_ALIAS_FILE = {};   // _scripts\author-alias.json 的内容(UI 里合�
 
   // ─── ② 恢复上次的偏好(阅读主题 / 侧栏 / 方向 / 模式) ─────────────────────────────────────
 try { var __rt = JSON.parse(localStorage.getItem("readerTheme") || "{}"); if (__rt.theme) S.theme = __rt.theme; if (typeof __rt.bright === "number") S.bright = __rt.bright; } catch (e) {}
-try {
-  var __rs = JSON.parse(localStorage.getItem("readerDefaults") || "{}");
-  if (typeof __rs.sidebar === "boolean") S.sidebar = __rs.sidebar;
-  if (typeof __rs.thumbs === "boolean") S.thumbs = __rs.thumbs;
-  if (__rs.dir) S.dir = __rs.dir;
-  if (__rs.mode) S.mode = __rs.mode;
-  // 一次性迁移: 旧默认右→左改为新默认左→右; 之后仍可手动切回右→左
-  if (!localStorage.getItem("readerDirMigrated")) {
-    localStorage.setItem("readerDirMigrated", "1");
-    if (S.dir === "rtl") {
-      S.dir = "ltr";
-      try { localStorage.setItem("readerDefaults", JSON.stringify({ sidebar: S.sidebar, thumbs: S.thumbs, dir: S.dir, mode: S.mode })); } catch (e) {}
-    }
-  }
-} catch (e) {}
+// 阅读器显示偏好: 全局一份(书库根目录 reader-prefs.json, 桌面端和手机端共用)。
+// 先用本机镜像把界面立起来(同步), 再异步跟文件对齐 —— 对齐完把主题也套一次。
+loadPrefs().then(function () {
+  try { applyReaderTheme(); } catch (e) {}
+}).catch(function () {});
 
 
   // 手机端长按 -> 右键菜单(书架卡片 / 章节 / 预览等); 阅读器画面由 touch.js 自行处理

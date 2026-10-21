@@ -19,6 +19,7 @@ import { imgFile, nOf, chLabel, pageList } from '../shared/chapter.js';
 import { enc } from '../shared/text.js';
 import { hint } from '../shared/ui.js';
 import { resetReaderFullscreen } from '../reader/fullscreen.js';
+import { prefs, applyToState } from './prefs.js';
 import { card } from '../shelf/render.js';
 
 // ---- 本模块持有的状态(所有读写点都在本模块内) ----
@@ -207,31 +208,15 @@ window.addEventListener("popstate", function () {
 export function openComic(c) {
   setComic(c);
   NAVFWD.length = 0;   // 新开一本书, 清掉"前进"记录(和浏览器一致)
-  var p = prog(c.dir);
-  const mobileTouch = !(window.mangaLib && window.mangaLib.isElectron) && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
-  S.ci = 0; S.pi = 0; S.mode = "single"; S.fit = "height"; S.dir = "ltr"; S.cover = false; S.sidebar = !mobileTouch; S.thumbs = false; S.wheel = true;
-  var bigPlat = isBigPlat(c.dir);      // 只影响"篇/张"等单位和上下篇按钮文案; 预览/翻页全部默认顺序
-  var reverseDefault = false;
-  S.rev = reverseDefault; S.prevRev = reverseDefault;
-  if (reverseDefault && c.chapters.length) S.pi = Math.max(0, nOf(c.chapters[0]) - 1);   // 倒序时从最后一页(最新那张)进
+  var p = prog(c.dir);                    // 这本书只从这里取"读到哪"(话 + 页)
+  var gp = applyToState(prefs());         // 显示偏好一律用全局那份(reader-prefs.json), 不跟书绑
+  S.ci = 0; S.pi = 0;
+  if (gp.prevRev && c.chapters.length) S.pi = Math.max(0, nOf(c.chapters[0]) - 1);   // 倒序时从最后一页(最新那张)进
   if (p) {
     S.ci = Math.max(0, Math.min(p.ci || 0, c.chapters.length - 1));
     S.pi = p.pi || 0;
-    if (p.mode) S.mode = p.mode;
-    if (p.fit) S.fit = p.fit;
-    if (p.dir) S.dir = p.dir;
-    if (typeof p.cover === "boolean") S.cover = p.cover;
-    if (typeof p.sidebar === "boolean") S.sidebar = p.sidebar;
-    if (typeof p.thumbs === "boolean") S.thumbs = p.thumbs;
-    if (typeof p.wheel === "boolean") S.wheel = p.wheel;
-    if (typeof p.rev === "boolean") S.rev = p.rev;
-    if (typeof p.prevRev === "boolean") S.prevRev = p.prevRev;
-    // 旧版 X/微博/pixiv 默认倒序: 统一迁移为顺序; 用户手动切过倒序的保留
-    if (["X", "微博", "pixiv"].indexOf(platformOf(c.dir)) >= 0 && p.prevRev && !p.prevRevUser) {
-      p.prevRev = false;
-      S.prevRev = false;
-      setProg(c.dir, p);
-    }
+    // 老数据里每本书还留着 mode/fit/dir/sidebar/thumbs/wheel/rev: 一律忽略,
+    // 否则换一本书就又"回档"到那本书上次的样子(这就是原来那个问题的根源)
     // 进度按"话 + 页"记的索引, 话删了/重排了会指错: 先用上次那一话的目录名核对一次
     if (p.cpath) {
       for (var qi = 0; qi < c.chapters.length; qi++) {

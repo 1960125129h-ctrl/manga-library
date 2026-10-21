@@ -222,6 +222,8 @@ const progJson = () => path.join(LIB, '.progress.json');
 // 用点开头的名字和 .progress.json 一致 —— 它也是"用户数据", 不该被书库扫描当成类目目录。
 const wbJson = () => path.join(LIB, '.workbench.json');
 function defaultWorkbench() { return { version: 1, images: {}, boards: {}, inbox: [] }; }
+// 阅读器的显示偏好(全局一份, 不跟书绑): 桌面端和手机端读同一个文件
+const prefsJson = () => path.join(LIB, 'reader-prefs.json');
 
 function readJSON(f, dflt) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return dflt; } }
 async function writeJSON(f, v) {
@@ -598,6 +600,54 @@ ipcMain.handle('state:all', async () => ({
 
 // 工作台整体读写。渲染进程是唯一写入方, 所以这里不做合并; 但写前会做一次结构性校验,
 // 防止半成品(比如 images 变成数组)被落盘 —— 那个文件丢了就等于参考图全丢。
+/* ================= 阅读器显示偏好(全局) ================= */
+const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright'];
+const PREF_MODES = ['single', 'double', 'scroll'];
+const PREF_FITS = ['width', 'height', 'page', 'original'];
+const PREF_THEMES = ['dark', 'light', 'eye', 'paper'];
+function sanitizePrefs(src) {
+  const s = (src && typeof src === 'object') ? src : {};
+  const o = {};
+  o.mode = PREF_MODES.indexOf(s.mode) >= 0 ? s.mode : 'single';
+  o.fit = PREF_FITS.indexOf(s.fit) >= 0 ? s.fit : 'height';
+  o.dir = s.dir === 'rtl' ? 'rtl' : 'ltr';
+  o.cover = !!s.cover;
+  o.sidebar = typeof s.sidebar === 'boolean' ? s.sidebar : true;
+  o.thumbs = typeof s.thumbs === 'boolean' ? s.thumbs : false;
+  o.wheel = typeof s.wheel === 'boolean' ? s.wheel : true;
+  o.rev = !!s.rev;
+  o.prevRev = !!s.prevRev;
+  o.theme = PREF_THEMES.indexOf(s.theme) >= 0 ? s.theme : 'dark';
+  o.bright = (typeof s.bright === 'number' && s.bright >= 0 && s.bright <= 1) ? s.bright : 1;
+  return o;
+}
+/* 首次迁移: 文件还不存在时, 以"最近读的那本书"里存的偏好作为全局初值
+   (这样用户现在的习惯不用重设一遍) */
+function deriveInitialPrefs() {
+  const lib = readJSON(libJson(), { comics: {} });
+  const prog = readJSON(progJson(), {});
+  let bestDir = null, bestT = -1;
+  for (const d of Object.keys(lib.comics || {})) {
+    const t = Number((lib.comics[d] || {}).lastRead || 0);
+    if (t > bestT) { bestT = t; bestDir = d; }
+  }
+  let src = bestDir ? prog[bestDir] : null;
+  if (!src) { for (const d of Object.keys(prog)) { const v = prog[d]; if (v && typeof v === 'object') { src = v; break; } } }
+  return sanitizePrefs(src || {});
+}
+ipcMain.handle('reader:prefsGet', async () => {
+  try {
+    if (fs.existsSync(prefsJson())) return sanitizePrefs(readJSON(prefsJson(), {}));
+    const init = deriveInitialPrefs();
+    try { await writeJSON(prefsJson(), init); } catch (e) {}
+    return init;
+  } catch (e) { return sanitizePrefs({}); }
+});
+ipcMain.handle('reader:prefsSave', async (e, p) => {
+  try { await writeJSON(prefsJson(), sanitizePrefs(p)); return { ok: true }; }
+  catch (err) { logLine('阅读器', '[偏好保存失败] ' + String((err && err.message) || err)); return { ok: false, msg: String((err && err.message) || err) }; }
+});
+
 ipcMain.handle('wb:get', async () => readJSON(wbJson(), defaultWorkbench()));
 ipcMain.handle('wb:save', async (e, wb) => {
   if (!wb || typeof wb !== 'object' || Array.isArray(wb)) return { ok: false, msg: '工作台数据必须是对象' };

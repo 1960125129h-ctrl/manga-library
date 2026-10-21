@@ -516,6 +516,30 @@ function startServer(libRoot, options) {
       if (pathname === '/login') return sendHTML(res, mobileHTML(true));
       if (pathname === '/') return serveStatic(res, libRoot, pathname);
 
+      if (pathname === '/api/reader-prefs') {
+        var prefsFile = path.join(libRoot, 'reader-prefs.json');
+        if (req.method === 'GET') {
+          var pd = {};
+          try { pd = JSON.parse(fs.readFileSync(prefsFile, 'utf8')); } catch (e) { pd = {}; }
+          return sendJSON(res, pd);
+        }
+        if (req.method === 'POST') {
+          var body = '';
+          req.on('data', function (chunk) { body += chunk; if (body.length > 16384) { try { req.destroy(); } catch (e) {} } });
+          req.on('end', function () {
+            try {
+              var src = JSON.parse(body || '{}');
+              var keys = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright'];
+              var out = {};
+              try { out = JSON.parse(fs.readFileSync(prefsFile, 'utf8')) || {}; } catch (e2) { out = {}; }   // 先读旧的再合并
+              for (var i = 0; i < keys.length; i++) if (src[keys[i]] !== undefined) out[keys[i]] = src[keys[i]];
+              fs.writeFileSync(prefsFile, JSON.stringify(out, null, 2), 'utf8');
+              sendJSON(res, { ok: true });
+            } catch (e) { sendJSON(res, { ok: false, msg: String((e && e.message) || e) }); }
+          });
+          return;
+        }
+      }
       if (pathname === '/api/library') {
         var comics = loadComics(libRoot);
         var lib = loadLibraryJson(libRoot);

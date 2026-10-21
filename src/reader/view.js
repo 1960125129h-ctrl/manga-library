@@ -10,8 +10,11 @@ import { enc } from '../shared/text.js';
 import { S } from '../app/state.js';
 import { comic, elCanvas, preloaded, lastThumbSync, thumbRaf, setLastThumbSync, setThumbRaf } from '../reader/state.js';
 import { prog, setProg } from '../library/store.js';
+import { savePrefs } from './prefs.js';
 
-export function saveReaderDefaults(){ try { localStorage.setItem("readerDefaults", JSON.stringify({ sidebar: S.sidebar, thumbs: S.thumbs, dir: S.dir, mode: S.mode })); } catch(e){} }
+// 显示偏好改成全局一份(reader-prefs.json): 换书/换设备都沿用最近这次的选择。
+// 以前这里只往 localStorage 写 4 项, 而且打开书时会被"那本书自己的记录"覆盖 -> 等于没用。
+export function saveReaderDefaults(){ savePrefs(); }
 export function applyReaderTheme() {
   var rd = document.getElementById("reader");
   if (rd) rd.setAttribute("data-theme", S.theme || "dark");

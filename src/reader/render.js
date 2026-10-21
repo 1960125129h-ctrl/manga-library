@@ -74,6 +74,7 @@ export function applyThumbs() {
   if (!box) return;
   box.classList.toggle("collapsed", !S.thumbs);
   syncSideHandles();
+  if (!comic) return;   // 没有打开的书时(比如在书架态误触「预览」按钮) pages() 会拿到 null 抛错
   if (!S.thumbs) return;
   var list = document.getElementById("thumblist");
   if (!list) return;
