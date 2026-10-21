@@ -262,7 +262,7 @@ export function buildGeneralPane(box, presetUrl, onResolved) {
     foot.appendChild(cancel); foot.appendChild(go);
 
     var S2 = { box: box, bar: bi, pct: pct, log: log, head: st, foot: foot, btnCancel: cancel, btnGo: go,
-               running: false, total: 0, doneCh: 0, imgs: 0, bytes: 0,
+               running: false, total: 0, doneCh: 0, curSeq: 0, imgs: 0, bytes: 0,
                dlinfoL: dlinfoL, dlinfoR: dlinfoR, stepEls: stepEls };
     // "后台运行"按钮必须先建好再加进按钮栏: 下面的恢复块要用到它, 建晚了会抛错把整个面板打断
     var bg = document.createElement("button"); bg.className = "btn ghost"; bg.textContent = "后台运行";
@@ -275,7 +275,7 @@ export function buildGeneralPane(box, presetUrl, onResolved) {
       S2.running = true; window._dlRunning = true;   // 不置回 running, 后面的进度事件会被整段丢掉
       S2.src = src || S2.src || "dl";                // 通用下载 / 禁漫任务的取消接口不一样, 得记住是哪一个
       if (data) {
-        S2.total = data.total || 0; S2.doneCh = data.doneCh || 0; S2.imgs = data.imgs || 0; S2.bytes = data.bytes || 0;
+        S2.total = data.total || 0; S2.doneCh = data.doneCh || 0; S2.curSeq = data.curSeq || 0; S2.imgs = data.imgs || 0; S2.bytes = data.bytes || 0;
         if (data.head) S2.head.textContent = data.head;
         if (data.barWidth) S2.bar.style.width = data.barWidth;
         if (data.infoL) S2.dlinfoL.textContent = data.infoL;
@@ -619,16 +619,33 @@ export function showWorkList(S2, r, items, ui, ni, fi, ti, mc, cancelBtn, goBtn,
     return { it: it, checked: false, expanded: false, pgrid: null, loading: false, card: null,
              name: (it.title || (isTag ? "画廊" : String(it.id || "作品"))) };
   });
-  // ---- pixiv 作品封面: 列表接口不带封面, 必须逐本查(有 260ms 限流) → 滚到才拉 + 本地缓存 ----
-  var needCover = {}, askedCover = {}, askedN = 0, gotN = 0, warned = false, gotIds = {};
+  // ---- pixiv 作品封面: 列表接口不带封面, 必须逐本查(有 400ms 节流+限流续跑) → 滚到才拉 + 本地缓存 ----
+  var needCover = {}, askedCover = {}, askedN = 0, gotN = 0, warned = false, gotIds = {}, failedCoverIds = {};
+  function addCoverRetryButton() {
+    if (document.getElementById('retry-cover-btn')) return;
+    var b = document.createElement('button');
+    b.id = 'retry-cover-btn';
+    b.className = 'btn ghost';
+    b.textContent = '重试未取到的封面';
+    b.style.marginLeft = '8px';
+    b.onclick = function () {
+      for (var k in failedCoverIds) delete askedCover[k];
+      failedCoverIds = {};
+      askCovers();
+      hint('正在重试未取到的封面…');
+    };
+    if (toolbar) toolbar.appendChild(b);
+  }
   if (window.mangaLib && DISK.pickDetails && DISK.onPickDetail) {
     DISK.onPickDetail(function (d) {
-      if (!d || d.done) {   // 这批查完了
+      if (d && d.rate) { hint(d.msg || 'Pixiv 限流，正在续跑，稍后自动重试'); return; }
+      if (d && d.error) { failedCoverIds[String(d.id)] = 1; return; }
+      if (!d || d.done) {   // 全部队列查完了
         var missing = askedN - gotN;
-        // 取不到的: 在卡片上标出来(不影响其它作品)
         for (var kk in needCover) {
           if (gotIds[kk]) continue;
           var rf = needCover[kk];
+          failedCoverIds[kk] = 1;
           try {
             rf.img.style.background = "#3a1d1d";
             if (rf.img.parentNode && rf.img.parentNode.style) rf.img.parentNode.style.outline = "1px solid #a33";
@@ -637,12 +654,14 @@ export function showWorkList(S2, r, items, ui, ni, fi, ti, mc, cancelBtn, goBtn,
         }
         if (missing > 0 && !warned) {
           warned = true;
-          hint((d && d.rate) ? ('pixiv 限流了（' + d.rate + '）：' + missing + ' 本没取到封面，已缓存的会立刻出。过几分钟再打开这个作者页即可。') : ('有 ' + missing + ' 本取不到封面/标题（R-18 未登录或限流）——已在卡片上标红，不影响其它作品。要全看到先跑 node _scripts\\jm\\site-login.mjs pixiv.net 续期。'));
+          hint((d && d.rate) ? ('Pixiv 限流后还有 ' + missing + ' 本未取到，可点“重试未取到的封面”继续补') : ('有 ' + missing + ' 本取不到封面/标题，可点“重试未取到的封面”重试'));
+          addCoverRetryButton();
         }
         return;
       }
       gotN++;
       gotIds[String(d.id)] = 1;
+      delete failedCoverIds[String(d.id)];
       var ref = needCover[String(d.id)];
       if (!ref) return;
       if (d.title && ref.title) ref.title.textContent = d.title;
@@ -1071,12 +1090,13 @@ export function onDlEvent(ev) {
   if (!s || !s.running) return;
   if (ev.src) s.src = ev.src === "jm" ? "jm" : "dl";   // 取消下载要按来源选接口
   if (ev.type === "start") {
-    s.total = ev.total;
+    s.total = ev.total; s.doneCh = 0; s.curSeq = 0; s.imgs = 0; s.bytes = 0;
     s.head.textContent = "共 " + ev.total + " 话，开始下载…";
     dlSetStage(s, 0, "正在数页数…", 0);
     dlLog(s, "输出目录: " + ev.out);
   } else if (ev.type === "chapter-start") {
-    s.head.textContent = (s.total ? "[" + (ev.index + 1) + "/" + s.total + "] " : "") + ev.label + "  准备中…";
+    s.curSeq = (s.curSeq || 0) + 1;
+    s.head.textContent = (s.total ? "[" + s.curSeq + "/" + s.total + "] " : "") + ev.label + "  准备中…";
     dlSetStage(s, 1, "正在取图片地址…", null);
   } else if (ev.type === "prog") {
     var sub = ev.got && ev.total ? ev.got / ev.total : 0;
@@ -1091,16 +1111,16 @@ export function onDlEvent(ev) {
       dlSetStage(s, 2, "下载图片 " + ev.got + "/" + ev.total + (ev.bytes ? " · " + fmtBytes(ev.bytes) : ""), p2);
     }
   } else if (ev.type === "chapter-progress") {
-    s.head.textContent = (s.total ? "[" + (ev.index + 1) + "/" + s.total + "] " : "") + ev.label + "  " + ev.done + "/" + ev.images;
+    s.head.textContent = (s.total ? "[" + (s.curSeq || (ev.index + 1)) + "/" + s.total + "] " : "") + ev.label + "  " + ev.done + "/" + ev.images;
   } else if (ev.type === "chapter-done") {
-    s.doneCh = ev.index + 1; s.imgs += ev.got; s.bytes += ev.bytes;
+    s.doneCh = s.curSeq || (ev.index + 1); s.imgs += ev.got; s.bytes += ev.bytes;
     dpSet(s, s.doneCh, s.total);
     dlSetStage(s, 3, "正在整理书库…", 95);
     dlLog(s, "[" + ev.label + "] " + ev.got + "/" + ev.expected + " 张  " + fmtBytes(ev.bytes) +
       "  " + (ev.widths.join("/") || "?") + "px" + (ev.cbz ? "  +CBZ" : "") +
       (ev.failed.length ? "  !! 缺页 " + ev.failed.length : ""), ev.failed.length ? "er" : "ok");
   } else if (ev.type === "chapter-error") {
-    s.doneCh = ev.index + 1; dpSet(s, s.doneCh, s.total);
+    s.doneCh = s.curSeq || (ev.index + 1); dpSet(s, s.doneCh, s.total);
     dlLog(s, "[" + ev.label + "] 失败: " + ev.message, "er");
   } else if (ev.type === "cancelled") {
     s.head.textContent = "已取消";
@@ -1148,8 +1168,7 @@ export function dlDone(s, ok) {
         bLib.onclick = function () {
           closeModal();
           if (!s.incr) { doRebuild(); return; }
-          if (DISK.rescan) { DISK.rescan({ offline: true, quiet: true }).then(function () { hint("已把新下的书加进书架"); }); }
-          else { location.reload(); }
+          location.reload();   // 后端已完成增量重建，只刷新一次，不再重复触发重建
         };
         bar2.appendChild(bLib);
         var bNext = document.createElement("button"); bNext.className = "btn ghost"; bNext.textContent = "下一本";
@@ -1168,9 +1187,7 @@ export function dlDone(s, ok) {
     b.onclick = function () {
       closeModal();
       if (!s.incr) { doRebuild(); return; }
-      if (DISK.rescan) {
-        DISK.rescan({ offline: true, quiet: true }).then(function () { hint("已把新下的书加进书架"); });
-      } else { location.reload(); }
+      location.reload();   // 后端已完成增量重建，只刷新一次，不再重复触发重建
     };
     // 放到列表页脚那一排(和 取消/[下载选中] 同排), 不再单独挤在 #mfoot 里
     var lf = s.box ? s.box.querySelector("[id^='listfoot']") : null;
@@ -1206,7 +1223,7 @@ export function dlSnap(s) {
   if (!s || !s.running) return;
   if (!window._dlProgress) window._dlProgress = {};
   var p = window._dlProgress;
-  p.total = s.total; p.doneCh = s.doneCh; p.imgs = s.imgs; p.bytes = s.bytes;
+  p.total = s.total; p.doneCh = s.doneCh; p.curSeq = s.curSeq || 0; p.imgs = s.imgs; p.bytes = s.bytes;
   p.head = s.head ? s.head.textContent : "";
   p.barWidth = s.bar ? s.bar.style.width : "";
   p.infoL = s.dlinfoL ? s.dlinfoL.textContent : "";

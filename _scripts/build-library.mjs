@@ -194,6 +194,7 @@ function scanLibrary(lib) {
     if (m.tags && m.tags.length) c.tags = m.tags;
     if (m.categories && m.categories.length) c.categories = m.categories;
     if (m.source) c.source = m.source;
+    if (Number.isFinite(Number(m.addedAt))) c.addedAt = Number(m.addedAt);
     if (m.desc) c.desc = m.desc;
     if (m.favorite) c.favorite = true;
   }
@@ -829,6 +830,12 @@ let authorCleaned = 0, authorBackfilled = 0;
 for (const c of comics) {
   if (c.ext) continue;
   const e = META_COMICS[c.dir] || (META_COMICS[c.dir] = { favorite: false, categories: [], tags: [], note: '' });
+  if (!Number.isFinite(Number(e.addedAt))) {
+    try {
+      const dst = fs.statSync(path.join(LIB, c.dir));
+      e.addedAt = Number.isFinite(dst.birthtimeMs) && dst.birthtimeMs > 0 ? dst.birthtimeMs : dst.mtimeMs;
+    } catch (e3) {}
+  }
   if (e.author && (AI_AUTHOR_RE.test(String(e.author).trim()) || PLATFORM_AUTHOR_RE.test(String(e.author).trim()))) {
     delete e.author; authorCleaned++;
   }
@@ -1001,6 +1008,7 @@ const libComics = comics.map(c => ({
   // 手动改过的以 library.json 为准(拖动改分组就写在这里), 其余用自动识别
   work: (!REMATCH && META_COMICS[c.dir] && META_COMICS[c.dir].work !== undefined) ? META_COMICS[c.dir].work : ((wt[c.dir] && wt[c.dir].work) || ''),
   char: (!REMATCH && META_COMICS[c.dir] && META_COMICS[c.dir].char !== undefined) ? META_COMICS[c.dir].char : ((wt[c.dir] && wt[c.dir].char) || ''),
+  addedAt: c.addedAt || (META_COMICS[c.dir] && Number(META_COMICS[c.dir].addedAt)) || 0,
   dir: c.dir, name: c.dir.split('/').pop(),
   cover: c.ext ? null : (coverOverrideOf(c) || coverOf(c.dir)),
   // 外部引用的书: 前缀用绝对 file:// 地址, 阅读器直接读别处的图

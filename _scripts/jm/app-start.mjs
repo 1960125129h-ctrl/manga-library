@@ -7,7 +7,7 @@
 // 用法: node _scripts\jm\app-start.mjs            启动/复用, 打印 PORT=<端口>
 //       node _scripts\jm\app-start.mjs --restart  先清掉在跑的实例再启动(改完代码重建后必须用它)
 //       node _scripts\jm\app-start.mjs --status   只查状态
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, execFileSync } from 'node:child_process';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,15 +62,24 @@ function remember(p) { try { fs.writeFileSync(PORTFILE, String(p), 'utf8'); } ca
 // 只杀掉"本工程上一次启动的那个实例"。
 // 不能再用 taskkill /IM electron.exe: 同一台机器上可能同时跑着别的副本(正式版 / 重构版),
 // 按镜像名无差别杀会把它们一起杀掉。
+function killOurElectron() {
+  const ps = [
+    "$ErrorActionPreference = 'SilentlyContinue'",
+    "$target = [System.IO.Path]::GetFullPath('" + ELECTRON.replace(/'/g, "''") + "')",
+    "Get-Process electron | Where-Object { $_.Path -and ([System.IO.Path]::GetFullPath($_.Path) -eq $target) } | Stop-Process -Force"
+  ].join('; ');
+  try { execFileSync('powershell', ['-NoProfile', '-Command', ps], { stdio: 'ignore' }); } catch (e) {}
+}
 function killApp() {
   let pid = 0;
   try { pid = parseInt(fs.readFileSync(PIDFILE, 'utf8').trim(), 10) || 0; } catch (e) {}
-  if (!pid) return;   // 没记录过 -> 什么都不杀(宁可少杀, 不可误杀)
-  try {
-    const out = execSync('tasklist /FI "PID eq ' + pid + '" /NH /FO CSV', { encoding: 'utf8' });
-    if (!/electron\.exe/i.test(out)) return;   // pid 已被别的进程复用 -> 不杀
-    execSync('taskkill /PID ' + pid + ' /T /F', { stdio: 'ignore' });
-  } catch (e) {}
+  if (pid) {
+    try {
+      const out = execSync('tasklist /FI "PID eq ' + pid + '" /NH /FO CSV', { encoding: 'utf8' });
+      if (/electron\.exe/i.test(out)) execSync('taskkill /PID ' + pid + ' /T /F', { stdio: 'ignore' });
+    } catch (e) {}
+  }
+  killOurElectron();
 }
 
 if (FORCE) {

@@ -58,8 +58,9 @@ var AUTHOR_ALIAS_FILE = {};   // _scripts\author-alias.json 的内容(UI 里合�
   // 这两件事都还在 core 里, 所以从这里注入给 ui 模块, 而不是让 ui 反向依赖下载逻辑。
   // ═══════════════════════════════════════════════════════════════════════════
   // 事件接线区
-  //   约定: 一行一条接线, 按域分组(① 注入 → ② 偏好 → ③④ 阅读器 → ⑤ 书架 → ⑥ 全局 → ⑦ 启动)。
-  //   加控件时先找对应分组插进去, 别往末尾堆。
+  //   下面的 ① 到 ⑦ 是关键路标，不代表代码已经严格按段落隔离；同类接线可能分布在相邻区域。
+  //   修改前先搜索控件 ID；简单接线尽量一行，复杂初始化可成组编写。
+  //   加控件时先找对应分组，再检查相邻区域，别直接往末尾堆。
   //   加界面按钮的完整步骤见 src/改动索引.md。
   // ═══════════════════════════════════════════════════════════════════════════
   // ─── ① 模块注入: 把 core 的能力交给已抽出的模块 ─────────────────────────────────────────
@@ -70,7 +71,69 @@ var AUTHOR_ALIAS_FILE = {};   // _scripts\author-alias.json 的内容(UI 里合�
 
   // ─── ② 恢复上次的偏好(阅读主题 / 侧栏 / 方向 / 模式) ─────────────────────────────────────
 try { var __rt = JSON.parse(localStorage.getItem("readerTheme") || "{}"); if (__rt.theme) S.theme = __rt.theme; if (typeof __rt.bright === "number") S.bright = __rt.bright; } catch (e) {}
-try { var __rs = JSON.parse(localStorage.getItem("readerDefaults") || "{}"); if (typeof __rs.sidebar === "boolean") S.sidebar = __rs.sidebar; if (typeof __rs.thumbs === "boolean") S.thumbs = __rs.thumbs; if (__rs.dir) S.dir = __rs.dir; if (__rs.mode) S.mode = __rs.mode; } catch (e) {}
+try {
+  var __rs = JSON.parse(localStorage.getItem("readerDefaults") || "{}");
+  if (typeof __rs.sidebar === "boolean") S.sidebar = __rs.sidebar;
+  if (typeof __rs.thumbs === "boolean") S.thumbs = __rs.thumbs;
+  if (__rs.dir) S.dir = __rs.dir;
+  if (__rs.mode) S.mode = __rs.mode;
+  // 一次性迁移: 旧默认右→左改为新默认左→右; 之后仍可手动切回右→左
+  if (!localStorage.getItem("readerDirMigrated")) {
+    localStorage.setItem("readerDirMigrated", "1");
+    if (S.dir === "rtl") {
+      S.dir = "ltr";
+      try { localStorage.setItem("readerDefaults", JSON.stringify({ sidebar: S.sidebar, thumbs: S.thumbs, dir: S.dir, mode: S.mode })); } catch (e) {}
+    }
+  }
+} catch (e) {}
+
+
+  // 手机端长按 -> 右键菜单(书架卡片 / 章节 / 预览等); 阅读器画面由 touch.js 自行处理
+  if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+    var lpTarget = null, lpX = 0, lpY = 0, lpMoved = false, lpTimer = null, lpSuppressClick = false, lpSuppressCtx = false;
+    function lpClear() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } lpTarget = null; }
+    document.addEventListener('contextmenu', function (ev) {
+      if (lpSuppressCtx && !ev.syntheticLongPress) { ev.preventDefault(); ev.stopPropagation(); }
+    }, true);
+    document.addEventListener('touchstart', function (ev) {
+      if (ev.touches.length !== 1) { lpClear(); return; }
+      var t = ev.touches[0];
+      if (t.target.closest && t.target.closest('#stage')) return;
+      lpTarget = t.target;
+      lpX = t.clientX;
+      lpY = t.clientY;
+      lpMoved = false;
+      if (lpTimer) clearTimeout(lpTimer);
+      lpTimer = setTimeout(function () {
+        if (lpTarget && !lpMoved) {
+          lpSuppressClick = true;
+          lpSuppressCtx = true;
+          setTimeout(function () { lpSuppressClick = false; lpSuppressCtx = false; }, 900);
+          try {
+            var _card = lpTarget.closest ? lpTarget.closest('.card') : null;
+            if (_card && typeof _card.oncontextmenu === 'function') {
+              _card.oncontextmenu({ clientX: lpX, clientY: lpY, preventDefault: function () {}, stopPropagation: function () {} });
+            }
+          } catch (e) {}
+        }
+      }, 450);
+    }, { passive: true });
+    document.addEventListener('touchmove', function (ev) {
+      if (!lpTarget) return;
+      var t = ev.touches[0];
+      if (Math.hypot(t.clientX - lpX, t.clientY - lpY) > 12) { lpMoved = true; lpClear(); }
+    }, { passive: true });
+    document.addEventListener('touchend', lpClear, { passive: true });
+    document.addEventListener('touchcancel', lpClear, { passive: true });
+    document.addEventListener('click', function (ev) {
+      if (lpSuppressClick) {
+        if (ev.target.closest && ev.target.closest('#ctx')) return;   // 菜单项点击放行
+        ev.preventDefault();
+        ev.stopPropagation();
+        lpSuppressClick = false;
+      }
+    }, true);
+  }
 
   /* ===== 专辑(虚拟分组, 存 localStorage) ===== */
   var elAlbumBar = document.getElementById("albumbar");
@@ -83,10 +146,30 @@ try { var __rs = JSON.parse(localStorage.getItem("readerDefaults") || "{}"); if 
   (function(){
     var sb = document.getElementById('shelfbar');
     var lastY = 0;
+    var narrow = window.matchMedia && window.matchMedia('(max-width: 760px)').matches;
+    var ahLastY = 0;
     elGrid.addEventListener('scroll', function(){
       var y = elGrid.scrollTop;
       if (y > 80 && y > lastY) sb.classList.add('compact');
       else if (y < lastY - 20) sb.classList.remove('compact');
+      if (narrow) {
+        // 任何滚动都收起筛选面板 (展开态不该跟着滚)
+        try {
+          var _fp = document.getElementById('filterpanel');
+          var _bf = document.getElementById('btn-filter');
+          if (_fp && _fp.classList.contains('open')) {
+            _fp.classList.remove('open');
+            if (_bf) _bf.classList.remove('on');
+            var _bft = document.getElementById('btn-filter-txt');
+            if (_bft) _bft.textContent = '筛选 ▾';
+          }
+        } catch (e) {}
+        // 手机端顶栏: 到顶部必显; 下滑超过 6px 隐藏; 上滑任何距离立即显示
+        if (y < 50) document.body.classList.remove('shelf-autohide');
+        else if (y > ahLastY + 6) document.body.classList.add('shelf-autohide');
+        else if (y < ahLastY - 2) document.body.classList.remove('shelf-autohide');
+        ahLastY = y;
+      }
       lastY = y;
       bgParallax(y);   // 背景慢半拍(视差)
     }, {passive:true});
@@ -238,7 +321,6 @@ try { var __rs = JSON.parse(localStorage.getItem("readerDefaults") || "{}"); if 
 
   var DL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
   (function () {
-    loadBookTimes();
     var bs = document.getElementById('btn-settings');
     if (bs) bs.onclick = function () { openSettings(); };
     var bh = document.getElementById('btn-history');
@@ -304,8 +386,8 @@ try { var __rs = JSON.parse(localStorage.getItem("readerDefaults") || "{}"); if 
     { value: "recent", label: "最近阅读" },
     { value: "name", label: "名称" },
     { value: "fav", label: "收藏优先" },
-    { value: "time", label: "按时间↓" },
-    { value: "timeasc", label: "按时间↑" }
+    { value: "time", label: "入库时间↓" },
+    { value: "timeasc", label: "入库时间↑" }
   ];
     // 把 core 里的这些东西交给书架渲染域
     initShelfUtil({ COLOR_CACHE: COLOR_CACHE });
@@ -319,8 +401,8 @@ try { var __rs = JSON.parse(localStorage.getItem("readerDefaults") || "{}"); if 
     initAppActions({ DISK: DISK, PVQ: PVQ, DL_SVG: DL_SVG });
     initBoot({ COMICS: COMICS, GROUP_DIM_LABEL: GROUP_DIM_LABEL, LIBTITLE: LIBTITLE, STANDALONE: STANDALONE, elBack: elBack, elReader: elReader, elSearch: elSearch, elSearchWrap: elSearchWrap, elShelf: elShelf, elSortWrap: elSortWrap });
     initWorkbench({ DISK: DISK, COMICS: COMICS, hint: hint });
-initShelfSelect({ DISK: DISK });
-    initLibraryStore({ COMICS: COMICS, DISK: DISK, autoAuthor: autoAuthor, pages: pages });
+initShelfSelect({ DISK: DISK, COMICS: COMICS });
+    initLibraryStore({ COMICS: COMICS, DISK: DISK, autoAuthor: autoAuthor, pages: pages, AUTHOR_ALIAS: AUTHOR_ALIAS, BIG_PLATS: BIG_PLATS, SITE_LABELS: SITE_LABELS });
     initShelfRender(Object.assign({},
       {COMICS: COMICS, GROUP_DIM_LABEL: GROUP_DIM_LABEL, GROUP_DIM_ORDER: GROUP_DIM_ORDER, SORT_ITEMS: SORT_ITEMS, VTID: VTID, elAlbumBar: elAlbumBar, elCatTabs: elCatTabs, elSearch: elSearch, elStat: elStat},
       {authorCtx: authorCtx, authorGroups: authorGroups, authorKey: authorKey, authorOf: authorOf, bookCmp: bookCmp, buildSearchHay: buildSearchHay, clampTags: clampTags, countIn: countIn, coverPage: coverPage, cur: cur, deleteMany: deleteMany, entryOf: entryOf, extractCardColor: extractCardColor, fillCtx: fillCtx, flyOpenComic: flyOpenComic, groupLabelFor: groupLabelFor, inAlbum: inAlbum, libEntry: libEntry, libSave: libSave, makeDraggable: makeDraggable, makeGroupDrop: makeGroupDrop, manageCat: manageCat, manifestOf: manifestOf, meta: meta, platformOf: platformOf, prog: prog, renderBookmarks: renderBookmarks, selHas: selHas, selRange: selRange, selToggle: selToggle, showCtx: showCtx, thumbOf: thumbOf, toggleFav: toggleFav, totalPages: totalPages, unitP: unitP, unitQ: unitQ, updateFilterBadge: updateFilterBadge, visibleDirs: visibleDirs, vtWrap: vtWrap}
@@ -490,6 +572,7 @@ initShelfSelect({ DISK: DISK });
     S.prevRev = !S.prevRev;
     S.pi = S.prevRev ? Math.max(0, pages().length - 1) : 0;   // 切换后直接落在"该看的开头"
     syncButtons(); applyThumbs(); render(); saveRev(); save();
+    if (comic) { var pr = prog(comic.dir) || {}; pr.prevRevUser = true; setProg(comic.dir, pr); }
     hint(S.prevRev ? "预览倒序：列表和翻页都从最后一页往前" : "预览恢复正序：从第一页往后");
   };
   // 按钮缩放一律以"画面中心"为锚点(滚轮才是以光标为锚点); 每次 ±25%

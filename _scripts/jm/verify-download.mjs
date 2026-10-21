@@ -36,56 +36,14 @@ if (!proxyUp) {
 const URL_ = process.argv[2] || 'https://nhentai.net/g/435944/';
 const NAME = process.argv[3] || '_下载验收';
 
-const R = [];
-const chk = (n, ok, d) => { R.push({ n, ok }); console.log((ok ? '  PASS  ' : '  FAIL  ') + n + (d ? '   ' + d : '')); };
-
-const app = await startApp(9800);
-const { p } = app;
-const outDir = path.join(LIB, '漫画', NAME);
-
-try {
-  chk('界面核心已启动', await waitBooted(p));
-
-  // 收集下载事件
-  await p.ev('window.__evs=[]; window.mangaLib.onDownload(function(e){ try{window.__evs.push(e);}catch(x){} }); "ok"', 2);
-
-  const started = JSON.parse(String(await p.ev('window.mangaLib.dlStart({url:' + JSON.stringify(URL_) + ',name:' + JSON.stringify(NAME) + ',pages:"1,2"}).then(function(r){return JSON.stringify(r);})', 2) || '{}'));
-  chk('下载已启动', !!started.ok, started.msg || '');
-
-  // 轮询到结束
-  let evs = [], finished = null;
-  for (let i = 0; i < 180; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    evs = JSON.parse(String(await p.ev('JSON.stringify(window.__evs||[])', 2) || '[]'));
-    const term = evs.filter((e) => e && (e.type === 'done' || e.type === 'error'));
-    if (term.length) { finished = term[term.length - 1]; break; }
-  }
-  chk('下载走到结束', !!finished, finished ? ('type=' + finished.type) : '超时未结束');
-
-  const types = {};
-  evs.forEach((e) => { const k = (e && e.type) || '?'; types[k] = (types[k] || 0) + 1; });
-  console.log('     事件统计: ' + JSON.stringify(types));
-
-  const progs = evs.filter((e) => e && e.type === 'prog');
-  chk('有进度事件(任务栏进度就是靠它驱动)', progs.length > 0, 'prog=' + progs.length + (progs.length ? (' 末次 got/total=' + progs[progs.length - 1].got + '/' + progs[progs.length - 1].total) : ''));
-
-  const logLines = evs.filter((e) => e && e.type === 'log').map((e) => String(e.line || ''));
-  const contract = logLines.filter((s) => s.indexOf('契约') >= 0 || s.indexOf('不符合契约') >= 0);
-  chk('无契约报错', contract.length === 0, contract.length ? contract[0].slice(0, 160) : '');
-  // 契约层"拦住"的报错也会出现在 error 事件里
-  const errMsg = finished && finished.type === 'error' ? String(finished.message || '') : '';
-  chk('结束时没有报错', !errMsg, errMsg.slice(0, 160));
-
-  // 磁盘上真有文件吗
-  let files = [];
-  try {
-    const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => {
-      const q = path.join(d, e.name);
-      if (e.isDirectory()) walk(q);
-      else if (/\.(webp|jpg|jpeg|png|gif)$/i.test(e.name)) files.push(q);
-    });
-    if (fs.existsSync(outDir)) walk(outDir);
-  } catch (e) {}
+function todayLogPath() {
+  if (fs.existsSync(testLogPath)) {
+      const all = fs.readFileSync(testLogPath, 'utf8').split('
+');
+      const since = all.slice(logStartLines);   // 只统计本次验收启动后写入的日志
+      contractLog = since.filter((l) => l.indexOf('[契约]') >= 0 && l.indexOf('dl:event') >= 0);
+    }
+    } catch (e) {}
   const bytes = files.reduce((a, f) => { try { return a + fs.statSync(f).size; } catch (e) { return a; } }, 0);
   chk('图片真的落盘了', files.length > 0, files.length + ' 个 / ' + Math.round(bytes / 1024) + ' KB');
   if (files.length) console.log('     ' + files.slice(0, 4).map((f) => path.basename(f)).join(', '));

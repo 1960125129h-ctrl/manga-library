@@ -1,9 +1,9 @@
-const CACHE_VERSION = "manga-library-v1";
+const CACHE_VERSION = "manga-library-v2-20260921";
 const APP_PREFIX = "/src/";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_VERSION).then((cache) => cache.addAll(["/", "/src/index.html"]))
+    caches.open(CACHE_VERSION).then((cache) => cache.addAll(["/"]))
   );
   self.skipWaiting();
 });

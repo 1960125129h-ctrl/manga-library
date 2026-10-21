@@ -10,7 +10,7 @@
 // 才成立; 一旦有 core 里的函数读它, 就必须改成 core import 实时绑定。
 
 import { S } from '../app/state.js';
-import { setProg, meta, setMeta, prog, isBigPlat, manifestOf, totalPages } from '../library/store.js';
+import { setProg, meta, setMeta, prog, isBigPlat, platformOf, manifestOf, totalPages } from '../library/store.js';
 import { renderChapters } from '../reader/panel.js';
 import { render, applyThumbs } from '../reader/render.js';
 import { NAVFWD, comic, setComic, io, setIo } from '../reader/state.js';
@@ -187,10 +187,11 @@ export function openComic(c) {
   NAVFWD.length = 0;   // 新开一本书, 清掉"前进"记录(和浏览器一致)
   var p = prog(c.dir);
   const mobileTouch = !(window.mangaLib && window.mangaLib.isElectron) && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
-  S.ci = 0; S.pi = 0; S.mode = "single"; S.fit = "height"; S.dir = "rtl"; S.cover = false; S.sidebar = !mobileTouch; S.thumbs = false; S.wheel = true;
-  var bigPlat = isBigPlat(c.dir);      // X/微博/抖音/pixiv: 新书默认"从最新看起"
-  S.rev = bigPlat; S.prevRev = bigPlat;
-  if (bigPlat && c.chapters.length) S.pi = Math.max(0, nOf(c.chapters[0]) - 1);   // 倒序时从最后一页(最新那张)进
+  S.ci = 0; S.pi = 0; S.mode = "single"; S.fit = "height"; S.dir = "ltr"; S.cover = false; S.sidebar = !mobileTouch; S.thumbs = false; S.wheel = true;
+  var bigPlat = isBigPlat(c.dir);      // 只影响"篇/张"等单位和上下篇按钮文案; 预览/翻页全部默认顺序
+  var reverseDefault = false;
+  S.rev = reverseDefault; S.prevRev = reverseDefault;
+  if (reverseDefault && c.chapters.length) S.pi = Math.max(0, nOf(c.chapters[0]) - 1);   // 倒序时从最后一页(最新那张)进
   if (p) {
     S.ci = Math.max(0, Math.min(p.ci || 0, c.chapters.length - 1));
     S.pi = p.pi || 0;
@@ -203,6 +204,12 @@ export function openComic(c) {
     if (typeof p.wheel === "boolean") S.wheel = p.wheel;
     if (typeof p.rev === "boolean") S.rev = p.rev;
     if (typeof p.prevRev === "boolean") S.prevRev = p.prevRev;
+    // 旧版 X/微博/pixiv 默认倒序: 统一迁移为顺序; 用户手动切过倒序的保留
+    if (["X", "微博", "pixiv"].indexOf(platformOf(c.dir)) >= 0 && p.prevRev && !p.prevRevUser) {
+      p.prevRev = false;
+      S.prevRev = false;
+      setProg(c.dir, p);
+    }
     // 进度按"话 + 页"记的索引, 话删了/重排了会指错: 先用上次那一话的目录名核对一次
     if (p.cpath) {
       for (var qi = 0; qi < c.chapters.length; qi++) {

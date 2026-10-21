@@ -34,6 +34,8 @@ const NODE_BIN = 'node';   // 真实 Node(24), 走 PATH; 漫画站要走代理�
 let jmRunning = false;    // 禁漫任务在跑时不让自动刷新把日志冲掉
 let dlActive = false;     // 通用下载(fetch-book)任务在跑时不让自动刷新: 与任务生命周期绑定, 不固定 30 分钟
 let pendingReload = false;
+let rescanInProgress = false;
+let reloadTimer = null;
 let watchMuteUntil = 0;   // 这段时间内书库.html 被重建也不刷新窗口(自己触发的重建: 删章节等, 免得把用户踢回书架)
 
 /* 书库.html 被重建(更新书库/外部脚本)时自动刷新窗口, 不用手动 F5 */
@@ -43,7 +45,7 @@ function watchLibrary() {
     let t = null;
     libWatcher = fs.watch(LIB, (ev, fn) => {
       if (String(fn) !== '_manifest.json') return;
-      if (Date.now() < watchMuteUntil) return;            // 自己刚重建的: 不刷新, 用户还停在阅读器里
+      if (rescanInProgress || Date.now() < watchMuteUntil) return;            // 显式重建期间由收尾逻辑统一刷新一次
       if (jmRunning || dlActive) { pendingReload = true; return; }   // 任务进行中: 先不发刷新, 免得日志被冲掉
       clearTimeout(t);
       t = setTimeout(() => { try { reload(); } catch (e) {} }, 500);
@@ -276,7 +278,11 @@ function createWindow() {
   });
 }
 
-function reload() { if (win) win.loadFile(rendererPath()); }
+function reload() {
+  if (!win || win.isDestroyed()) return;
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => { reloadTimer = null; if (win && !win.isDestroyed()) win.loadFile(rendererPath()); }, 120);
+}
 
 /* ---------- 原生菜单 ----------
    frameless 窗口没有系统菜单栏的位置, 所以:
@@ -608,23 +614,33 @@ ipcMain.handle('state:library', async (e, lib) => {
 });
 
 ipcMain.handle('lib:rescan', async (e, opts) => {
+  rescanInProgress = true;
+  pendingReload = false;
   if (opts && opts.quiet) watchMuteUntil = Date.now() + 20000;   // 静默重建: 连"文件变了自动刷新"也一起压住
   const { execFile } = require('node:child_process');
   const script = path.join(LIB, '_scripts', 'build-library.mjs');
-  if (!fs.existsSync(script)) return { ok: false, msg: '找不到 _scripts/build-library.mjs' };
+  if (!fs.existsSync(script)) { rescanInProgress = false; return { ok: false, msg: '找不到 _scripts/build-library.mjs' }; }
   return await new Promise((res) => {
+    const finish = (payload) => {
+      rescanInProgress = false;
+      watchMuteUntil = Date.now() + 3000;   // 收尾后的残留写入事件也不再触发第二次刷新
+      res(payload);
+    };
     // 关键: Electron 作为 Node 跑脚本必须带 ELECTRON_RUN_AS_NODE, 否则子进程不退出, 回调永不触发, 界面点了没反应
     const args = [script, '--lib', LIB];
     if (opts && opts.offline) args.push('--offline');
     execFile(process.execPath, args, { cwd: LIB, timeout: 120000, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }, (err, stdout, stderr) => {
-      if (err) res({ ok: false, msg: String(stderr || err.message).slice(0, 800) });
+      if (err) finish({ ok: false, msg: String(stderr || err.message).slice(0, 800) });
       else {
         if (opts && opts.quiet) {
-          if (win && !win.isDestroyed()) win.webContents.send('library:rebuilt');   // 复用前端现成监听器: saveShelfView + reload
+          if (win && !win.isDestroyed()) {
+          win.webContents.send('library:rebuilt');
+          logLine('禁漫', '[收尾重建] 已通知前端');
+        }   // 复用前端现成监听器: saveShelfView + reload
         } else {
           reload();
         }
-        res({ ok: true, msg: String(stdout).trim() });
+        finish({ ok: true, msg: String(stdout).trim() });
       }
     });
   });
@@ -768,13 +784,11 @@ ipcMain.handle('dl:resolve', async (e, url) => {
   }
 });
 
-// 后台补 pixiv 作品缩略图和标题
-let pickChild = null, pickRateMsg = '', pickErrMsg = '';
-ipcMain.handle('dl:pick-details', async (e, ids) => {
+// 后台补 pixiv 作品缩略图和标题: 不杀上一批, 改成队列串行; 限流/错误实时透传给前端
+let pickChild = null, pickQueue = [], pickRateMsg = '', pickErrMsg = '';
+function startPickDetails(ids, sender) {
   pickRateMsg = ''; pickErrMsg = '';
-  logLine('下载', '[pick-details] 收到 ' + ((Array.isArray(ids) ? ids.length : 0)) + ' 个 id: ' + (Array.isArray(ids) ? ids.slice(0, 4).join(',') : String(ids)) + (Array.isArray(ids) && ids.length > 4 ? ' …' : ''));
-  if (!Array.isArray(ids) || !ids.length) return { ok: false };
-  if (pickChild) { try { pickChild.kill(); } catch (e) {} }
+  logLine('下载', '[pick-details] 收到 ' + ids.length + ' 个 id: ' + ids.slice(0, 4).join(',') + (ids.length > 4 ? ' …' : ''));
   const script = path.join(LIB, '_scripts', 'sites', 'fetch-book.mjs');
   const { spawn } = require('node:child_process');
   pickChild = spawn(NODE_BIN, [script, '--pick-details', '--ids', ids.join(',')], {
@@ -789,12 +803,22 @@ ipcMain.handle('dl:pick-details', async (e, ids) => {
     while ((idx = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, idx).trim();
       buf = buf.slice(idx + 1);
-      if (line.startsWith('@@PICK-RATE@@')) { try { pickRateMsg = JSON.parse(line.slice(13)).msg || 'pixiv 限流'; } catch (e) {} }
-      else if (line.startsWith('@@PICK-ERR@@')) { try { pickErrMsg = JSON.parse(line.slice(12)).msg || ''; } catch (e) {} }
-      else if (line.startsWith('@@PICK@@')) {
+      if (line.startsWith('@@PICK-RATE@@')) {
+        try {
+          const j = JSON.parse(line.slice(13));
+          pickRateMsg = j.msg || 'pixiv 限流';
+          sender.send('pick-detail', { rate: true, msg: pickRateMsg, remaining: j.remaining, failed: j.failed, done: j.done });
+        } catch (e) {}
+      } else if (line.startsWith('@@PICK-ERR@@')) {
+        try {
+          const j = JSON.parse(line.slice(12));
+          pickErrMsg = j.msg || '';
+          sender.send('pick-detail', { error: true, id: j.id, msg: pickErrMsg });
+        } catch (e) {}
+      } else if (line.startsWith('@@PICK@@')) {
         try {
           const j = JSON.parse(line.slice(8));
-          e.sender.send('pick-detail', j);
+          sender.send('pick-detail', j);
         } catch (err) { console.error('[pick-details] parse error:', err.message, line.slice(0, 100)); }
       } else if (line) {
         console.log('[pick-details] stdout:', line.slice(0, 200));
@@ -803,10 +827,25 @@ ipcMain.handle('dl:pick-details', async (e, ids) => {
   });
   child.stderr.on('data', (d) => { console.log('[pick-details] stderr:', String(d).slice(0, 300)); });
   child.on('error', (err) => { console.error('[pick-details] spawn error:', err.message); });
-  child.on('close', (code) => { console.log('[pick-details] exit code:', code); pickChild = null; e.sender.send('pick-detail-done', { rate: pickRateMsg, err: pickErrMsg }); pickRateMsg = ''; pickErrMsg = ''; });
+  child.on('close', (code) => {
+    console.log('[pick-details] exit code:', code);
+    pickChild = null;
+    if (pickQueue.length) {
+      const next = pickQueue.shift();
+      startPickDetails(next, sender);
+    } else {
+      sender.send('pick-detail-done', { rate: pickRateMsg, err: pickErrMsg });
+      pickRateMsg = ''; pickErrMsg = '';
+    }
+  });
+}
+ipcMain.handle('dl:pick-details', async (e, ids) => {
+  if (!Array.isArray(ids) || !ids.length) return { ok: false };
+  if (pickChild) { pickQueue.push(ids); return { ok: true, queued: true }; }
+  startPickDetails(ids, e.sender);
   return { ok: true };
 });
-ipcMain.handle('dl:pick-stop', () => { if (pickChild) { try { pickChild.kill(); } catch (e) {} pickChild = null; } return { ok: true }; });
+ipcMain.handle('dl:pick-stop', () => { pickQueue = []; if (pickChild) { try { pickChild.kill(); } catch (e) {} pickChild = null; } return { ok: true }; });
 
 let dlProc = null;
 ipcMain.handle('dl:start', async (e, opts) => {
@@ -971,7 +1010,7 @@ ipcMain.handle('dl:startBatch', async (e, req) => {
           }
           if (s.indexOf('@@REBUILT@@') >= 0) { try { const k = JSON.parse(s.slice(11)); childRebuilt = true; SD({ type: 'rebuilt', ok: !!k.ok, work: i }); } catch (e2) {} return; }
           if (s.indexOf('@@DONE@@') >= 0) { try { doneInfo = JSON.parse(s.slice(8)); } catch (e2) {} return; }
-          if (s.trim()) { logLine('下载', '  ' + s.trim()); SD({ type: 'log', line: s.trim(), work: i }); SD({ type: 'resolve-log', line: s.trim() }); }
+          if (s.trim()) { logLine('下载', '  ' + s.trim()); SD({ type: 'log', line: s.trim(), work: i }); }
         };
         const onData = (d) => {
           buf += String(d);
@@ -1194,22 +1233,20 @@ ipcMain.handle('jm:start', (e, urls, browser) => {
     if (win && !win.isDestroyed()) win.webContents.send('jm:event', { type: 'done', code: code });
     // 等 3 秒让大家看完日志, 再离线重建书库(不联网), 然后通知前端刷新而非整页 reload
     setTimeout(async () => {
+      logLine('禁漫', '[收尾重建] 开始');
       try {
-        if (pendingReload) {
-          pendingReload = false;
-          // 离线重建书库.html(不联网, 不扫别名)
-          const script = path.join(LIB, '_scripts', 'build-library.mjs');
-          if (fs.existsSync(script)) {
-            const { spawn } = require('node:child_process');
-            await new Promise((res) => {
-              const bp = spawn(process.execPath, [script, '--lib', LIB, '--offline'], { cwd: LIB, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
-              bp.on('exit', () => res());
-            });
-          }
-          // 通知前端刷新书架(保留滚动位置), 不整页 reload
-          if (win && !win.isDestroyed()) win.webContents.send('library:rebuilt');
+        pendingReload = false;
+        watchMuteUntil = Date.now() + 20000;
+        const script = path.join(LIB, '_scripts', 'build-library.mjs');
+        if (fs.existsSync(script)) {
+          const { spawnSync } = require('node:child_process');
+          const br = spawnSync(NODE_BIN, [script, '--lib', LIB, '--offline'], { cwd: LIB, env: { ...process.env }, stdio: 'ignore' });
+          logLine('禁漫', '[收尾重建] 退出码 ' + (br.status == null ? -1 : br.status));
         }
-      } catch (e2) {}
+        if (win && !win.isDestroyed()) win.webContents.send('library:rebuilt');
+      } catch (e2) {
+        logLine('禁漫', '[收尾重建异常] ' + String(e2 && e2.message || e2));
+      }
     }, 3000);
   });
   return { ok: true, count: list.length, browser: useChrome ? 'chrome' : 'edge' };
@@ -1530,20 +1567,38 @@ ipcMain.handle('jm:fetchBook', async (e, payload) => {
 ipcMain.handle('jm:cancel', () => { if (!jmProc) return false; try { jmProc.kill(); } catch (e) {} return true; });
 ipcMain.handle('jm:busy', () => !!jmProc);
 
-/* 每本书目录的修改时间, 供书架"按时间排序"用 */
-ipcMain.handle('lib:bookTimes', () => {
+/* 每本书的入库时间, 供书架"按时间排序"用。
+   首次见到目录时把 birthtime 固化到 library.json；之后目录 mtime 再变化也不会乱序。 */
+ipcMain.handle('lib:bookTimes', async () => {
   const out = {};
+  const lib = readJSON(libJson(), defaultLibrary());
+  if (!lib.comics) lib.comics = {};
+  let changed = false;
   const scan = (base, prefix) => {
     try {
       for (const e of fs.readdirSync(base, { withFileTypes: true })) {
         if (!e.isDirectory()) continue;
         if (e.name.charAt(0) === '_' || e.name.charAt(0) === '.') continue;
-        try { out[prefix + e.name] = fs.statSync(path.join(base, e.name)).mtimeMs; } catch (x) {}
+        const rel = prefix + e.name;
+        const existing = lib.comics[rel];
+        if (existing && Number.isFinite(Number(existing.addedAt))) {
+          out[rel] = Number(existing.addedAt);
+          continue;
+        }
+        try {
+          const st = fs.statSync(path.join(base, e.name));
+          let t = Number.isFinite(st.birthtimeMs) && st.birthtimeMs > 0 ? st.birthtimeMs : st.mtimeMs;
+          if (!Number.isFinite(t) || t <= 0) continue;
+          lib.comics[rel] = Object.assign({}, existing, { addedAt: t });
+          out[rel] = t;
+          changed = true;
+        } catch (x) {}
       }
     } catch (e) {}
   };
   scan(path.join(LIB, '漫画'), '漫画/');
   scan(LIB, '');
+  if (changed) await writeJSON(libJson(), lib);
   return { times: out };
 });
 
@@ -2025,17 +2080,31 @@ ipcMain.handle('app:versions', () => ({ electron: process.versions.electron, nod
 
 /* ============ 局域网 Web 服务器(手机看) ============ */
 const webServer = require('./web-server.js');
-ipcMain.handle('web:start', async (e, password) => {
+ipcMain.handle('web:start', async (e, payload) => {
   try {
+    const opts = typeof payload === 'string' ? { password: payload } : (payload || {});
     const cfg = readCfg();
-    cfg.webPassword = password || '';
+    if (typeof opts.password === 'string') cfg.webPassword = opts.password;
+    if (opts.port !== undefined && opts.port !== null && opts.port !== '') {
+      const port = Number.parseInt(opts.port, 10);
+      if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+        return { ok: false, msg: '端口需为 1024 到 65535 之间的整数' };
+      }
+      cfg.webPort = port;
+    }
     writeCfg(cfg);
-    webServer.startServer(LIB);
-    return { ok: true, ip: webServer.getIP(), port: 9527 };
+    webServer.stopServer();
+    const info = await webServer.startServer(LIB, { port: cfg.webPort });
+    return { ok: true, ip: webServer.getIP(), port: info.port };
   } catch (err) { return { ok: false, msg: String(err.message || err) }; }
 });
 ipcMain.handle('web:stop', () => { webServer.stopServer(); return { ok: true }; });
 ipcMain.handle('web:status', () => {
   const cfg = readCfg();
-  return { running: !!webServer.server, ip: webServer.getIP(), port: 9527, password: cfg.webPassword || '' };
+  return {
+    running: webServer.isRunning(),
+    ip: webServer.getIP(),
+    port: webServer.getPort(),
+    password: cfg.webPassword || ''
+  };
 });

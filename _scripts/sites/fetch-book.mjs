@@ -23,41 +23,51 @@ if (argv.includes('--pick-details')) {
   if (!ids.length) process.exit(0);
   const { pixiv } = await import('./index.mjs');
   // 先看缓存: 标题+缩略图都有就直接回, 不打接口(pixiv 限流很快, 同一作者二次打开能省掉全部请求)
-  const todo = [];
+  const queue = [];
+  const attempts = new Map();
+  const doneIds = new Set();
+  let rateNotified = false;
   for (const id of ids) {
     const c = (typeof pixiv.cachedWork === 'function') ? pixiv.cachedWork(id) : null;
     if (c && c.title && c.thumb) {
       console.log('@@PICK@@' + JSON.stringify({ id: id, title: c.title, thumb: c.thumb, cached: true }));
+      doneIds.add(id);
     } else {
-      todo.push({ id: id, title: (c && c.title) || '', thumb: (c && c.thumb) || '' });
+      queue.push({ id: id, title: (c && c.title) || '', thumb: (c && c.thumb) || '' });
     }
   }
-  let next = 0, rateLimited = false;
+  const MAX_ATTEMPTS = 8;
   const worker = async () => {
-    while (next < todo.length) {
-      const it = todo[next++];
-      let retries = 0;
-      while (retries < 3) {
-        try {
-          const b = await pixiv.ajax('/ajax/illust/' + it.id);
-          const thumb = (b.urls && (b.urls.small || b.urls.thumb)) || it.thumb || '';
-          const title = b.illustTitle || it.title || '';
-          if (typeof pixiv.rememberWork === 'function') pixiv.rememberWork(it.id, title, thumb);
-          console.log('@@PICK@@' + JSON.stringify({ id: it.id, title: title, thumb: thumb }));
-          break;
-        } catch (e) {
-          if (e && e.fatal) {   // 429 限流: 别硬撞, 标记后收工
-            rateLimited = true;
-            console.log('@@PICK-ERR@@' + JSON.stringify({ msg: String(e.message || e).slice(0, 120), id: it.id }));
-            return;
+    while (queue.length) {
+      const it = queue.shift();
+      try {
+        const b = await pixiv.ajax('/ajax/illust/' + it.id, 5);
+        const thumb = (b.urls && (b.urls.small || b.urls.thumb)) || it.thumb || '';
+        const title = b.illustTitle || it.title || '';
+        if (typeof pixiv.rememberWork === 'function') pixiv.rememberWork(it.id, title, thumb);
+        console.log('@@PICK@@' + JSON.stringify({ id: it.id, title: title, thumb: thumb }));
+        doneIds.add(it.id);
+      } catch (e) {
+        const isRate = !!(e && e.fatal) || /429|限流|too many requests/i.test(String(e && e.message || e));
+        if (isRate) {
+          if (!rateNotified) {
+            rateNotified = true;
+            console.log('@@PICK-RATE@@' + JSON.stringify({ msg: 'Pixiv 限流(429)：正在续跑，稍后自动重试，已缓存的会立刻出', remaining: queue.length + 1 }));
           }
-          break;
+          const waitMs = Math.max(5000, (e && e.retryAfter) || 20000);
+          await new Promise((r) => setTimeout(r, waitMs));
+          const n = (attempts.get(it.id) || 0) + 1;
+          attempts.set(it.id, n);
+          if (n < MAX_ATTEMPTS) queue.push(it);
+          else console.log('@@PICK-ERR@@' + JSON.stringify({ id: it.id, msg: '多次限流后仍未取到，可关闭重开或点重试继续补' }));
+        } else {
+          console.log('@@PICK-ERR@@' + JSON.stringify({ id: it.id, msg: String(e && e.message || e).slice(0, 160) }));
         }
       }
     }
   };
-  await Promise.all([worker(), worker(), worker()]);
-  if (rateLimited) console.log('@@PICK-RATE@@' + JSON.stringify({ msg: 'pixiv 限流(429): 过几分钟再打开这个作者页, 已缓存的会立刻出' }));
+  await Promise.all([worker(), worker()]);   // 降为 2 并发, 配合 400ms 节流减少 429
+  if (rateNotified) console.log('@@PICK-RATE@@' + JSON.stringify({ msg: 'Pixiv 限流续跑结束：仍未取到的作品可关闭重开或点重试继续补', done: doneIds.size, failed: ids.length - doneIds.size }));
   process.exit(0);
 }
 
@@ -259,10 +269,9 @@ if (PROBE) {   // 只报元数据 + 话数
       push(all.illusts); push(all.manga);
       works.sort((a,b) => parseInt(b.id) - parseInt(a.id));   // pixiv ID 越大越新
       console.error('[pick-debug] first 3 ids:', works.slice(0,3).map(w=>w.id).join(','), 'last 3:', works.slice(-3).map(w=>w.id).join(','));
-      const here = path.dirname(SELF);
-      const cache = (() => { try { return JSON.parse(fs.readFileSync(path.join(here, 'cache-pixiv.json'), 'utf8')); } catch(e) { return {}; } })();
       pickList = works.slice(0, 500).map(function(w) {
-        return { id: w.id, title: cache[w.id] || ('pixiv ' + w.id), thumb: '', url: 'https://www.pixiv.net/artworks/' + w.id };
+        const cc = pixiv.cachedWork(w.id);
+        return { id: w.id, title: (cc && cc.title) || ('pixiv ' + w.id), thumb: (cc && cc.thumb) || '', url: 'https://www.pixiv.net/artworks/' + w.id };
       });
       n = works.length;
     } catch (e) { say('pixiv 列表失败: ' + e.message); }
@@ -673,7 +682,9 @@ if (groups.length > 1 || (groups[0] || '')) {
 
 /* ---------- 命名: 第N话/第N卷这种规范名照旧; 番外/插图/附录等用站点真实标题(带两位序号保序) ---------- */
 function chDirName(c, n) {
-  const t = String(c.title || '').trim();
+  let raw = c.title;
+  if (raw && typeof raw === 'object') raw = raw.text || raw.title || raw.cn || raw.jp || JSON.stringify(raw);
+  const t = String(raw || '').trim();
   const m = t.match(/^第?\s*(\d{1,4})\s*[话話卷]$/);
   if (m) return '第' + String(parseInt(m[1], 10)).padStart(2, '0') + (/卷$/.test(t) ? '卷' : '話');
   if (t) return String(n).padStart(2, '0') + ' ' + safe(t).slice(0, 60);
@@ -684,8 +695,11 @@ for (const g of groups) {
   if (!useGroup(g)) continue;
   const inGroup = list.filter((c) => groupOf(c) === g).slice().sort((a, b) => a.order - b.order || a.index - b.index);
   const bdir = path.join(LIB, CAT, bookOf(g));
+  // 同一本书分次下载时, 新话从已有最大序号后面继续编号, 避免又从 01 开始造成"开头重复"
+  let maxSeq = 0;
+  try { for (const de of fs.readdirSync(bdir, { withFileTypes: true })) { if (!de.isDirectory()) continue; const m = de.name.match(/^(\d{1,4})(\s|$)/); if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10)); } } catch (e) {}
   inGroup.forEach((c, i) => {
-    let name = chDirName(c, i + 1);
+    let name = chDirName(c, maxSeq + i + 1);
     if (usedName[bookOf(g) + '/' + name]) { let k = 2; while (usedName[bookOf(g) + '/' + name + ' (' + k + ')']) k++; name += ' (' + k + ')'; }
     usedName[bookOf(g) + '/' + name] = 1;
     plan.push({ c: c, book: bookOf(g), dir: path.join(bdir, name), label: name });

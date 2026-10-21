@@ -13,6 +13,7 @@
 // (比如 { selToggle: selToggle }), 少导一个就是运行时 undefined。
 
 import { hint, showModal, closeModal, modalFoot, askConfirm, askText } from '../shared/ui.js';
+import { isWebMode, webDeleteBook } from '../shared/web-api.js';
 import { S, LIBRARY } from '../app/state.js';
 import { loadAlbums, saveAlbums } from '../shared/storage.js';
 import { SEL, setSel } from '../shelf/state.js';
@@ -133,18 +134,39 @@ export function selCategory() {
 }
 export function deleteMany(list, done) {
   if (!list || !list.length) return;
-  if (!DISK || !DISK.deleteComic) { hint("删除需要桌面版：请用「启动书库.cmd」打开"); return; }
+  // 选择删除执行器: 桌面版走 IPC, Web 模式走 HTTP
+  var useWeb = false;
+  if (!DISK || !DISK.deleteComic) {
+    if (isWebMode()) useWeb = true;
+    else { hint("删除需要桌面版：请用「启动书库.cmd」打开"); return; }
+  }
   var n = list.length, arr = list.slice();
   askConfirm("删除这 " + n + " 本？", "会同时删除磁盘上的整个漫画文件夹（含全部话与图片）、书库条目和阅读进度。删除后无法恢复。", "全部删除", async function () {
     hint("正在删除 " + n + " 本…");
     var ok = 0, bad = [];
     for (var i = 0; i < arr.length; i++) {
       try {
-        var r = await DISK.deleteComic(arr[i]);
-        if (r && r.ok) { ok++; if (LIBRARY && LIBRARY.comics) delete LIBRARY.comics[arr[i]]; } else bad.push(arr[i]);
+        if (useWeb) {
+          await webDeleteBook(arr[i]);
+          ok++;
+          if (LIBRARY && LIBRARY.comics) delete LIBRARY.comics[arr[i]];
+        } else {
+          var r = await DISK.deleteComic(arr[i]);
+          if (r && r.ok) { ok++; if (LIBRARY && LIBRARY.comics) delete LIBRARY.comics[arr[i]]; } else bad.push(arr[i]);
+        }
       } catch (e) { bad.push(arr[i]); }
     }
-    if (DISK.rescan) { try { await DISK.rescan({ offline: true }); } catch (e2) {} }
+    // 从内存 COMICS 数组移除成功删除的(Web 模式下没有 DISK.rescan)
+    if (ok > 0 && COMICS && COMICS.length) {
+      var removed = {};
+      for (var j = 0; j < arr.length; j++) {
+        if (bad.indexOf(arr[j]) < 0) removed[arr[j]] = 1;
+      }
+      for (var k = COMICS.length - 1; k >= 0; k--) {
+        if (removed[COMICS[k].dir]) COMICS.splice(k, 1);
+      }
+    }
+    if (DISK && DISK.rescan) { try { await DISK.rescan({ offline: true }); } catch (e2) {} }
     arr.forEach(function (d) { invalidateCard(d); });
     renderShelf();
     hint("已删除 " + ok + " 本" + (bad.length ? "，" + bad.length + " 本失败" : ""));
@@ -153,8 +175,8 @@ export function deleteMany(list, done) {
 }
 
 // ---- 由 core 注入 ----
-let DISK;
+let DISK, COMICS;
 
 export function initShelfSelect(ctx) {
-  DISK = ctx.DISK
+  DISK = ctx.DISK; COMICS = ctx.COMICS
 }

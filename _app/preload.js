@@ -102,7 +102,7 @@ contextBridge.exposeInMainWorld('mangaLib', {
     ipcRenderer.removeAllListeners('library:rebuilt');
     ipcRenderer.on('library:rebuilt', () => cb());
   },
-  webStart: (pw) => ipcRenderer.invoke('web:start', pw),
+  webStart: (options) => ipcRenderer.invoke('web:start', options),
   webStop: () => ipcRenderer.invoke('web:stop'),
   webStatus: () => ipcRenderer.invoke('web:status'),
   dlThumb: (req) => ipcRenderer.invoke('dl:thumb', req),

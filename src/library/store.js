@@ -184,14 +184,21 @@ export function coverPage(c) {
 // ---- 由 core 注入 ----
 // COMICS / DISK 只在声明时赋值一次 -> 按值注入安全;
 // autoAuthor / pages 是函数声明(会提升) -> 注入时一定已经是函数。
-let COMICS, DISK, autoAuthor, pages;
+let COMICS, DISK, autoAuthor, pages, AUTHOR_ALIAS, BIG_PLATS, SITE_LABELS;
 let CMAP = null;       // dir -> 条目; 在 init 里建
 
 export function initLibraryStore(ctx) {
   COMICS = ctx.COMICS; DISK = ctx.DISK;
   autoAuthor = ctx.autoAuthor; pages = ctx.pages;
+  AUTHOR_ALIAS = ctx.AUTHOR_ALIAS || {};
+  BIG_PLATS = ctx.BIG_PLATS || [];
+  SITE_LABELS = ctx.SITE_LABELS || [];
   // 原来这段在 core 顶层直接跑(那时 COMICS 已就绪); 移到 init 语义不变
   CMAP = {}; for (var i = 0; i < COMICS.length; i++) CMAP[COMICS[i].dir] = COMICS[i];
+}
+export function applyAuthorAliases(map) {
+  if (!AUTHOR_ALIAS) AUTHOR_ALIAS = {};
+  for (var k in map) AUTHOR_ALIAS[k] = map[k];
 }
 
 export function setCACHE(v) { CACHE = v; }

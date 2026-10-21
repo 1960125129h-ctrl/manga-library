@@ -28,5 +28,13 @@ body{ display:flex; flex-direction:column; overflow:hidden; }
 /* 浏览器直开(没有 Electron)时这层没有意义, 由 JS 隐藏 */
 body.not-electron #titlebar{ display:none; }
 body.not-electron #shelf,body.not-electron #reader,body.not-electron #history{ height:100%; }
+
+/* 顶部提示条避开自绘标题栏；长消息允许换行，避免被标题栏或屏幕边缘裁切 */
+#hint{ top:44px; max-width:calc(100vw - 32px); white-space:normal; text-align:center; word-break:break-word; }
+body.not-electron #hint{ top:14px; }
+
+/* 历史页是 fixed 覆盖层，Electron 内要从自绘标题栏下方开始 */
+#history{ top:34px; }
+body.not-electron #history{ top:0; }
 /* 标题栏已经有应用名了, 书架栏里那个 h1 是重复的 -> 隐藏(浏览器直开时仍显示) */
 body:not(.not-electron) #shelfbar > h1{ display:none; }

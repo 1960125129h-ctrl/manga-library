@@ -7,6 +7,24 @@ const { URL } = require('node:url');
 
 let server = null;
 let SESSION_TOKEN = null;
+let currentPort = null;
+const DEFAULT_WEB_PORT = 9580;
+const STATIC_MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.avif': 'image/avif',
+  '.ico': 'image/x-icon'
+};
 
 function getConfig() {
   try { return JSON.parse(fs.readFileSync(path.join(require('electron').app.getPath('userData'), 'config.json'), 'utf8')); }
@@ -24,6 +42,50 @@ function getIP() {
     }
   }
   return '127.0.0.1';
+}
+function normalizePort(value) {
+  const port = Number.parseInt(value, 10);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error('端口需为 1024 到 65535 之间的整数');
+  }
+  return port;
+}
+function getPort() {
+  if (currentPort) return currentPort;
+  try { return normalizePort(getConfig().webPort); } catch (e) { return DEFAULT_WEB_PORT; }
+}
+function isRunning() { return !!server; }
+function serveStatic(res, libRoot, rawPathname) {
+  let pathname;
+  try { pathname = decodeURIComponent(rawPathname); }
+  catch (e) { return sendError(res, 400, 'Bad path'); }
+  const rootFiles = new Set(['/service-worker.js', '/manifest.webmanifest', '/_manifest.json', '/library.json']);
+  let rel = '';
+  if (pathname === '/') rel = 'src/index.html';
+  else if (rootFiles.has(pathname)) rel = pathname.slice(1);
+  else if (pathname.startsWith('/src/')) rel = pathname.slice(1);
+  else if (pathname.startsWith('/icons/')) rel = pathname.slice(1);
+  else if (pathname.startsWith('/_thumbs/')) rel = pathname.slice(1);
+  else if (pathname.startsWith('/漫画/')) rel = pathname.slice(1);
+  else return sendError(res, 403, 'Forbidden');
+
+  let target;
+  try { target = path.normalize(path.join(libRoot, rel)); }
+  catch (e) { return sendError(res, 400, 'Bad path'); }
+  if (target !== path.join(libRoot, 'src/index.html') && !target.startsWith(libRoot + path.sep)) {
+    return sendError(res, 403, 'Forbidden');
+  }
+  fs.stat(target, function (err, stat) {
+    if (err || !stat.isFile()) return sendError(res, 404, 'Not found');
+    const ext = path.extname(target).toLowerCase();
+    const cacheControl = target.endsWith(path.join('_manifest.json')) ? 'no-store' : 'no-cache';
+    res.writeHead(200, {
+      'Content-Type': STATIC_MIME[ext] || 'application/octet-stream',
+      'Content-Length': stat.size,
+      'Cache-Control': cacheControl
+    });
+    fs.createReadStream(target).pipe(res);
+  });
 }
 function dbg(msg) {
   try { fs.appendFileSync(path.join(require('electron').app.getPath('userData'), 'web-dbg.log'), new Date().toISOString() + ' ' + msg + '\n'); } catch (e) {}
@@ -415,11 +477,13 @@ ${authed ? 'init();' : ''}
 </script></body></html>`;
 }
 
-function startServer(libRoot) {
-  if (server) return;
+function startServer(libRoot, options) {
+  if (server) return Promise.resolve({ reused: true, port: currentPort });
   const cfg = getConfig();
+  const opts = options || {};
   const password = cfg.webPassword || '';
-  const PORT = 9527;
+  const PORT = normalizePort(opts.port !== undefined && opts.port !== null ? opts.port : cfg.webPort);
+  currentPort = PORT;
   SESSION_TOKEN = Math.random().toString(36).slice(2);
 
   server = http.createServer((req, res) => {
@@ -443,13 +507,14 @@ function startServer(libRoot) {
         return;
       }
 
-      var authed = checkAuth(req, u);
+      var authed = !password || checkAuth(req, u);   // 空密码模式: 无需登录
       dbg(req.method + ' ' + pathname + ' authed=' + authed + ' cookie=' + (req.headers.cookie || 'none'));
       if (!authed) {
         if (pathname === '/' || pathname === '/login') return sendHTML(res, mobileHTML(false));
         return sendError(res, 401, 'Unauthorized');
       }
-      if (pathname === '/' || pathname === '/login') return sendHTML(res, mobileHTML(true));
+      if (pathname === '/login') return sendHTML(res, mobileHTML(true));
+      if (pathname === '/') return serveStatic(res, libRoot, pathname);
 
       if (pathname === '/api/library') {
         var comics = loadComics(libRoot);
@@ -548,17 +613,32 @@ function startServer(libRoot) {
         });
         return;
       }
-      sendError(res, 404, 'Not found: ' + pathname);
+      return serveStatic(res, libRoot, pathname);
     } catch (e) { sendError(res, 500, String(e.message || e)); }
   });
 
-  server.listen(PORT, '0.0.0.0', function () {
-    dbg('server started on port ' + PORT + ' token=' + SESSION_TOKEN + ' pw=' + password);
+  return new Promise(function (resolve, reject) {
+    server.on('error', function (err) {
+      server = null;
+      currentPort = null;
+      reject(err);
+    });
+    server.listen(PORT, '0.0.0.0', function () {
+      dbg('server started on port ' + PORT + ' token=' + SESSION_TOKEN + ' pw=' + password);
+      resolve({ port: PORT });
+    });
   });
 }
 
 function stopServer() {
   if (server) { try { server.close(); } catch (e) {} server = null; }
+  currentPort = null;
 }
 
-module.exports = { startServer: startServer, stopServer: stopServer, getIP: getIP };
+module.exports = {
+  startServer: startServer,
+  stopServer: stopServer,
+  getIP: getIP,
+  getPort: getPort,
+  isRunning: isRunning
+};

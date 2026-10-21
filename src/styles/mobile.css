@@ -7,6 +7,9 @@
   --safe-left: env(safe-area-inset-left, 0px);
 }
 
+/* 桌面端默认隐藏手机端删除按钮 */
+.delbtn { display: none; }
+
 @media (max-width: 760px) {
   body.not-electron #shelf,
   body.not-electron #reader {
@@ -118,9 +121,34 @@
 
   .star {
     bottom: 7px;
-    right: 7px;
+    left: 7px;
     font-size: 15px;
     padding: 1px 6px;
+  }
+  .delbtn {
+    display: flex;
+    position: absolute;
+    bottom: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(192, 57, 43, .9);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.25);
+    font-size: 12px;
+    line-height: 1;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 11;
+    padding: 0;
+    font-family: inherit;
+    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  }
+  .delbtn:active {
+    background: rgba(160, 40, 30, .95);
+    transform: scale(.92);
   }
 
   #selbar {
@@ -471,5 +499,189 @@
     border: 1px solid rgba(255,255,255,.14);
     align-items: center;
     justify-content: center;
+  }
+}
+
+/* ===== 手机阅读器: 恢复原版顶栏 + 目录/预览按钮唤起抽屉 ===== */
+@media (max-width: 760px) {
+  /* 横滑翻页, 不再用边缘滑动退出 */
+  .reader-edge {
+    display: none !important;
+  }
+
+  /* 抽屉恢复原版: 收起时完全移出屏幕, 不常驻遮挡 */
+  #sidebar {
+    width: min(82vw, 300px);
+  }
+  #sidebar.collapsed {
+    transform: translateX(-100%) !important;
+  }
+  #sidebar:not(.collapsed) {
+    transform: translateX(0) !important;
+  }
+  #sidebar .sidehandle {
+    width: 34px;
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #thumbs {
+    width: min(78vw, 240px);
+  }
+  #thumbs.collapsed {
+    transform: translateX(100%) !important;
+  }
+  #thumbs:not(.collapsed) {
+    transform: translateX(0) !important;
+  }
+  #thumbs .sidehandle {
+    width: 34px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 顶栏恢复原版横向滚动, 去掉常驻遮挡 */
+  #bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 5px;
+    padding: calc(6px + var(--safe-top)) calc(7px + var(--safe-right)) 6px calc(7px + var(--safe-left));
+    min-height: calc(48px + var(--safe-top));
+    align-items: center;
+    scrollbar-width: none;
+  }
+  #bar::-webkit-scrollbar {
+    display: none;
+  }
+  #bar .grp {
+    flex: 0 0 auto;
+    position: static;
+    background: transparent;
+    padding: 0;
+  }
+  #info {
+    position: static;
+    background: transparent;
+    padding: 0;
+    margin-left: 0;
+    flex: 0 0 auto;
+  }
+  #bar button.b {
+    min-height: 38px;
+    padding: 7px 11px;
+    font-size: 13px;
+  }
+  #pageinput {
+    width: 56px;
+    min-height: 36px;
+  }
+
+  /* 手机端新增: 目录 / 预览 按钮, 放在单页前面 */
+  .mnav-grp {
+    display: flex;
+    gap: 5px;
+  }
+  .mnav-btn {
+    min-height: 38px;
+    padding: 7px 12px;
+    font-size: 13px;
+  }
+
+  /* 画面与点击翻页区 */
+  #stage {
+    --sh: calc(100dvh - 48px - var(--safe-top));
+  }
+  .tap-zone {
+    top: calc(48px + var(--safe-top));
+    width: 32vw;
+  }
+  #reader[data-mode="scroll"] .tap-zone {
+    width: 20vw;
+    opacity: .01;
+  }
+
+  /* 全屏沉浸态 */
+  body.reader-immersive #bar {
+    display: none !important;
+  }
+  body.reader-immersive #stage {
+    --sh: 100dvh;
+    height: 100dvh;
+  }
+  body.reader-immersive .tap-zone {
+    top: var(--safe-top);
+  }
+  body.reader-immersive #exit-fullscreen {
+    display: flex;
+    position: fixed;
+    top: calc(7px + var(--safe-top));
+    right: calc(9px + var(--safe-right));
+    z-index: 120;
+    min-height: 32px;
+    padding: 6px 14px;
+    border-radius: 16px;
+    background: rgba(18, 20, 25, .72);
+    color: #e8eaed;
+    border: 1px solid rgba(255, 255, 255, .14);
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* ===== 手机端性能优化: 顶栏下滑隐藏 / 阅读器更多设置 ===== */
+@media (max-width: 760px) {
+  /* 正常态: 不裁内容; 给足够大的 max-height 供过渡 */
+  #shelfbar {
+    max-height: 500px;
+    transition: max-height .26s ease, padding .26s ease, opacity .22s ease, border-color .26s ease;
+  }
+  /* 折叠态: 只藏搜索/标题行, 分类标签行(cattabs)常驻以便筛选 */
+  body.shelf-autohide #shelfbar {
+    max-height: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    opacity: 0;
+    overflow: hidden;
+    border-bottom-color: transparent;
+    pointer-events: none;
+  }
+  #bar.m-more {
+    flex-wrap: wrap !important;
+  }
+  #mnav-more {
+    font-weight: 600;
+  }
+}
+
+/* === 第四轮: 整块屏幕手势 + 长按菜单 === */
+@media (pointer: coarse) {
+  /* 左右热区不再拦截触摸, 全部穿透到 #stage 由 touch.js 统一处理 (滑/点/缩放) */
+  .tap-zone {
+    pointer-events: none !important;
+  }
+  /* 卡片禁止系统原生长按弹窗 (iOS 保存图片等), 交给我们的长按菜单 */
+  .card {
+    -webkit-touch-callout: none;
+  }
+}
+
+/* 筛选面板展开后限制高度, 内部滚动, 不占半屏 */
+@media (max-width: 760px) {
+  #filterpanel.open .fpanel-inner {
+    max-height: 42vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 }

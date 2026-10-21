@@ -16,33 +16,74 @@ export function initReaderTouch(ctx) {
     if (bback) bback.click();
   };
 
+  let lastTouchEnd = 0;       // 触摸结束时间戳, 用于拦截合成 click
+  let flipLock = 0;           // 翻页防抖: 300ms 内只翻一次
+  document.addEventListener('touchend', function () { lastTouchEnd = Date.now(); }, { passive: true });
+
   function updateLabels() {
     const rtl = S.dir === 'rtl';
     tapPrev.setAttribute('aria-label', rtl ? '下一页' : '上一页');
     tapNext.setAttribute('aria-label', rtl ? '上一页' : '下一页');
   }
 
+  function doFlip(forward) {
+    const now = Date.now();
+    if (now - flipLock < 80) return;    // 防抖: 80ms 内重复翻页直接忽略 (不挡双击撤销)
+    flipLock = now;
+    if (forward) ctx.nextPage(); else ctx.prevPage();
+  }
+
   tapPrev.onclick = function (ev) {
+    if (Date.now() - lastTouchEnd < 600) return;
     ev.preventDefault();
     ev.stopPropagation();
     updateLabels();
-    if (S.dir === 'rtl') ctx.nextPage();
-    else ctx.prevPage();
+    doFlip(S.dir === 'rtl');
   };
 
   tapNext.onclick = function (ev) {
+    if (Date.now() - lastTouchEnd < 600) return;
     ev.preventDefault();
     ev.stopPropagation();
     updateLabels();
-    if (S.dir === 'rtl') ctx.prevPage();
-    else ctx.nextPage();
+    doFlip(S.dir !== 'rtl');
   };
+
+  // 触屏设备: 直接禁用 tap-zone 的指针事件, 彻底避免合成 click 双翻
+  if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+    tapPrev.style.pointerEvents = 'none';
+    tapNext.style.pointerEvents = 'none';
+  }
 
   const active = new Map();
   let single = null;
   let pinch = null;
   let edge = null;
   let lastTap = null;
+  let longTimer = null;
+  let suppressNativeCtx = false;
+  document.addEventListener('contextmenu', function (ev) {
+    if (suppressNativeCtx && !ev.syntheticLongPress) { ev.preventDefault(); ev.stopPropagation(); }
+  }, true);
+
+  function clearLongPress() {
+    if (longTimer) {
+      clearTimeout(longTimer);
+      longTimer = null;
+    }
+  }
+
+  function fireLongPress(x, y) {
+    suppressNativeCtx = true;
+    setTimeout(function () { suppressNativeCtx = false; }, 900);
+    const target = document.elementFromPoint(x, y) || elStage;
+    try {
+      const holder = target.closest ? target.closest('[oncontextmenu], .pageimg, #canvas') : null;
+      if (holder && typeof holder.oncontextmenu === 'function') {
+        holder.oncontextmenu({ clientX: x, clientY: y, preventDefault: function () {}, stopPropagation: function () {} });
+      }
+    } catch (e) {}
+  }
 
   function point(touch) {
     return { x: touch.clientX, y: touch.clientY };
@@ -103,10 +144,18 @@ export function initReaderTouch(ctx) {
         moved: false,
         horizontal: false
       };
+      clearLongPress();
+      longTimer = setTimeout(function () {
+        if (single && !single.moved && active.size === 1) {
+          single.moved = true;
+          fireLongPress(single.sx, single.sy);
+        }
+      }, 450);
     }
 
     if (active.size >= 2) {
       ev.preventDefault();
+      clearLongPress();
       beginPinch();
     }
   }, { passive: false });
@@ -118,6 +167,7 @@ export function initReaderTouch(ctx) {
 
     if (pinch && active.size >= 2) {
       ev.preventDefault();
+      clearLongPress();
       const vals = [...active.values()];
       const a = vals[0];
       const b = vals[1];
@@ -140,7 +190,7 @@ export function initReaderTouch(ctx) {
     const dy = p.y - single.y;
     const totalX = p.x - single.sx;
     const totalY = p.y - single.sy;
-    if (Math.hypot(totalX, totalY) > 9) single.moved = true;
+    if (Math.hypot(totalX, totalY) > 9) { single.moved = true; clearLongPress(); }
     single.x = p.x;
     single.y = p.y;
 
@@ -152,28 +202,23 @@ export function initReaderTouch(ctx) {
       return;
     }
 
-    if (!single.horizontal && Math.abs(totalX) > 24 && Math.abs(totalX) > Math.abs(totalY) * 1.2) {
+    if (!single.horizontal && Math.abs(totalX) > 18 && Math.abs(totalX) > Math.abs(totalY) * 1.1) {
       single.horizontal = true;
     }
+    if (single.horizontal) ev.preventDefault();   // 横滑一旦判定就锁住, 不让浏览器/外壳当成后退或滚动
   }, { passive: false });
 
   function handleTap(p) {
-    const now = Date.now();
-    if (lastTap && now - lastTap.t < 300 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 24) {
-      if (S.zoom) {
-        applyZoom(1);
-      } else {
-        const lp = localPoint(p);
-        zoomAt(2, lp.x, lp.y);
-      }
-      lastTap = null;
-    } else {
-      lastTap = { t: now, x: p.x, y: p.y };
-    }
+    // 点下立即翻页 (无延迟); 缩放靠双指捏合
+    const w = window.innerWidth;
+    const forward = S.dir === 'rtl' ? p.x < w * 0.5 : p.x > w * 0.5;
+    doFlip(forward);
+    suppressSyntheticClick();   // 拦截触摸合成的 click, 防止双翻
   }
 
   elStage.addEventListener('touchend', function (ev) {
     for (const t of ev.changedTouches) active.delete(t.identifier);
+    clearLongPress();
 
     if (pinch && active.size < 2) {
       const z = S.zscale || 1;
@@ -197,8 +242,7 @@ export function initReaderTouch(ctx) {
     if (S.zoom) return;
     if (horizontal && Math.abs(dx) > 50) {
       const forward = S.dir === 'rtl' ? dx > 0 : dx < 0;
-      if (forward) ctx.nextPage();
-      else ctx.prevPage();
+      doFlip(forward);
       suppressSyntheticClick();
     } else if (!wasMoved) {
       handleTap(p);
@@ -258,18 +302,75 @@ export function initReaderTouch(ctx) {
     active.clear();
     single = null;
     pinch = null;
+    clearLongPress();
   }, { passive: true });
 
+  initMobileNavButtons();
   updateLabels();
+}
+
+function initMobileNavButtons() {
+  if (!window.matchMedia || !window.matchMedia('(max-width: 760px)').matches) return;
+  if (document.getElementById('mnav-chapters')) return;
+  const bar = document.getElementById('bar');
+  if (!bar) return;
+  const groups = bar.querySelectorAll('.grp');
+  const modeGroup = groups[2] || null;   // 0 书架, 1 上下话, 2 单页/双页/长条
+  const grp = document.createElement('div');
+  grp.className = 'grp mnav-grp';
+
+  const b1 = document.createElement('button');
+  b1.className = 'b mnav-btn';
+  b1.id = 'mnav-chapters';
+  b1.type = 'button';
+  b1.textContent = '目录';
+  b1.title = '章节目录';
+  b1.addEventListener('click', function () {
+    const t = document.getElementById('sidetoggle');
+    if (t) t.click();
+  });
+
+  const b2 = document.createElement('button');
+  b2.className = 'b mnav-btn';
+  b2.id = 'mnav-thumbs';
+  b2.type = 'button';
+  b2.textContent = '预览';
+  b2.title = '缩略图预览';
+  b2.addEventListener('click', function () {
+    const t = document.getElementById('thumbtoggle');
+    if (t) t.click();
+  });
+
+  const b3 = document.createElement('button');
+  b3.className = 'b mnav-btn more';
+  b3.id = 'mnav-more';
+  b3.type = 'button';
+  b3.textContent = '更多';
+  b3.title = '展开/收起全部阅读设置';
+  b3.addEventListener('click', function () {
+    const expanded = bar.classList.toggle('m-more');
+    b3.textContent = expanded ? '收起' : '更多';
+    try { localStorage.setItem('readerMoreExpanded', expanded ? '1' : '0'); } catch (e) {}
+  });
+  // 恢复上次的展开状态
+  try {
+    if (localStorage.getItem('readerMoreExpanded') === '1') {
+      bar.classList.add('m-more');
+      b3.textContent = '收起';
+    }
+  } catch (e) {}
+
+  grp.appendChild(b1);
+  grp.appendChild(b2);
+  grp.appendChild(b3);
+  if (modeGroup) bar.insertBefore(grp, modeGroup);
+  else bar.appendChild(grp);
 }
 
 function suppressSyntheticClick() {
   function onClick(ev) {
-    if (ev.target.closest && ev.target.closest('#stage')) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      return;
-    }
+    ev.preventDefault();
+    ev.stopPropagation();
     window.removeEventListener('click', onClick, true);
   }
   window.addEventListener('click', onClick, true);

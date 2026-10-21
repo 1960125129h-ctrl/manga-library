@@ -14,8 +14,8 @@ export const home = 'https://www.pixiv.net/';
 export function match(url) { return /pixiv\.net/i.test(String(url || '')); }
 let LAST_CALL = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function throttle() {   // pixiv 对接口调用有频率限制, 每次调用之间留 260ms
-  const wait = LAST_CALL + 260 - Date.now();
+async function throttle() {   // pixiv 对接口调用有频率限制, 每次调用之间留 400ms(作者页批量补封面时用稳定性换速度)
+  const wait = LAST_CALL + 400 - Date.now();
   if (wait > 0) await sleep(wait);
   LAST_CALL = Date.now();
 }
@@ -39,8 +39,9 @@ export async function ajax(path, tries) {
     if (r.status === 429) {   // 限流: 退避重试, 实在不行就明确说"等会儿再来", 不要连撞 20 次
       const ra = parseInt(r.headers.get('retry-after') || '0', 10);
       if (i === n - 1) {
-        const err = new Error('pixiv 限流(429)：过几分钟再跑同一条命令就行，已下载的会自动跳过');
+        const err = new Error('pixiv 限流(429)：正在按退避续跑，已缓存的会自动跳过');
         err.fatal = true;
+        err.retryAfter = ra ? Math.min(ra * 1000, 30000) : 30000;
         throw err;
       }
       await sleep(ra ? Math.min(ra * 1000, 30000) : 4000 * (i + 1));
@@ -92,17 +93,22 @@ export async function chapters(url) {
   const all = await ajax('/ajax/user/' + user + '/profile/all');
   const works = worksOf(all, 1000);   // 上限 1000 话, 防止离谱作者把接口刷爆
   const list = works.map((w) => ({ id: w.id, title: 'pixiv ' + w.id, index: 0, order: w.ts, kind: 'illust' }));
-  const cache = readCache();   // 标题缓存: 二次跑(续下/限流重试)不再重复请求, 少撞限流
-  for (const c of list) { if (cache[c.id]) c.title = cache[c.id]; }
-  const todo = list.filter((c) => !cache[c.id]);
+  for (const c of list) { const cc = cachedWork(c.id); if (cc && cc.title) c.title = cc.title; }
+  const todo = list.filter((c) => { const cc = cachedWork(c.id); return !(cc && cc.title && cc.thumb); });   // 标题+封面都完整才跳过, 避免预览页再为封面重复请求
   let next = 0;
-  const worker = async () => {   // 只取没缓存的; 接口限流靠 ajax() 里的节流+退避
+  const worker = async () => {   // 只取没缓存完整的; 接口限流靠 ajax() 里的节流+退避
     while (next < todo.length) {
       const c = todo[next++];
-      try { const b = await ajax('/ajax/illust/' + c.id); if (b.illustTitle) { c.title = b.illustTitle; cache[c.id] = b.illustTitle; } } catch (e) { if (e && e.fatal) throw e; }
+      try {
+        const b = await ajax('/ajax/illust/' + c.id, 4);
+        const title = b.illustTitle || c.title || '';
+        const thumb = (b.urls && (b.urls.small || b.urls.thumb)) || '';
+        if (title) c.title = title;
+        rememberWork(c.id, title, thumb);
+      } catch (e) { if (e && e.fatal) throw e; }
     }
   };
-  try { await Promise.all([worker(), worker()]); } finally { writeCache(cache); }
+  try { await Promise.all([worker(), worker()]); } finally { }
   list.forEach((c, i) => { c.index = i + 1; });
   return list;
 }

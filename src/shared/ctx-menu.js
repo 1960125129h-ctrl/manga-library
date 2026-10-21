@@ -28,6 +28,7 @@ export function fillCtx(items, x, y) {
     elCtx.appendChild(b);
   });
   elCtx.classList.add("on");
+  elCtx.style.display = "";   // 清掉可能残留的内联 display:none
   var w = elCtx.offsetWidth, h = elCtx.offsetHeight;
   elCtx.style.left = Math.max(4, Math.min(x, window.innerWidth - w - 8)) + "px";
   elCtx.style.top = Math.max(4, Math.min(y, window.innerHeight - h - 8)) + "px";

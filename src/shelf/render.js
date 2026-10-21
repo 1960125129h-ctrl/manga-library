@@ -19,6 +19,7 @@ import { fmtBytes } from '../shared/format.js';
 import { nOf, chLabel, pageList } from '../shared/chapter.js';
 import { loadAlbums, saveAlbums, manualOrder } from '../shared/storage.js';
 import { hint, showModal, closeModal, askConfirm, askText } from '../shared/ui.js';
+import { confirmDelete } from '../shelf/book-actions.js';
 import { S, elGrid, LIBRARY } from '../app/state.js';
 import { saveShelfView, applyFRowState } from '../shelf/filter-row.js';
 import { SET } from '../settings/panel.js';
@@ -102,6 +103,7 @@ export function renderShelf() {
 
 export function renderShelfNow() {
   setCardSeq(0);
+  try { document.body.classList.remove("shelf-autohide"); } catch (e) {}
   renderAuthorSel();
   if (S.filter === "bookmark") { renderBookmarks(); return; }
   var q = S.q.trim().toLowerCase();
@@ -132,8 +134,8 @@ export function renderShelfNow() {
     var asc = S.sort === "timeasc";
     list.sort(function (a, b) {
       var ea = entryOf(a.dir), eb = entryOf(b.dir);
-      var ta = BOOKTIMES[a.dir] || (ea && ea.lastRead) || m["t::" + a.dir] || 0;
-      var tb = BOOKTIMES[b.dir] || (eb && eb.lastRead) || m["t::" + b.dir] || 0;
+      var ta = BOOKTIMES[a.dir] || a.addedAt || (ea && ea.addedAt) || (ea && ea.lastRead) || m["t::" + a.dir] || 0;
+      var tb = BOOKTIMES[b.dir] || b.addedAt || (eb && eb.addedAt) || (eb && eb.lastRead) || m["t::" + b.dir] || 0;
       if (ta !== tb) return asc ? ta - tb : tb - ta;
       return bookCmp(a, b);
     });
@@ -146,6 +148,43 @@ export function renderShelfNow() {
   var GROUP_MODE = dims.length ? dims[0] : "";
   elGrid.classList.toggle("grouped", !!dims.length);
   elGrid.classList.toggle("h", !!SET.cardH);
+  // 可视区外先用占位, 滚到再建真实卡片(降低手机端初始 DOM / 图片压力)
+  var INITIAL_MOUNT = 14;
+  var lazyMap = new Map();
+  if (window.__shelfLazyObs) try { window.__shelfLazyObs.disconnect(); } catch (e) {}
+  window.__shelfLazyObs = ("IntersectionObserver" in window) ? new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (!en.isIntersecting) return;
+      var ph = en.target;
+      var c = lazyMap.get(ph);
+      if (!c) return;
+      window.__shelfLazyObs.unobserve(ph);
+      var cel = card(c, m);
+      cel.style.display = "";
+      if (ph.dataset.group === "1") makeDraggable(cel, c.__groupList, c.__groupName, c.__groupMode);
+      ph.replaceWith(cel);
+      lazyMap.delete(ph);
+    });
+    requestAnimationFrame(function () {
+      var pend = elGrid.querySelectorAll(".pending-clamp");
+      for (var pi = 0; pi < pend.length; pi++) { pend[pi].classList.remove("pending-clamp"); clampTags(pend[pi]); }
+    });
+  }, { root: elGrid, rootMargin: "700px 0px" }) : null;
+  function phFor(c, groupList, groupName, groupMode) {
+    var ph = document.createElement("div");
+    ph.className = "card-placeholder" + (SET.cardH ? " h" : "");
+    ph.dataset.dir = c.dir;
+    if (groupList) {
+      ph.dataset.group = "1";
+      c.__groupList = groupList;
+      c.__groupName = groupName;
+      c.__groupMode = groupMode;
+    }
+    lazyMap.set(ph, c);
+    if (window.__shelfLazyObs) window.__shelfLazyObs.observe(ph);
+    return ph;
+  }
+  var mountedCount = 0;
   if (!list.length) {
     elGrid.innerHTML = "";
     var d = document.createElement("div");
@@ -153,25 +192,12 @@ export function renderShelfNow() {
     d.textContent = COMICS.length ? "没有符合条件的漫画" : "书库里还没有漫画。把漫画文件夹放进书库根目录, 双击 更新书库.cmd";
     elGrid.appendChild(d);
   } else if (!dims.length) {
-    // 非分组: 复用缓存卡片, 只移动顺序 + 显隐, 不重建 DOM
+    elGrid.innerHTML = "";
     var frag = document.createDocumentFragment();
-    var visibleDirs = {};
     for (var k = 0; k < list.length; k++) {
-      var cel = card(list[k], m);
-      cel.style.display = "";
-      visibleDirs[list[k].dir] = 1;
-      frag.appendChild(cel);   // appendChild 对已有节点是移动, 极快
+      if (mountedCount < INITIAL_MOUNT) { frag.appendChild(card(list[k], m)); mountedCount++; }
+      else frag.appendChild(phFor(list[k]));
     }
-    // 隐藏不在列表里的已有卡片
-    var existing = elGrid.children;
-    for (var ei = existing.length - 1; ei >= 0; ei--) {
-      var ex = existing[ei];
-      var ed = ex.getAttribute("data-dir");
-      if (ed && !visibleDirs[ed]) { ex.style.display = "none"; frag.appendChild(ex); }
-    }
-    // 清空分组残留(agroup/ahead/empty)
-    var stale = elGrid.querySelectorAll(".agroup,#empty");
-    for (var si = 0; si < stale.length; si++) stale[si].remove();
     elGrid.appendChild(frag);
   } else if (dims.length) {
     elGrid.innerHTML = "";
@@ -255,7 +281,17 @@ export function renderShelfNow() {
         gmap[gname] = git;
         continue;
       }
-      for (var gj = 0; gj < gmap[gname].length; gj++) { var cel = card(gmap[gname][gj], m); makeDraggable(cel, gmap[gname], gname, GROUP_MODE); wrap.appendChild(cel); }
+      for (var gj = 0; gj < gmap[gname].length; gj++) {
+        var bc = gmap[gname][gj];
+        if (mountedCount < INITIAL_MOUNT) {
+          var cel = card(bc, m);
+          makeDraggable(cel, gmap[gname], gname, GROUP_MODE);
+          wrap.appendChild(cel);
+          mountedCount++;
+        } else {
+          wrap.appendChild(phFor(bc, gmap[gname], gname, GROUP_MODE));
+        }
+      }
       sec.appendChild(wrap); elGrid.appendChild(sec);
       makeGroupDrop(sec, gname, GROUP_MODE);   // 支持把卡片从别的组拖进来(改分组)
     }
@@ -301,7 +337,9 @@ export function card(c, m) {
     im.loading = "lazy"; im.decoding = "async";
     if (incCardSeq() < 8) im.fetchPriority = "high";   // 首屏前 8 张优先
     im.src = enc(revCov || c.cover || first);
-    im.onload = function() { extractCardColor(im, el); };
+    im.onload = function() {
+      if (!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches)) extractCardColor(im, el);
+    };
     tp.appendChild(im);
   } else {
     var nn = document.createElement("div"); nn.className = "none"; nn.textContent = "无封面"; tp.appendChild(nn);
@@ -315,6 +353,14 @@ export function card(c, m) {
     st.onclick = function (ev) { ev.stopPropagation(); toggleFav(c.dir); };
     tp.appendChild(st);
   }
+  // 手机端删除按钮(桌面端通过 CSS 隐藏)
+  var delb = document.createElement("button");
+  delb.className = "delbtn";
+  delb.textContent = "✕";
+  delb.title = "删除本书";
+  delb.onclick = function (ev) { ev.stopPropagation(); confirmDelete(c.dir); };
+  delb.oncontextmenu = function (ev) { ev.preventDefault(); ev.stopPropagation(); };
+  tp.appendChild(delb);
   if (c.rating === "18+") {   // 限制级角标
     var r18b = document.createElement("div"); r18b.className = "r18badge"; r18b.textContent = "18+";
     r18b.title = "限制级（H 站下载且没有找到非H标记）";
@@ -396,6 +442,7 @@ export function card(c, m) {
     if (ev && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); selToggle(c.dir); return; }        // Ctrl 点: 加/减选
     if (ev && ev.shiftKey) { ev.preventDefault(); selRange(c.dir); return; }                        // Shift 点: 范围选
     if (SEL.length) { setSel([]); renderShelf(); hint("已取消选择"); return; }   // 先清选择, 再点才进书
+    if (ev && ev.target && ev.target.closest && !ev.target.closest('.thumb')) return;   // 只有点封面才开书
     flyOpenComic(c, el.querySelector(".thumb img"));   // 封面飞进阅读器
   };
   el.oncontextmenu = function (ev) { ev.preventDefault(); showCtx(ev.clientX, ev.clientY, c.dir); };

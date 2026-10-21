@@ -7,7 +7,7 @@
 // 「社团 (作者)」三种形态, autoAuthor() 负责归一, authorKey() 负责取分组键。
 
 import { LIBRARY } from '../app/state.js';
-import { innerAuthor, entryOf, authorKey, libEntry, libSave } from '../library/store.js';
+import { innerAuthor, entryOf, authorKey, libEntry, libSave, applyAuthorAliases } from '../library/store.js';
 import { normName } from '../shared/text.js';
 import { hint, showModal, closeModal, modalFoot, askText } from '../shared/ui.js';
 import { autoTags } from '../shelf/book-actions.js';
@@ -46,7 +46,7 @@ export function saveAliasMap(map, cb) {
     var cur = JSON.parse(localStorage.getItem("authorAlias") || "{}");
     for (var k in map) cur[k] = map[k];
     localStorage.setItem("authorAlias", JSON.stringify(cur));
-    for (var k2 in map) AUTHOR_ALIAS[k2] = map[k2];
+    applyAuthorAliases(map);
   } catch (e) {}
   if (DISK && DISK.saveAuthorAlias) {
     DISK.saveAuthorAlias(map).then(function (r) {

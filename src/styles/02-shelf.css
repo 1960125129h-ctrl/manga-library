@@ -154,3 +154,7 @@ body.no-totop #totop{display:none !important}
 .star.on{color:#ffc53d;border-color:rgba(255,197,61,.65);text-shadow:0 1px 4px rgba(0,0,0,.9)}
 .ctags{display:flex;gap:4px;flex-wrap:wrap;margin-top:7px}
 .csrc{font-size:10.5px;color:#5f8fd8;margin-bottom:6px;word-break:break-all}
+
+
+.card-placeholder{background:var(--card-bg);border-radius:var(--radius,16px);min-height:260px;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+.card-placeholder.h{min-height:140px}

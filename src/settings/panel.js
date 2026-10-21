@@ -333,35 +333,76 @@ export function openSettings() {
     webPwInput.style.cssText = 'flex:1;padding:6px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--surface2);color:var(--fg)';
     webPwRow.appendChild(webPwLbl); webPwRow.appendChild(webPwInput);
     pAdvanced.appendChild(webPwRow);
+
+    var webPortRow = document.createElement('div'); webPortRow.style.cssText = 'margin:6px 0;display:flex;gap:8px;align-items:center';
+    var webPortLbl = document.createElement('span'); webPortLbl.textContent = '端口:';
+    var webPortInput = document.createElement('input'); webPortInput.type = 'number'; webPortInput.min = '1024'; webPortInput.max = '65535'; webPortInput.value = '9580';
+    webPortInput.title = '自定义局域网访问端口';
+    webPortInput.style.cssText = 'width:120px;padding:6px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--surface2);color:var(--fg)';
+    webPortRow.appendChild(webPortLbl); webPortRow.appendChild(webPortInput);
+    pAdvanced.appendChild(webPortRow);
+    var webPortHint = document.createElement('div'); webPortHint.className = 'sub';
+    webPortHint.textContent = '端口修改后，服务运行中点“重启应用”生效。';
+    pAdvanced.appendChild(webPortHint);
+
+    var webBtnRow = document.createElement('div'); webBtnRow.style.cssText = 'display:flex;gap:8px;margin:8px 0';
     var webBtn = document.createElement('button'); webBtn.className = 'btn ghost'; webBtn.textContent = '开启';
-    pAdvanced.appendChild(webBtn);
+    var webApplyBtn = document.createElement('button'); webApplyBtn.className = 'btn ghost'; webApplyBtn.textContent = '重启应用'; webApplyBtn.style.display = 'none';
+    webBtnRow.appendChild(webBtn); webBtnRow.appendChild(webApplyBtn);
+    pAdvanced.appendChild(webBtnRow);
     var webInfo = document.createElement('div'); webInfo.style.cssText = 'margin:6px 0;padding:8px;background:#1a2a1a;border-radius:6px;font-size:13px;display:none;line-height:1.6';
     pAdvanced.appendChild(webInfo);
+    var webCurrent = null;
 
-    async function webToggle() {
-      if (webBtn.textContent === '开启') {
-        var pw = webPwInput.value.trim();
-        if (!pw) { hint('请先设置密码'); return; }
-        var r = await DISK.webStart(pw);
-        if (r.ok) {
-          webBtn.textContent = '关闭';
-          webInfo.style.display = 'block';
-          webInfo.innerHTML = '已开启<br>手机浏览器打开:<br><b style="color:#4f8;font-size:16px">http://' + r.ip + ':' + r.port + '</b><br>密码: ' + pw;
-        } else { hint('启动失败: ' + r.msg); }
-      } else {
-        await DISK.webStop();
-        webBtn.textContent = '开启';
-        webInfo.style.display = 'none';
+    function validPort() {
+      var port = Number.parseInt(webPortInput.value, 10);
+      if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+        hint('端口需为 1024 到 65535 之间的整数');
+        return null;
       }
+      return port;
+    }
+    function showWebInfo(st) {
+      webInfo.style.display = 'block';
+      webInfo.innerHTML = '已开启<br>手机浏览器打开:<br><b style="color:#4f8;font-size:16px">http://' + st.ip + ':' + st.port + '</b><br>密码: ' + (st.password || '无密码');
+    }
+    function setRunningUI(st) {
+      webCurrent = st;
+      webBtn.textContent = '关闭';
+      webApplyBtn.style.display = 'inline-block';
+      webPwInput.value = st.password || '';
+      webPortInput.value = st.port || 9580;
+      showWebInfo(st);
+    }
+    function setStoppedUI() {
+      webCurrent = null;
+      webBtn.textContent = '开启';
+      webApplyBtn.style.display = 'none';
+      webInfo.style.display = 'none';
+    }
+    async function startWeb() {
+      var pw = webPwInput.value.trim();
+      var port = validPort(); if (!port) return;
+      var r = await DISK.webStart({ password: pw, port: port });
+      if (r.ok) setRunningUI({ ip: r.ip, port: r.port, password: pw });
+      else hint('启动失败: ' + r.msg);
+    }
+    async function restartWeb() {
+      var pw = webPwInput.value.trim() || (webCurrent && webCurrent.password) || '';
+      var port = validPort(); if (!port) return;
+      var r = await DISK.webStart({ password: pw, port: port });
+      if (r.ok) setRunningUI({ ip: r.ip, port: r.port, password: pw });
+      else hint('重启失败: ' + r.msg);
+    }
+    async function webToggle() {
+      if (webBtn.textContent === '开启') await startWeb();
+      else { await DISK.webStop(); setStoppedUI(); }
     }
     webBtn.onclick = webToggle;
+    webApplyBtn.onclick = restartWeb;
     DISK.webStatus().then(function (st) {
-      if (st.running) {
-        webBtn.textContent = '关闭';
-        webPwInput.value = st.password || '';
-        webInfo.style.display = 'block';
-        webInfo.innerHTML = '已开启<br>手机浏览器打开:<br><b style="color:#4f8;font-size:16px">http://' + st.ip + ':' + st.port + '</b><br>密码: ' + (st.password || '');
-      }
+      if (st.running) setRunningUI(st);
+      else { webPortInput.value = st.port || 9580; webPwInput.value = st.password || ''; }
     });
     }
 

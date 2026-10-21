@@ -12,6 +12,7 @@ import { openComic } from '../reader/open.js';
 import { loadShelfView } from '../shared/storage.js';
 import { applyFRowState } from '../shelf/filter-row.js';
 import { renderShelf } from '../shelf/render.js';
+import { loadBookTimes } from '../shelf/book-actions.js';
 
 export function afterBoot() {
   if (STANDALONE) {
@@ -49,6 +50,7 @@ export function afterBoot() {
     }
     if (elSearch) elSearch.value = S.q || "";
     renderShelf();
+    loadBookTimes();
     if (v && v.scroll) {   // 回到上次滚到的位置(内容还没完全布局 -> 多试几次, 等图片/布局稳定)
       var targetScroll = v.scroll;
       var tries = 0;

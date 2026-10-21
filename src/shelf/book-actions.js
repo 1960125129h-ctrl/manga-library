@@ -9,6 +9,7 @@
 // 全部 export: core 里有些是当值传给 initShelfRender 的({ toggleFav: toggleFav })。
 
 import { hint, showModal, closeModal, modalFoot, askConfirm, askText } from '../shared/ui.js';
+import { isWebMode, webDeleteBook } from '../shared/web-api.js';
 import { S, LIBRARY } from '../app/state.js';
 import { setBookTimes } from '../shelf/state.js';
 import { saveShelfView } from '../shelf/filter-row.js';
@@ -157,7 +158,20 @@ export function setRating(dir, manual) {   // manual: true=18+ / false=全年龄
   libSave(); invalidateCard(dir); keepScroll(renderShelf);
 }
 export function confirmDelete(dir) {
-  if (!DISK || !DISK.deleteComic) { hint("删除需要桌面版：请用「启动书库.cmd」打开书库"); return; }
+  // 选择删除执行器: 桌面版走 IPC, Web 模式(手机浏览器)走 HTTP /api/delete
+  var doDelete;
+  if (DISK && DISK.deleteComic) {
+    doDelete = async function () {
+      var r = await DISK.deleteComic(dir);
+      if (!r || !r.ok) throw new Error((r && r.msg) || "未知错误");
+    };
+  } else if (isWebMode()) {
+    doDelete = async function () { await webDeleteBook(dir); };
+  } else {
+    hint("删除需要桌面版：请用「启动书库.cmd」打开书库");
+    return;
+  }
+
   showModal(function (box) {
     var h = document.createElement("h3"); h.textContent = "删除这本书？"; box.appendChild(h);
     var s = document.createElement("div"); s.className = "sub"; s.textContent = dir; box.appendChild(s);
@@ -175,15 +189,18 @@ export function confirmDelete(dir) {
       del.disabled = true; del.textContent = "删除中…";
       st.style.display = "block"; st.textContent = "正在删除…";
       try {
-        var r = await DISK.deleteComic(dir);
-        if (r && r.ok) {
-          if (LIBRARY && LIBRARY.comics) delete LIBRARY.comics[dir];
-          hint("已删除：" + dir);
-          if (DISK.rescan) await DISK.rescan({ offline: true }); else location.reload();
-        } else {
-          del.disabled = false; del.textContent = "删除";
-          st.textContent = "删除失败：" + ((r && r.msg) || "未知错误");
+        await doDelete();
+        if (LIBRARY && LIBRARY.comics) delete LIBRARY.comics[dir];
+        // 从内存 COMICS 数组移除(Web 模式下没有 DISK.rescan, 手动更新界面)
+        if (COMICS && COMICS.length) {
+          for (var i = COMICS.length - 1; i >= 0; i--) {
+            if (COMICS[i].dir === dir) { COMICS.splice(i, 1); break; }
+          }
         }
+        hint("已删除：" + dir);
+        closeModal();
+        if (DISK && DISK.rescan) await DISK.rescan({ offline: true });
+        else { invalidateCard(dir); renderShelf(); }
       } catch (err) {
         del.disabled = false; del.textContent = "删除";
         st.textContent = "删除失败：" + (err && err.message ? err.message : String(err));
