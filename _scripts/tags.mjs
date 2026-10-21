@@ -1140,6 +1140,8 @@ export const H_SITE_RE = /(18comic|jmcomic|e-hentai|exhentai|nhentai|hitomi|asmh
 export const MANGA_SITE_RE = /(zaimanhua|xmanhua|manhuagui|dm5|1kkk|copymanga)/i;
 // 已知的非H来源: 正经漫画站 + 大平台(pixiv/X/微博/抖音) + 外部引用目录
 export const SFW_SITE_RE = new RegExp(MANGA_SITE_RE.source + '|pixiv|twitter|(^|[^a-z])x\\.com|weibo|douyin|iesdouyin|external', 'i');
+/* pixiv 是混合平台: 不能一律当非18+。标题/标签/简介里出现 R-18 关键词才判 18+(2026-10-22 加) */
+export const PIXIV_R18_RE = /(^|[^a-z])(r-?18|18\+|nsfw|adult|ero|エロ|成人向け|成人指定|porn|hentai|no mosaic|無修正|无修正|decensored)([^a-z]|$)/i;
 export const FULL_AGE_RE = new RegExp([
   // 中文
   '一般向', '一般向け', '全年[龄齡]', '全年[龄齡]向', '健全', '非H', '非\s?H向', '无H', '無H', '全年龄向', '全龄向', '普通向', '清[水水向]', '无肉', '無肉',
@@ -1153,6 +1155,7 @@ export function ratingOf(site, text, manual) {
   if (manual === true) return '18+';
   if (manual === false) return '';
   const s = String(site || '');
+  if (/pixiv/i.test(s)) return PIXIV_R18_RE.test(String(text || '')) ? '18+' : '';   // pixiv: 看关键词, 不一刀切
   if (SFW_SITE_RE.test(s)) return '';                     // 正经漫画站 / 大平台 / 外部引用 -> 一律非 18+
   return isFullAge(text) ? '' : '18+';                    // H 站或来源不明: 命中任一"非H"正则才算非 18+
 }

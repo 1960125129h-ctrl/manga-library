@@ -117,6 +117,12 @@ function streamFile(res, filePath, mime) {
   });
 }
 function loadComics(libRoot) {
+  // 优先读构建直接产出的 _manifest.json(格式稳定, 也省掉每次 API 都正则解析 3MB 生成 HTML)
+  // 只有老工程没有 _manifest.json 时才回退去抠 书库.html
+  try {
+    var j = JSON.parse(fs.readFileSync(path.join(libRoot, '_manifest.json'), 'utf8'));
+    if (j && Array.isArray(j.comics)) return j.comics;
+  } catch (e) {}
   try {
     var html = fs.readFileSync(path.join(libRoot, '书库.html'), 'utf8');
     var m = html.match(/var COMICS\s*=\s*(\[[\s\S]*?\]);/);
@@ -549,7 +555,7 @@ function startServer(libRoot, options) {
           try { mtime = fs.statSync(path.join(libRoot, m.dir)).mtimeMs; } catch (e) {}
           return { dir: m.dir, name: m.name, chapters: m.chapters || [], categories: meta.categories || [], tags: meta.tags || [],
             author: m.author || '', source: (m.source && m.source.site) || '', work: m.work || '',
-            favorite: meta.favorite || false, rating: meta.rating || 0,
+            favorite: meta.favorite || false, rating: m.rating || ((meta && meta.rating) || 0),
             pages: (m.chapters||[]).reduce((s,c)=>s+(c.files?c.files.length:(c.n||0)),0),
             mtime: mtime };
         });
