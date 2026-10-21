@@ -1178,6 +1178,12 @@ export function badCandidate(t, authorSet) {
   if (/^(汉化|漢化|翻译|翻譯|嵌字|重嵌|扫图)/.test(t)) return true;
   if (/(^|[^a-z])(patreon|fantia|fanbox|gumroad|booth|dlsite|pixiv|ci-en|unifans|fanbox)([^a-z]|$)/i.test(t)) return true; // 付费平台/投稿站名不是作品
   if (/[「」『』《》〈〉【】]/.test(t)) return true;                // 候选本身还带角括号/书名号 -> 是副标题片段, 不是 IP
+  /* ---- 垃圾候选护栏(2026-10-22): 自动学习曾把这些学成"作品", 污染了 149 本书的作品字段 ---- */
+  if (/\d+;/.test(t)) return true;                                                       // HTML 实体残渣: #44; / #39;s / #039;s
+  if (/^\d{2,}\s*[pP](?:ages?|ics?|s)?$/.test(t)) return true;                            // 页数标记: 160p / 11220P / 500pics
+  if (/^#?[0-9A-Za-z]{14,}$/.test(t) && /\d/.test(t) && /[A-Za-z]/.test(t)) return true;     // 随机 hash/ID 串: #mdzLEBVz2J9T43DR5dpWRQ
+  if (/^(?:ntr|nsfw|r-?18|fullsets?|all works?|storyline|re-?upload|reprint|unlimited|sample|preview|raws?|request|commission|collab|非纯爱)$/i.test(t)) return true;   // 题材/状态词
+  if (/(?:paypal|zfb|alipay|wechat|wxpay|qqpay)/i.test(t)) return true;                    // 付款渠道: paypal/zfbwx
   const n = norm2(t);
   for (const a of (authorSet || [])) {
     const s = norm2(a);

@@ -914,6 +914,16 @@ for (const c of comics) {
   wt[c.dir] = { work: r2.work, char: r2.char, ai: ai };
 }
 console.log('AI 生成的书 ' + aiCount + ' 本 | 识别到作品 ' + Object.keys(wt).filter((k) => wt[k].work).length + ' 本 | 识别到角色 ' + Object.keys(wt).filter((k) => wt[k].char).length + ' 本');
+// 自动学到的"作品"如果一本都没匹配上, 就是噪音(社团名/作者名/题材词/页数标记): 从表里删掉, 免得表越滚越脏
+function pruneUnusedAutoWorks(stage) {
+  const used = new Set(Object.keys(wt).map((k) => wt[k].work).filter(Boolean));
+  const before = tables.作品.length;
+  tables.作品 = tables.作品.filter((w) => w.来源 !== '自动' || used.has(w.名));
+  const n = before - tables.作品.length;
+  if (n > 0) { saveTables(LIB, tables); console.log('清理无用自动作品 ' + n + ' 个(' + stage + ')'); }
+  return n;
+}
+pruneUnusedAutoWorks('匹配后');
 // 角色也自动学: 用"作品已识别"的书名里的反复出现的候选
 try {
   const bookList = comics.map((c) => ({ work: (wt[c.dir] && wt[c.dir].work) || '', text: c.dir + ' ' + ((META_COMICS[c.dir] && META_COMICS[c.dir].desc) || '') }));
@@ -927,6 +937,7 @@ try {
     wt[c.dir] = { work: r3.work, char: r3.char, ai: wt[c.dir] ? wt[c.dir].ai : isAI(t2) };
   }
 } catch (e) { console.log('角色学习跳过: ' + e.message); }
+pruneUnusedAutoWorks('角色学习后');
 /* ---------- 分级: 18+ / 非18+ ----------
    H 站(禁漫/EH/nhentai)用"非H"正则判定, 命中才算非18+, 否则默认18+; 正经站一律非18+; 手动优先 */
 const rating = {};
@@ -939,26 +950,33 @@ for (const c of comics) {
 }
 const r18 = Object.keys(rating).filter((k) => rating[k] === '18+').length;
 console.log('分级: 18+ ' + r18 + ' 本 | 非18+ ' + (Object.keys(rating).length - r18) + ' 本');
-// 互相排斥地写进分类: 18+ 的书只进「18+」; 「漫画」只给正经漫画站的书
+// 互相排斥地写进分类(2026-10-22 重写口径):
+//   分级类: 18+ (H 站/命中 H 正则) 与 漫画 (正经漫画站且非18+) 互斥, 只挂一个
+//   站点类: 「E-Hentai」= EH 系图站(e-hentai/exhentai/nhentai/hitomi/asmhentai);
+//           「漫画站」= 其余漫画站(禁漫 18comic/jmcomic + 正经站 zaimanhua/xmanhua/komiic…) + 无来源但原本就标了漫画站的书
+//   站点类与分级类可以并存(例: 禁漫的 R-18 书 = 18+ + 漫画站)
+const EH_SITE_RE = /(e-?hentai|exhentai|nhentai|hitomi|asmhentai)/i;
+const MANGA_STATION_RE = /(18comic|jmcomic|zaimanhua|xmanhua|manhuagui|dm5|1kkk|copymanga|komiic)/i;
 let catFixed = 0;
 for (const c of comics) {
   const m4 = META_COMICS[c.dir] || (META_COMICS[c.dir] = { favorite: false, categories: [], tags: [], note: '' });
   const s4 = (m4.source && (m4.source.site || m4.source.url)) || (c.ext ? 'external' : '');
   const is18 = rating[c.dir] === '18+';
   const cats0 = (m4.categories || []).slice();
-  // 两个分级分类先全部摘掉, 再按规则挂回去: 18+ 只挂「18+」, 正经漫画站的非18+书才挂「漫画」
-  const want = is18 ? '18+' : (MANGA_SITE_RE.test(s4) ? '漫画' : '');
-  let cats = cats0.filter((x) => x !== '18+' && x !== '漫画');
-  if (want && cats.indexOf(want) < 0) cats.push(want);
-  // EH 来源的书: 把旧的「漫画站」标签替换成「E-Hentai」
-  if (/ehentai/i.test(s4)) {
-    cats = cats.filter((x) => x !== '漫画站');
-    if (cats.indexOf('E-Hentai') < 0) cats.push('E-Hentai');
-  }
-  if (cats.join('|') !== cats0.join('|')) { m4.categories = cats; catFixed++; } else { m4.categories = cats; }
+  // 先全部摘掉受管分类, 再按规则挂回去(免得旧数据残留)
+  let cats = cats0.filter((x) => x !== '18+' && x !== '漫画' && x !== '漫画站' && x !== 'E-Hentai');
+  cats.push(is18 ? '18+' : (MANGA_SITE_RE.test(s4) ? '漫画' : ''));   // 空串稍后过滤
+  if (EH_SITE_RE.test(s4)) cats.push('E-Hentai');
+  else if (MANGA_STATION_RE.test(s4) || (!s4 && cats0.indexOf('漫画站') >= 0)) cats.push('漫画站');
+  cats = cats.filter(Boolean);
+  // 去重(保序)
+  cats = cats.filter((x, i) => cats.indexOf(x) === i);
+  m4.categories = cats;
+  c.categories = cats;          // manifest 用的是 c.categories, 必须同步(原来只改了 m4 -> 产物里的分类是旧的)
+  if (cats.join('|') !== cats0.join('|')) catFixed++;
   const tags0 = (m4.tags || []).slice();
   if (is18 && tags0.indexOf('18+') < 0) tags0.push('18+');
-  if (/ehentai/i.test(s4)) {
+  if (EH_SITE_RE.test(s4)) {
     const iEH = tags0.indexOf('漫画站');
     if (iEH >= 0) { tags0.splice(iEH, 1); if (tags0.indexOf('E-Hentai') < 0) tags0.push('E-Hentai'); }
   }
