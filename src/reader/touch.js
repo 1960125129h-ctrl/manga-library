@@ -208,9 +208,27 @@ export function initReaderTouch(ctx) {
     if (single.horizontal) ev.preventDefault();   // 横滑一旦判定就锁住, 不让浏览器/外壳当成后退或滚动
   }, { passive: false });
 
+  const isMobileUI = () => !!(window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
+  const barHidden = () => document.body.classList.contains('m-bar-hidden');
+  function toggleBar() {
+    document.body.classList.toggle('m-bar-hidden');
+    try { localStorage.setItem('readerBarHidden', barHidden() ? '1' : '0'); } catch (e) {}
+  }
+  try { if (localStorage.getItem('readerBarHidden') === '1') document.body.classList.add('m-bar-hidden'); } catch (e) {}
+
   function handleTap(p) {
     // 点下立即翻页 (无延迟); 缩放靠双指捏合
     const w = window.innerWidth;
+    if (isMobileUI()) {
+      // 手机: 三分区 —— 右 1/3 下一页, 左 1/3 上一页, 中间 1/3 显隐顶栏(右手单手也能全摸到)
+      const third = w / 3;
+      const zone = p.x < third ? 'prev' : (p.x > w - third ? 'next' : 'mid');
+      if (zone === 'mid') { toggleBar(); suppressSyntheticClick(); return; }
+      const forward = S.dir === 'rtl' ? zone === 'prev' : zone === 'next';
+      doFlip(forward);
+      suppressSyntheticClick();   // 拦截触摸合成的 click, 防止双翻
+      return;
+    }
     const forward = S.dir === 'rtl' ? p.x < w * 0.5 : p.x > w * 0.5;
     doFlip(forward);
     suppressSyntheticClick();   // 拦截触摸合成的 click, 防止双翻
@@ -284,14 +302,21 @@ export function initReaderTouch(ctx) {
     edge = null;
   }
 
-  if (edgeLeft) {
+  // 触屏设备上不挂自己那套边缘内滑: 系统(小米/Chrome)的边缘返回手势永远优先,
+  // 留着只会在某些机型上两边抢手势; 退出统一走「系统返回 / 右下角按钮 / 顶栏书架」。
+  const coarsePointer = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  if (coarsePointer) {
+    if (edgeLeft) edgeLeft.style.pointerEvents = 'none';
+    if (edgeRight) edgeRight.style.pointerEvents = 'none';
+  }
+  if (edgeLeft && !coarsePointer) {
     edgeLeft.addEventListener('touchstart', function (ev) { edgeStart(ev, 'left'); }, { passive: false });
     edgeLeft.addEventListener('touchmove', edgeMove, { passive: false });
     edgeLeft.addEventListener('touchend', edgeEnd, { passive: false });
     edgeLeft.addEventListener('touchcancel', function () { edge = null; });
   }
 
-  if (edgeRight) {
+  if (edgeRight && !coarsePointer) {
     edgeRight.addEventListener('touchstart', function (ev) { edgeStart(ev, 'right'); }, { passive: false });
     edgeRight.addEventListener('touchmove', edgeMove, { passive: false });
     edgeRight.addEventListener('touchend', edgeEnd, { passive: false });
@@ -306,7 +331,24 @@ export function initReaderTouch(ctx) {
   }, { passive: true });
 
   initMobileNavButtons();
+  initMobileBackFab(closeReader);
   updateLabels();
+}
+
+// 右下角常驻「返回书架」: 右手单手时拇指天然位置, 不依赖系统手势也不依赖左上角
+function initMobileBackFab(closeReader) {
+  if (!window.matchMedia || !window.matchMedia('(max-width: 760px)').matches) return;
+  if (document.getElementById('mback-fab')) return;
+  const host = document.getElementById('reader') || document.body;
+  const b = document.createElement('button');
+  b.id = 'mback-fab';
+  b.type = 'button';
+  b.title = '返回书架';
+  b.setAttribute('aria-label', '返回书架');
+  b.textContent = '‹ 书架';
+  b.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); closeReader(); });
+  b.addEventListener('touchstart', function (ev) { ev.stopPropagation(); }, { passive: true });
+  host.appendChild(b);
 }
 
 function initMobileNavButtons() {

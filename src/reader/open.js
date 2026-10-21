@@ -183,6 +183,27 @@ export function flyOpenComic(c, coverImg) {
   pre.onload = fire; pre.onerror = fire; pre.src = target;
   setTimeout(fire, 220);
 }
+/* ---------- 系统返回手势接管 ----------
+   手机浏览器(小米自带/Chrome)的返回手势 = history.back()。
+   页面历史里没东西时, 它就直接把整个站点退掉 —— 这就是「滑动把网站退了」。
+   做法: 进阅读器压一条历史, 返回手势落到 popstate -> 只退出阅读器;
+   自己点「书架」退出时再把它 pop 掉, 不让历史越积越多。 */
+var backArmed = false;
+function armHistoryBack() {
+  if (backArmed) return;
+  try { history.pushState({ mangaReader: 1 }, ""); backArmed = true; } catch (e) {}
+}
+function disarmHistoryBack() {
+  if (!backArmed) return;
+  backArmed = false;
+  try { history.back(); } catch (e) {}   // popstate 会来, 但 armed 已清, 处理器会忽略
+}
+window.addEventListener("popstate", function () {
+  if (!backArmed) return;
+  backArmed = false;
+  closeComic();                          // 系统返回手势 = 退出阅读器, 不退出站点
+});
+
 export function openComic(c) {
   setComic(c);
   NAVFWD.length = 0;   // 新开一本书, 清掉"前进"记录(和浏览器一致)
@@ -220,6 +241,7 @@ export function openComic(c) {
   }
   elShelf.classList.add("hide");
   elReader.classList.remove("hide");
+  armHistoryBack();                      // 压一条历史, 让系统返回手势落在阅读器上
   elReader.getAnimations().forEach(function(a){a.cancel()});
   if (vtBusy) {
     elReader.style.opacity = "";   // 飞入时交给 View Transition 过渡, 这里再淡入会叠起来、收尾闪一下
@@ -293,6 +315,7 @@ export function flyCloseComic() {
   setTimeout(function () { try { fly.remove(); } catch (e) {} }, 460);
 }
 export function closeComic() {
+  disarmHistoryBack();
   resetReaderFullscreen();
   save();
   if (comic) NAVFWD.push(comic.dir);

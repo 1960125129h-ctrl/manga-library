@@ -1,4 +1,4 @@
-const CACHE_VERSION = "manga-library-v2-20260921";
+const CACHE_VERSION = "manga-library-v2-20261021";   // 改前端后一定要升这里: /src/* 走 stale-while-revalidate, 不升版本第一刷还是旧文件
 const APP_PREFIX = "/src/";
 
 self.addEventListener("install", (event) => {

@@ -676,6 +676,61 @@
   }
 }
 
+/* ===== 手机端交互整改(2026-10-21) =====
+   1) 桌面专用按钮在手机上藏起来: 网站总览 / 更新书库 / 下载漫画 / 工作台切换
+   2) 阅读器顶栏默认只显示「目录 / 预览 / 页码 / 更多」, 其余收进「更多」
+   3) 中间区域点按可整体收起/展开顶栏(body.m-bar-hidden)
+   4) 右下角常驻「返回书架」按钮(右手单手拇指可达) */
+@media (max-width: 760px) {
+  #btn-sites,
+  #btn-rebuild,
+  #btn-download,
+  #mode-workbench { display: none !important; }
+
+  /* 顶栏: 常用那一排在屏内, 其余等「更多」 */
+  #bar .grp { display: none; }
+  #bar .mnav-grp { display: flex; }
+  #bar #info { display: flex; }
+  #bar.m-more .grp { display: flex; }
+
+  /* 「顶栏自动隐藏」那条是给鼠标的(mousemove 才唤出), 触屏上永远唤不出来 ->
+     手机上把它废掉, 顶栏显隐统一由「点中间区域」控制(body.m-bar-hidden) */
+  body.bar-autohide #bar,
+  body.bar-autohide #bar.show { transform: none !important; }
+
+  /* 收起态: 中间区域点一下收起/展开 */
+  body.m-bar-hidden #bar { display: none !important; }
+  body.m-bar-hidden #stage { --sh: calc(100dvh - var(--safe-top)); }
+
+  /* 右下角返回书架 */
+  #mback-fab {
+    position: fixed;
+    right: calc(14px + var(--safe-right, 0px));
+    bottom: calc(22px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)));
+    z-index: 130;
+    min-width: 74px;
+    min-height: 44px;
+    padding: 0 15px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, .16);
+    background: rgba(18, 20, 25, .66);
+    color: #e8eaed;
+    font-size: 14px;
+    line-height: 44px;
+    text-align: center;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+  }
+  #mback-fab:active { background: rgba(40, 44, 52, .9); }
+}
+
+/* 触屏上不吃边缘手势(交给系统返回), 否则会和系统手势互相抢 */
+@media (pointer: coarse) {
+  .reader-edge { pointer-events: none !important; }
+}
+
+
 /* 筛选面板展开后限制高度, 内部滚动, 不占半屏 */
 @media (max-width: 760px) {
   #filterpanel.open .fpanel-inner {
