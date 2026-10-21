@@ -572,7 +572,20 @@ async function runTagBatch(tagUrl) {
   let totalImgs = 0, totalBytes = 0, doneN = 0;
   for (const g of galleries) {
     doneN++;
-    const bName = safe(g.title);
+    // 先拿真标题再定文件夹名。
+    // 列表里的 title 初始值是 'pixiv <作品ID>' (作者主页批量时), 只有补详情成功才会换成真标题,
+    // 一旦补详情被限流就永久留下 'pixiv 139172953' 这种目录名(库里曾经有 343 本中招)。
+    // resolve 本来就要调, 这里只是把它提到"命名之前"。
+    let gMeta = null;
+    for (let k = 0; k < 2 && !gMeta; k++) {
+      try { gMeta = await adapter.resolve(g.url); } catch (e2) {
+        if (k === 0) await new Promise(function (r) { setTimeout(r, 1500); });
+        else say('  取真标题失败, 退回列表标题: ' + String((e2 && e2.message) || e2).slice(0, 100));
+      }
+    }
+    const realTitle = safe((gMeta && gMeta.title) || '');
+    const bName = realTitle || safe(g.title);
+    if (!realTitle) say('  ! 真标题取不到, 这本书会用占位名: ' + bName);
     const bDir = path.join(LIB, CAT, bName);
     say('@@CH@@' + JSON.stringify({ index: doneN, label: bName }));
     let success = false;
@@ -580,7 +593,7 @@ async function runTagBatch(tagUrl) {
       if (attempt > 0) { say('  重试第 ' + attempt + ' 次…'); await new Promise(function (r) { setTimeout(r, 2000); }); }
       try {
         if (hasDir(bDir)) { say('  已存在, 跳过: ' + bName); success = true; break; }
-        const gMeta = await adapter.resolve(g.url);
+        if (!gMeta) gMeta = await adapter.resolve(g.url);
         const chaps = await adapter.chapters(g.url);
         for (const c of chaps) {
           const imgs = await adapter.images(c);
