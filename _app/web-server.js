@@ -555,7 +555,7 @@ function startServer(libRoot, options) {
           try { mtime = fs.statSync(path.join(libRoot, m.dir)).mtimeMs; } catch (e) {}
           return { dir: m.dir, name: m.name, chapters: m.chapters || [], categories: meta.categories || [], tags: meta.tags || [],
             author: m.author || '', source: (m.source && m.source.site) || '', work: m.work || '',
-            favorite: meta.favorite || false, rating: m.rating || ((meta && meta.rating) || 0),
+            favorite: meta.favorite || false, rating: (m.rating === '18+' || m.rating === 18) ? 18 : 0,   // 手机端前端拿 b.rating>0 判「有分级」, 必须给数字
             pages: (m.chapters||[]).reduce((s,c)=>s+(c.files?c.files.length:(c.n||0)),0),
             mtime: mtime };
         });
