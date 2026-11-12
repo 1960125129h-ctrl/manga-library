@@ -61,3 +61,4 @@ _scripts/jm/待下载*.txt
 _scripts/sites/cache-pixiv*.json
 _visual-check/dl-general.png
 _visual-check/verify-panel.png
+_scripts/sites/*cookies*
