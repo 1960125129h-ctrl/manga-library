@@ -83,10 +83,20 @@ function resSignature() {
   const RES = process.resourcesPath;
   const keys = ['src/index.html', 'src/main.js', 'service-worker.js', 'manifest.webmanifest',
     '_scripts/build-library.mjs', '_scripts/sites/fetch-book.mjs'];
-  const parts = [];
+  const parts = [String(app.getVersion())];   // 版本一变就整体重同步
   for (const k of keys) {
     try { const st = fs.statSync(path.join(RES, k)); parts.push(k + ':' + st.size + ':' + Math.floor(st.mtimeMs)); }
     catch (e) { parts.push(k + ':-'); }
+  }
+  // 只改一个站点适配器时, 上面那几个 key 的 mtime 不会变 -> 签名不变 -> 用户拿不到新版。
+  // 所以把 sites/ 与 jm/ 下的脚本按「文件名:大小」也纳入签名。
+  for (const dir of ['_scripts/sites', '_scripts/jm']) {
+    try {
+      const list = fs.readdirSync(path.join(RES, dir)).filter(function (f) { return /\.(mjs|js|py)$/i.test(f); }).sort();
+      for (const f of list) {
+        try { const st = fs.statSync(path.join(RES, dir, f)); parts.push(dir + '/' + f + ':' + st.size); } catch (e) {}
+      }
+    } catch (e) {}
   }
   try { return require('node:crypto').createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 12); }
   catch (e) { return String(app.getVersion()); }
