@@ -86,6 +86,22 @@ function sortKey(s) {
   }).toLowerCase();   // ASCII 作者名大小写不敏感: [A] 与 [a] 排在一起
 }
 function natCmp(a, b) { return sortKey(a).localeCompare(sortKey(b), 'zh', { numeric: true, sensitivity: 'base' }); }
+// 从章节目录名里抠出话号：优先「第N话/N话」，其次开头的序号。
+// 例：`第01話`→1、`15 第14.5话`→14.5、`80 机翻79话`→79、`06 休`→6、`第三話`→3
+function chapterNo(s) {
+  const t = String(s || '');
+  let m = t.match(/第\s*([0-9]+(?:\.[0-9]+)?)\s*[話话卷章]/);
+  if (m) return parseFloat(m[1]);
+  m = t.match(/([0-9]+(?:\.[0-9]+)?)\s*[話话卷章]/);
+  if (m) return parseFloat(m[1]);
+  m = t.match(/第\s*([零〇一二三四五六七八九十百千两]+)\s*[話话卷章]/);
+  if (m) return cn2num(m[1]);
+  m = t.match(/^\s*([0-9]+(?:\.[0-9]+)?)/);
+  if (m) return parseFloat(m[1]);
+  m = t.match(/^\s*([零〇一二三四五六七八九十百千两]+)/);
+  if (m) return cn2num(m[1]);
+  return 999999;
+}
 
 function joinRel(rel, f) { return rel ? rel + '/' + f : f; }
 
@@ -116,7 +132,9 @@ function scanComic(cdir, relDir) {
       .filter(e => e.isFile() && IMG_EXT.indexOf(path.extname(e.name).toLowerCase()) >= 0)
       .map(e => e.name).sort(natCmp);
     if (files.length) {
-      found.push({ rel: rel, files: files });
+      let bt = 0;
+      try { bt = fs.statSync(dir).birthtimeMs || 0; } catch (e0) {}
+      found.push({ rel: rel, files: files, ts: bt });
       for (const f of files) { try { bytes += fs.statSync(path.join(dir, f)).size; } catch (e) {} }   // 顺手统计这本的体积
     }
     for (const e of entries) {
@@ -133,7 +151,15 @@ function scanComic(cdir, relDir) {
   }
   if (!chapters.length) return null;
 
-  chapters.sort((a, b) => natCmp(a.rel, b.rel));
+  // 章节顺序 = 话号自然序。
+  // 走过的弯路：①纯按目录名排 → `15 第14.5话` 数字开头插到 `第01話` 前面；
+  //          ②按目录创建时间（下载顺序）→ 用户倒着下载时（先 03→02→01 再 44→43）整本会反转。
+  // 现在从名字里抠话号按数字排；抠不到的用开头序号，再不行排最后。
+  chapters.sort((a, b) => {
+    const na = chapterNo(a.rel), nb = chapterNo(b.rel);
+    if (na !== nb) return na - nb;
+    return natCmp(a.rel, b.rel);
+  });
   const labels = chapters.map(f => f.rel ? f.rel.split('/').pop() : name);
   const dup = labels.some((l, i) => labels.indexOf(l) !== i);
   const out = chapters.map(function (f, i) {
@@ -744,7 +770,12 @@ p('        <button class="b" id="brev" title="章节观看顺序：正序(旧→
 
 /* 增量重建: --only "漫画/书名" (可多个, 逗号分隔) -> 只扫这些书, 其余从现有 书库.html 读回来
    这样下载完一本书就只重建一本, 不再每次全库扫描 */
-const ONLY = String(arg('only', '') || '').split(/[,，]/).map((s) => s.trim().replace(/\\/g, '/')).filter(Boolean);
+// --only 支持三种分隔：竖线 | 、换行、以及旧的逗号（兜底）。
+// 优先用竖线——书名里本来就带中文逗号（"我怎么可能成为你的恋人，不行不行！"），
+// 用逗号当分隔会把它劈成两本，导致那本根本没被重建。
+const _onlyRaw = String(arg('only', '') || '');
+const ONLY = (_onlyRaw.indexOf('|') >= 0 ? _onlyRaw.split('|') : (_onlyRaw.indexOf('\n') >= 0 ? _onlyRaw.split(/\r?\n/) : _onlyRaw.split(/[,，]/)))
+  .map((s) => s.trim().replace(/\\/g, '/')).filter(Boolean);
 function readOldManifest() {
   // 优先读构建直接产出的数据文件(稳定格式), 不再从生成的 HTML 里正则抠
   try {
@@ -957,6 +988,7 @@ console.log('分级: 18+ ' + r18 + ' 本 | 非18+ ' + (Object.keys(rating).lengt
 //   站点类与分级类可以并存(例: 禁漫的 R-18 书 = 18+ + 漫画站)
 const EH_SITE_RE = /(e-?hentai|exhentai|nhentai|hitomi|asmhentai)/i;
 const MANGA_STATION_RE = /(18comic|jmcomic|zaimanhua|xmanhua|manhuagui|dm5|1kkk|copymanga|komiic)/i;
+const JM_SITE_RE = /(18comic|jmcomic)/i;   // 禁漫单独一个分类入口，别再和「漫画站」混在一起
 let catFixed = 0;
 for (const c of comics) {
   const m4 = META_COMICS[c.dir] || (META_COMICS[c.dir] = { favorite: false, categories: [], tags: [], note: '' });
@@ -964,9 +996,10 @@ for (const c of comics) {
   const is18 = rating[c.dir] === '18+';
   const cats0 = (m4.categories || []).slice();
   // 先全部摘掉受管分类, 再按规则挂回去(免得旧数据残留)
-  let cats = cats0.filter((x) => x !== '18+' && x !== '漫画' && x !== '漫画站' && x !== 'E-Hentai');
+  let cats = cats0.filter((x) => x !== '18+' && x !== '漫画' && x !== '漫画站' && x !== 'E-Hentai' && x !== '禁漫');
   cats.push(is18 ? '18+' : (MANGA_SITE_RE.test(s4) ? '漫画' : ''));   // 空串稍后过滤
   if (EH_SITE_RE.test(s4)) cats.push('E-Hentai');
+  else if (JM_SITE_RE.test(s4)) cats.push('禁漫');        // 禁漫：独立分类
   else if (MANGA_STATION_RE.test(s4) || (!s4 && cats0.indexOf('漫画站') >= 0)) cats.push('漫画站');
   cats = cats.filter(Boolean);
   // 去重(保序)

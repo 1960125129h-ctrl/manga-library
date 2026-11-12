@@ -8,6 +8,7 @@
 - 书库根：D:\gong zuo qu\漫画书库（下称 LIB）
 - 漫画都在 LIB\漫画\<书名>\第NN話\*.webp；书库根与书目录里不放任何图片。
 - 下载只走一条命令：node _scripts\jm\run-albums.mjs "<专辑链接>"
+- **轻量版（推荐先试这个）**：在后面加 `--img` —— 跳过「点免等待 / 验证码 OCR / 表单提交 / 收 zip / 解压」整条重链路，改图片 CDN 直取（实测单话 1.7~2.9 秒，无浏览器也能跑）。原理、实测数据、踩坑见 `docs\资源获取-更优路径.md`
 - 手动下的包丢进 LIB\_zips，跑 node _scripts\jm\import-zips.mjs 入库。
 - 改完库跑 node _scripts\build-library.mjs --lib "LIB" 重建 书库.html。
 - 当前规模：19 本 / 63 话 / 2092 页。

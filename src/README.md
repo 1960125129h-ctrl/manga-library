@@ -272,18 +272,46 @@ node _scripts\jm\make-fixture.mjs --remove
 
 ```powershell
 cd 'D:\gong zuo qu\漫画书库重构v0\_app'
-.\node_modules\.bin\electron-builder --win
+.\node_modules\.bin\electron-builder.cmd --win
 ```
 
-产物在 `..\_dist\`：`漫画书库重构v0-<版本>-setup.exe`(NSIS 安装包) 与 `-portable.exe`(便携版)，
-各约 145 MB。
+产物在 `..\_dist\`：`书库-<版本>-setup.exe`(NSIS 安装包) 与 `-portable.exe`(便携版)，
+各约 170 MB（ffmpeg+ffprobe 200 MB、node.exe 88 MB 都在包里）。
 
-**打包版和开发版的关键差别**：书库根目录由用户在首次启动时选，
-界面源码 `src/` 会在那时被拷进那个目录（所以 `rendererPath()` 仍然指向 `LIB/src`）。
-不拷 `src/` 的话装完打开就是白屏——`verify-packaged.mjs` 专门守这条。
+### 打包前置（缺一样功能就少一块，且不报错）
 
-打包时排除了这些（省约 110 MB 且功能不受影响）：
-`ffplay.exe`（代码只用 ffmpeg/ffprobe）、ffmpeg 的 doc/、浏览器 profile、日志、历史验收脚本。
+| 要准备 | 放在哪 | 缺了会怎样 |
+|---|---|---|
+| `ffmpeg.exe` / `ffprobe.exe` | `_scripts\tools\ffmpeg\...\bin\` | 抖音动图、mp4 转 GIF 全废（`fetch-book.mjs` 退回找 PATH，一般找不到） |
+| `node.exe`（**必须 ≥24**） | `_scripts\tools\node\node.exe` | 下载/探测/重建全部起不来：主进程 spawn 的是它，不是 Electron 内置的那个 Node |
+| `_app\node_modules\sharp` | 已声明成 `dependencies` | 缩略图板、工作台取色、参考板导出全灰（`LoadSharp` 回 null） |
+
+`_scripts/tools/` 与 `_app/node_modules/` 都在 `.gitignore` 里 —— **换机器打包前必须先把这两个塞回去**。
+
+### 打包版和开发版的差别
+
+1. **书库根目录**由用户首次启动时选（`config.json` 的 `libraryRoot`）；配的目录丢了会重新弹选择框，
+   不会像以前那样回落到 `resources`（安装目录里通常不可写）。
+2. **资源同步**：首次启动把 `src/`、`_scripts/`、`icons/`、`manifest.webmanifest`、`service-worker.js`
+   以及三个模板 json 拷进书库目录；之后每次启动按 `resources` 里的资源签名比对 `.pkg-version`，
+   **签名变了就覆盖一遍** —— 否则换版本会出现"外壳是新的、界面和下载脚本还是首发那版"，且毫无报错。
+   用户数据（`漫画/`、`library.json`、`.progress.json`、`_thumbs/`、`_scripts/sites/cookies/`）一个不动。
+3. **真实 Node**：打包版用随包的 `_scripts\tools\node\node.exe`（Electron 内置 Node 是 22，不认 `NODE_USE_ENV_PROXY`，
+   走代理的站会静默失败）；开发版用 PATH 上的 `node`，也可用 `MANGA_NODE` 指。
+4. **代理**：`config.json` 的 `proxy`（默认 `http://127.0.0.1:7890`；写 `off` 走直连），经 `MANGA_PROXY` 传给所有子进程。
+5. **浏览器**：Chrome/Edge 不再写死 `C:\Program Files\...`，按 环境变量 → 常见安装位置 → 注册表 → PATH 找；
+   找不到就明确报错退出（`_scripts/lib/browser.mjs`）。
+6. **Python**（缩略图/OCR/拼页）不随包分发：没装时缩略图会跳过并在 `build-library` 里打印一行说明；
+   要用 OCR 就自己装 Python 3.11 + `pillow easyocr opencv-python`，或用 `MANGA_PY` 指定。
+
+### 打包时排除了什么
+
+- 体积：`ffplay.exe`（代码只用 ffmpeg/ffprobe）、ffmpeg 的 `doc/`、`sharp` 的 wasm32 回退包（省约 120 MB）
+- 开发期垃圾：浏览器 profile、日志、历史验收脚本、抓取缓存 `cache-pixiv*.json`、调试脚本（`p013052` / `probe*` / `v733851` / `x7242143` / `smoke-ref` / `make-fixture`）
+- **登录凭据**：`_scripts/sites/cookies/` 与 `*cookies*.txt` 一律不进包（否则装到别人机器上就是现成登录态）
+
+打包后必须跑一次：`node _scripts\jm\verify-packaged.mjs`（守上面 1、2 两条 + 凭据不漏 + 界面真能起来）。
+注意它要连 CDP，跑的时候先清掉 `ELECTRON_RUN_AS_NODE` 环境变量（在 DSH 里跑会带这个变量，Electron 会退化成 node）。
 
 ## 从 core.js 抽模块的方法
 

@@ -18,7 +18,7 @@ import { initReaderPanel, renderChapters, chStep, bmFind, bmToggle, bmSync, show
 import { initReaderView, saveReaderDefaults, applyReaderTheme, makeImg, syncSideHandles, scrollThumbToCenter, saveRev, panCanvas, spreads, spreadIndex, preload, preloadAround, syncThumbsActive } from '../reader/view.js';
 import { initLibraryStore, setCACHE, libEntry, manifestOf, entryOf, noteOf, revOf, meta, setMeta, prog, setProg, libSave,
          totalPages, innerAuthor, authorKey, platformOf, isBigPlat, unitP, unitQ, dupKey, cn2num, sortKey,
-         bookCmp, bookSortKey, coverPage, countIn, groupLabelFor, authorOf, buildSearchHay } from '../library/store.js';
+         bookCmp, bookSortKey, coverPage, countIn, groupLabelFor, authorOf, buildSearchHay, flushProg } from '../library/store.js';
 import { initShelfSelect, selHas, selClear, selToggle, selRange, selNewAlbum, selRemoveFromAlbum, selDelete, selCategory, addToAlbum, removeFromAlbum, inAlbum, albumCount, visibleDirs, deleteMany } from '../shelf/select.js';
 import { initShelfUtil, clampTags, gridCellW, keepScroll, scrollers, finishReorder, updateFilterBadge, copyText, thumbOf, extractCardColor } from '../shelf/util.js';
 import { initShelfActions, editNote, autoTags, toggleFav, setRating, renameBookDir, mergeBook, confirmDelete, findDupGroups, loadBookTimes, dupDialog, manageCat } from '../shelf/book-actions.js';
@@ -474,7 +474,7 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
       try { return localStorage.getItem("shelfTheme") || "dark"; } catch (e) { return "dark"; }
     }
     var THEME_NAME = { dark:"暗黑", light:"灰白", eye:"护眼", paper:"米纸" };
-    function apply(t) {
+    function apply(t, silent) {
       document.body.setAttribute("data-shelf-theme", t === "dark" ? "" : t);
       var current = t;
       // 只重画色点, 不动按钮里那个写主题名的 span(#btn-theme-label):
@@ -490,8 +490,12 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
       var lab = document.getElementById("btn-theme-label");
       if (lab) lab.textContent = THEME_NAME[t] || "暗黑";
       try { localStorage.setItem("shelfTheme", t); } catch (e) {}
+      // 书架主题是权威入口：用户在这里改，要同步到阅读器状态并落盘，
+      // 否则下一次 applyReaderTheme()（打开书 / 调亮度）又按旧的 S.theme 把它刷回去。
+      // silent=true 用于启动时首次渲染 —— 那时 prefs 还没异步回来，不能反写。
+      if (!silent && S.theme !== t) { S.theme = t; try { saveReaderDefaults(); } catch (e2) {} }
     }
-    apply(cur());
+    apply(cur(), true);
   })();
 
   // 书架滚动: 显示/隐藏回到顶部按钮 (像网页一样上下滚)
@@ -554,27 +558,62 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
   elBack.onclick = flyCloseComic;
   document.getElementById("bprevch").onclick = function () { if (comic) prevChapter(false); };
   document.getElementById("bnextch").onclick = function () { if (comic) nextChapter(); };
-  document.getElementById("m-single").onclick = function () { S.mode = "single"; render(); saveReaderDefaults(); };
-  document.getElementById("m-double").onclick = function () { S.mode = "double"; render(); saveReaderDefaults(); };
-  document.getElementById("m-scroll").onclick = function () { S.mode = "scroll"; render(); saveReaderDefaults(); };
-  document.getElementById("f-width").onclick = function () { S.fit = "width"; render(); };
-  document.getElementById("f-height").onclick = function () { S.fit = "height"; render(); };
+  document.getElementById("m-single").onclick = function () { S.mode = "single"; var sb = document.getElementById("scrollscale"); if (sb) sb.style.display = "none"; render(); saveReaderDefaults(); };
+  document.getElementById("m-double").onclick = function () { S.mode = "double"; var sb2 = document.getElementById("scrollscale"); if (sb2) sb2.style.display = "none"; render(); saveReaderDefaults(); };
+  // 长条按钮：第一次点进长条，已经在长条了再点一次才展开/收起缩放比例
+  function toggleScaleBar(force) {
+    var box = document.getElementById("scrollscale");
+    if (!box) return;
+    var showing = box.style.display !== "none";
+    var next = (typeof force === "boolean") ? force : !showing;
+    box.style.display = next ? "flex" : "none";
+  }
+  document.getElementById("m-scroll").onclick = function () {
+    if (S.mode !== "scroll") {
+      S.mode = "scroll";
+      toggleScaleBar(false);          // 切进来时先收着，避免工具栏一下变长
+      render(); saveReaderDefaults();
+    } else {
+      toggleScaleBar();                // 已在长条 -> 展开/收起比例
+    }
+  };
+  // 四个适配按钮都要落盘：原来只 render 不 save，退出后下次进来又回到旧档
+  document.getElementById("f-width").onclick = function () { S.fit = "width"; render(); saveReaderDefaults(); };
+  document.getElementById("f-height").onclick = function () { S.fit = "height"; render(); saveReaderDefaults(); };
   var fPage = document.getElementById("f-page");
   if (fPage) fPage.onclick = function () {
     if (S.mode !== "single") { hint("整页只在单页模式可用，先切到单页"); return; }
-    S.fit = "page"; render();
+    S.fit = "page"; render(); saveReaderDefaults();
   };
-  document.getElementById("f-original").onclick = function () { S.fit = "original"; render(); };
-  document.getElementById("bcover").onclick = function () { S.cover = !S.cover; render(); };
+  document.getElementById("f-original").onclick = function () { S.fit = "original"; render(); saveReaderDefaults(); };
+  // 长条模式的整本缩放（只影响长条，单页/双页不动）
+  function stepScrollScale(d) {
+    var v = Math.round(((S.scale || 1) + d) * 100) / 100;
+    v = Math.max(0.1, Math.min(1.6, v));
+    if (v === S.scale) return;
+    S.scale = v;
+    try {
+      document.documentElement.style.setProperty("--scroll-scale", String(v));
+      var st = document.getElementById("bscaletxt");
+      if (st) st.textContent = Math.round(v * 100) + "%";
+    } catch (err) {}
+    if (S.mode !== "scroll") hint("这个比例只影响长条模式（当前是" + (S.mode === "single" ? "单页" : "双页") + "）");
+    render();
+    saveReaderDefaults();
+  }
+  var bsOut = document.getElementById("bscaleout"), bsIn = document.getElementById("bscalein");
+  if (bsOut) bsOut.onclick = function () { stepScrollScale(-0.1); };
+  if (bsIn) bsIn.onclick = function () { stepScrollScale(0.1); };
+  document.getElementById("bcover").onclick = function () { S.cover = !S.cover; render(); saveReaderDefaults(); };
   document.getElementById("sidetoggle").onclick = function () { S.sidebar = !S.sidebar; syncButtons(); save(); saveReaderDefaults(); };
   document.getElementById("bdir").onclick = function () { S.dir = S.dir === "rtl" ? "ltr" : "rtl"; syncButtons(); save(); saveReaderDefaults(); };
   var bRev = document.getElementById("brev");
-  if (bRev) bRev.onclick = function () { S.rev = !S.rev; syncButtons(); renderChapters(); saveRev(); save(); hint(S.rev ? "倒序观看：从最新的一话开始（封面也换成最新一话的图）" : "恢复正序观看"); };
+  if (bRev) bRev.onclick = function () { S.rev = !S.rev; syncButtons(); renderChapters(); saveRev(); save(); saveReaderDefaults(); hint(S.rev ? "倒序观看：从最新的一话开始（封面也换成最新一话的图）" : "恢复正序观看"); };
   var bPrevRev = document.getElementById("prevrev");
   if (bPrevRev) bPrevRev.onclick = function () {
     S.prevRev = !S.prevRev;
     S.pi = S.prevRev ? Math.max(0, pages().length - 1) : 0;   // 切换后直接落在"该看的开头"
-    syncButtons(); applyThumbs(); render(); saveRev(); save();
+    syncButtons(); applyThumbs(); render(); saveRev(); save(); saveReaderDefaults();
     if (comic) { var pr = prog(comic.dir) || {}; pr.prevRevUser = true; setProg(comic.dir, pr); }
     hint(S.prevRev ? "预览倒序：列表和翻页都从最后一页往前" : "预览恢复正序：从第一页往后");
   };
@@ -755,7 +794,14 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
   });
 
 
-  try { window.addEventListener("beforeunload", function () { saveShelfView(true); }); } catch (e) {}
+  // 关窗/刷新前: 先把当前书的阅读进度写掉(草稿在防抖队列里的话会丢), 再存书架浏览状态
+  try {
+    window.addEventListener("beforeunload", function () {
+      try { save(); } catch (e1) {}
+      try { flushProg(); } catch (e2) {}
+      saveShelfView(true);
+    });
+  } catch (e) {}
 
   // ─── ⑦ 启动 ───────────────────────────────────────────────────────────────
   window.mlBooted = false;

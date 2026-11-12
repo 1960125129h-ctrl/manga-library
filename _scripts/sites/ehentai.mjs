@@ -1,12 +1,30 @@
 // E-Hentai 适配器(纯 HTTP, 不开浏览器) —— 一个画廊 = 一本书(整本一话)
 // 只需要 cookie: _scripts/sites/cookies/e-hentai.org.txt (登录一次, node _scripts\jm\site-login.mjs e-hentai.org)
 // 流程: 画廊页 → 翻 ?p=N 收集 /s/ 链接 → 并发打开每个 /s/ 页读 <img id="img"> 的直链
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { cookieHeader, hostOf } from './cookies.mjs';
 export const id = 'ehentai';
 export const label = 'E-Hentai';
 export const home = 'https://e-hentai.org/';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36';
 export function match(url) { return /(^|\.|\/\/)(e-hentai|exhentai)\.org\//i.test(String(url || '') + '/'); }
+
+/* 下载质量档位：EH 对高频 IP 只给压缩过的降级图，原图在 /s/ 页的「Download original」里。
+   'standard' = 降级档（快、体积小、默认）；'original' = 原图（尺寸/体积由上传者原始文件决定，每张都不同，不做任何假设）。
+   来源优先级：环境变量 EH_QUALITY > 设置里的 download-prefs.json */
+export function ehQuality() {
+  if (process.env.EH_QUALITY) return process.env.EH_QUALITY === 'original' ? 'original' : 'standard';
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const j = JSON.parse(fs.readFileSync(path.join(here, 'download-prefs.json'), 'utf8'));
+    if (j && j.ehQuality === 'original') return 'original';
+  } catch (e) {}
+  return 'standard';
+}
+// EH 图片有配额（509 sad panda），并发压低：高了只会更快撞配额，不会更快下完
+export const jobs = 8;
 export function galleryOf(url) {
   const m = String(url || '').match(/\/g\/(\d+)\/([0-9a-fA-F]+)/);
   return m ? { gid: m[1], token: m[2] } : null;
@@ -47,6 +65,11 @@ function sLinks(html) {
   let m;
   while ((m = re.exec(html))) { if (out.indexOf(m[1]) < 0) out.push(m[1]); }
   return out;
+}
+function origOf(html) {
+  // /s/ 页面里的「Download original」链接 -> /fullimg/<gid>/<page>/<key>/<file>
+  const m = String(html).match(/href="([^"]*\/fullimg\/[^"]+)"/i);
+  return m ? m[1].replace(/&amp;/g, '&') : '';
 }
 function imgOf(html) {
   const tag = html.match(/<img[^>]*id="img"[^>]*>/i) || html.match(/<img[^>]*id='img'[^>]*>/i);
@@ -224,7 +247,7 @@ export async function pageList(url) {
   const out = [];
   // 并行抓取: 实测每次请求约 435ms, 串行抓 7 页要 3.5s; 4 页一批并行后约 1s。
   // (?p=N 由我们自己递增, 所以能并行; 结束判据 = 某一批一张新图都没解析出来)
-  const CHUNK = 4;
+  const CHUNK = 6;   // 4 -> 6：实测一次 6 页并行仍在 CF 容忍范围内，解析快 1/3
   async function fetchPage(pg) {
     for (let attempt = 0; attempt < 3; attempt++) {
       const r = await get(pageUrl + '?p=' + pg, host);
@@ -285,32 +308,41 @@ export async function images(chapter) {
   const g = chapter._eh;
   if (!g) throw new Error('缺少画廊信息');
   const host = chapter._host || 'e-hentai.org';
-  const links = [];
-  for (let pg = 0; pg < 200; pg++) {
-    // 区分"真的没有下一页"与"请求失败/被限流返回空页":
-    //   - 509 配额用尽: 直接 fatal 收工
-    //   - 其它非 200 / 没有画廊容器 id="gdt": 重试 2 次(间隔 1 秒), 仍失败才 break 并告警
-    //   - 200 但确实没有新 /s/ 链接: 真的最后一页, 正常 break
-    let r = null, pageOk = false;
-    for (let attempt = 0; attempt < 3 && !pageOk; attempt++) {
-      r = await get('https://' + host + '/g/' + g.gid + '/' + g.token + '/?p=' + pg, host);
-      if (r.status === 509) throw fatalErr(FATAL_MSG);
-      if (r.status === 200 && r.text.indexOf('id="gdt"') >= 0) { pageOk = true; break; }
-      const loginBad = r.text && r.text.indexOf('visible to logged-in users only') >= 0;
-      if (loginBad) throw failMsg(r.status, r.text);
-      if (attempt < 2) await new Promise((res) => setTimeout(res, 1000));
+  const QUALITY = ehQuality();
+  if (QUALITY === 'original') console.log('  质量档位: 原图（/fullimg，尺寸/体积按站点标注，会明显变慢）');
+  // 翻页取 /s/ 链接：并行 4 页一批（实测 4 页 0.8s，全 200；串行要 2~3 秒）。
+  // 并行会乱序，所以最后按 /s/ URL 里的页号重排。
+  const CHUNK = 6;   // 4 -> 6：实测一次 6 页并行仍在 CF 容忍范围内，解析快 1/3
+  const seen = new Set();
+  let drained = false;
+  for (let base2 = 0; base2 < 400 && !drained; base2 += CHUNK) {
+    const batchN = [];
+    for (let k = 0; k < CHUNK; k++) batchN.push(base2 + k);
+    const texts = await Promise.all(batchN.map(async (pg) => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        let r = null;
+        try { r = await get('https://' + host + '/g/' + g.gid + '/' + g.token + '/?p=' + pg, host); } catch (e) { r = null; }
+        if (!r) { await new Promise((res) => setTimeout(res, 400 * (attempt + 1))); continue; }
+        if (r.status === 509) throw fatalErr(FATAL_MSG);
+        if (r.status === 200 && r.text.indexOf('id="gdt"') >= 0) return r.text;
+        const loginBad = r.text && r.text.indexOf('visible to logged-in users only') >= 0;
+        if (loginBad) throw failMsg(r.status, r.text);
+        await new Promise((res) => setTimeout(res, 500 * (attempt + 1)));
+      }
+      return null;
+    }));
+    let added = 0, anyOk = false;
+    for (const t of texts) {
+      if (!t) continue;
+      anyOk = true;
+      for (const u of sLinks(t)) if (!seen.has(u)) { seen.add(u); added++; }
     }
-    if (!pageOk) {
-      console.log('  警告: 第 ' + pg + ' 页多次请求失败或无画廊容器, 停止翻页(已收集 ' + links.length + ' 页)');
-      break;
-    }
-    const got = sLinks(r.text);
-    let added = 0;
-    for (const u of got) if (links.indexOf(u) < 0) { links.push(u); added++; }
-    if (pg === 0 || pg % 5 === 0) console.log('  正在数页数…已找到 ' + links.length + ' 页');
-    try { process.stdout.write('@@PROG@@' + JSON.stringify({ stage: 'count', got: links.length, total: 0 }) + '\n'); } catch (e) {}
-    if (!added) break;
+    if (base2 % 20 === 0) console.log('  正在数页数…已找到 ' + seen.size + ' 页');
+    try { process.stdout.write('@@PROG@@' + JSON.stringify({ stage: 'count', got: seen.size, total: 0 }) + '\n'); } catch (e) {}
+    if (added === 0) { if (!anyOk) { console.log('  警告: 连续一批页面都请求失败，停止翻页'); } drained = true; }
   }
+  const pageNoOf = (u) => { const m = String(u).match(/-(\d+)\/?$/); return m ? parseInt(m[1], 10) : 0; };
+  const links = Array.from(seen).sort((a, b) => pageNoOf(a) - pageNoOf(b));
   console.log('  共 ' + links.length + ' 页，开始取图片地址…');
   if (!links.length) throw new Error('没在这个画廊里找到图片链接');
   const out = new Array(links.length);
@@ -331,18 +363,36 @@ export async function images(chapter) {
           // 取图片直链阶段: 509/403 是配额/封禁, 重试无用, 直接 fatal 收工
           if (r.status === 509 || r.status === 403) throw fatalErr(FATAL_MSG);
           if (r.status !== 200) continue;
-          const src = imgOf(r.text);
-          if (src) { out[i] = src; break; }
+          // 两种地址都记下来：原图为主，降级档作备用（/fullimg 偶发 403/断连时别整页丢掉）
+          const o1 = origOf(r.text), s1 = imgOf(r.text);
+          if (o1 || s1) { out[i] = { orig: o1, standard: s1 }; break; }
         } catch (e) { if (e && e.fatal) throw e; await new Promise((res) => setTimeout(res, 600 * (a + 1))); }
       }
       tick();
     }
   };
-  const JOBS = Math.max(1, Math.min(8, parseInt(process.env.EH_JOBS || '4', 10) || 4));   // 默认 4 路并发(可 EH_JOBS=6 调高)
+  const JOBS = Math.max(1, Math.min(10, parseInt(process.env.EH_JOBS || '8', 10) || 8));   // 默认 8 路(实测 8 最优, 12 反而回落); EH_JOBS 可调
   await Promise.all(Array.from({ length: JOBS }, () => worker()));
-  const urls = out.filter(Boolean);
-  if (!urls.length) throw new Error('没拿到图片直链（可能配额用尽或需要登录）');
-  return urls.map((u) => ({ url: u, headers: { 'Referer': 'https://' + host + '/', 'User-Agent': UA } }));
+  const got2 = out.filter((o) => o && (o.orig || o.standard));
+  if (!got2.length) throw new Error('没拿到图片直链（可能配额用尽或需要登录）');
+  // 两条路各有各的脾气：
+  //   降级档 -> H@H 图床节点（端口五花八门），实测约 30% 的节点连不通(ECONNRESET)，重解析也换不到别的节点
+  //   原图   -> e-hentai.org/fullimg（走站点本身，要登录态），不依赖 H@H 节点，反而更稳
+  // 所以让它们互为备用：主档下不来就换另一档，别把整页丢掉。
+  const hdStd = { 'Referer': 'https://' + host + '/', 'User-Agent': UA };
+  const hdOrig = Object.assign({}, hdStd, cookieHeader(host));   // /fullimg 需要登录态
+  return got2.map((o) => {
+    const wantOrig = QUALITY === 'original';
+    const primary = wantOrig ? (o.orig || o.standard) : (o.standard || o.orig);
+    const backup = wantOrig ? o.standard : o.orig;
+    const item = { url: primary, headers: primary === o.orig ? hdOrig : hdStd };
+    // EH 的图九成落在 H@H 节点(22334/45123/62000 这类高端口)，代理一律不放行。
+    // 实测日志：2405 次「代理不通 -> 直连」，每张白等 4.2 秒。所以这里直接标 direct，
+    // 让 worker 跳过代理重试，一步到位。本机直连 e-hentai.org / *.hath.network 都是通的。
+    item.direct = true;
+    if (backup && backup !== primary) item.alts = [{ url: backup, headers: backup === o.orig ? hdOrig : hdStd, direct: true }];
+    return item;
+  });
 }
 
 /* ================= Tag 批量下载 ================= */

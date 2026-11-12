@@ -1,6 +1,9 @@
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
 
+// dl:event 的监听槽位表：同一槽位重复注册只保留最新回调（弹窗每次打开都是新匿名函数）
+const onDlSlots = Object.create(null);
+
 // 捕获渲染进程未处理异常, 把堆栈打到控制台便于诊断
 window.addEventListener('error', function (e) {
   try {
@@ -37,7 +40,17 @@ contextBridge.exposeInMainWorld('mangaLib', {
   saveLibrary: (lib) => ipcRenderer.invoke('state:library', lib),
   rescan: (opts) => ipcRenderer.invoke('lib:rescan', opts),
   bookTimes: () => ipcRenderer.invoke('lib:bookTimes'),
-  jmStart: (urls, browser) => ipcRenderer.invoke('jm:start', urls, browser),
+  jmStart: (urls, browser, imgMode) => ipcRenderer.invoke('jm:start', urls, browser, imgMode),
+  jmSetMode: (img) => ipcRenderer.invoke('jm:setMode', img),
+  jmCaps: () => ipcRenderer.invoke('jm:caps'),
+  downloadPrefs: {
+    get: () => ipcRenderer.invoke('prefs:getDownload'),
+    set: (j) => ipcRenderer.invoke('prefs:setDownload', j),
+  },
+  tools: {
+    clearProfile: () => ipcRenderer.invoke('tools:clearProfile'),
+    importZips: () => ipcRenderer.invoke('tools:importZips'),
+  },
   jmOpenBrowser: (browser) => ipcRenderer.invoke('jm:browser', browser),
   siteOpen: (url, browser) => ipcRenderer.invoke('site:open', url, browser),
   jmCheckUpdate: (dir) => ipcRenderer.invoke('jm:checkUpdate', dir),
@@ -82,6 +95,7 @@ contextBridge.exposeInMainWorld('mangaLib', {
   tabsList: () => ipcRenderer.invoke('tabs:list'),
   tabsCurrent: () => ipcRenderer.invoke('tabs:current'),
   tabsClose: (id) => ipcRenderer.invoke('tabs:close', id),
+  tabsJmCollect: (port) => ipcRenderer.invoke('tabs:jm-collect', { port: port || 0 }),   // 收走开着的禁漫作品页(链接交回), 并把那些标签关掉
   tabsPending: () => ipcRenderer.invoke('tabs:pending'),
   tabsPendingAdd: (it) => ipcRenderer.invoke('tabs:pending-add', it),
   tabsPendingClear: () => ipcRenderer.invoke('tabs:pending-clear'),
@@ -90,12 +104,16 @@ contextBridge.exposeInMainWorld('mangaLib', {
   dlStartBatch: (req) => ipcRenderer.invoke('dl:startBatch', req),
   dlBatchCancel: () => ipcRenderer.invoke('dl:batchCancel'),
   dlBusy: () => ipcRenderer.invoke('dl:busy'),
-  onDownload: (cb) => {
-    // 允许多个监听并存(全局一套 + 下载时一套), 但**同一个函数只挂一次**, 防止同一批事件被处理两遍。
-    // 以前用 removeAllListeners 会导致后来者顶掉前者 → 批量下载时 done 收不到 → 进度卡在 95%。
-    if (typeof cb === 'function' && cb.__dshDlHooked) return;
-    if (typeof cb === 'function') { try { cb.__dshDlHooked = true; } catch (e) {} }
+  // 允许多个监听并存(全局一套 + 弹窗一套), 但按「槽位」去重:
+  // 同一个 slot 反复调用只保留最新那个回调 —— 弹窗每次打开都传新的匿名函数,
+  // 靠函数对象去重是无效的(之前在日志里表现为「每条信息显示两遍」)。
+  onDownload: (cb, slot) => {
+    if (typeof cb !== 'function') return;
+    const key = slot || 'auto';
+    if (!onDlSlots[key]) onDlSlots[key] = null;
+    if (onDlSlots[key]) { try { ipcRenderer.removeListener('dl:event', onDlSlots[key]); } catch (e) {} }
     const h = (e, d) => { try { cb(d); } catch (err) {} };
+    onDlSlots[key] = h;
     ipcRenderer.on('dl:event', h);
   },
   onLibraryRebuilt: (cb) => {

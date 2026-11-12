@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { requirePython } from '../lib/python.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, spawnSync, execSync } from 'node:child_process';
 import { openPage, sleep } from './cdp.mjs';
 import { normTargets } from './target.mjs';
 
@@ -15,12 +15,17 @@ const LIB = path.resolve(WORK, '..', '..');
 const CAT = '漫画';
 const DL = path.join(process.env.USERPROFILE || '', 'Downloads');
 const STAGE = path.join(LIB, '_zips');
-const PY = requirePython('禁漫下载(要 OCR 解验证码 + 拼页)');
+const PY = requirePython('禁漫下载(要 拼页/切页校验)');
 const PORT = Number(process.env.JM_PORT || 9333);
 const urls = normTargets(process.argv.slice(2));   // JM1452133 / 纯数字 / 专辑链接 / 单话链接 都认
 const argNum = (k, d) => { const m = process.argv.find(a => a.startsWith('--' + k + '=')); const v = m ? parseInt(m.split('=')[1], 10) : NaN; return isFinite(v) ? v : d; };
 const FROM = argNum('from', 1), TO = argNum('to', 99999);   // 只下第 FROM~TO 话(默认全部)
+const BOOK_DIRS = new Set();   // 本次真正动过的书目录(相对 LIB)，收尾只重建这些
 const STAGGER_MS = parseInt((process.argv.find(a => a.startsWith('--stagger=')) || '').split('=')[1] || '3500', 10);   // 并发提交间隔, 默认 3.5 秒
+// --img: 跳过「点免等待 → 验证码 OCR → 表单提交 → 收 zip → 解压」整条重链路，
+//        改为图片 CDN 直取（图片域名不挂 Cloudflare、无验证码，实测单话 1.7~2.9 秒）。
+const IMG_MODE = process.argv.includes('--img') || process.env.JM_IMG === '1';
+const IMG_WORKERS = parseInt((process.argv.find(a => a.startsWith('--img-workers=')) || '').split('=')[1] || '12', 10);
 fs.mkdirSync(STAGE, { recursive: true });
 console.log('多连接测试: ' + urls.length + ' 个专辑, 每专辑一个专用页面');
 
@@ -32,12 +37,19 @@ let bid = 0; const bpend = new Map();
 bws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.id && bpend.has(m.id)) { const q = bpend.get(m.id); bpend.delete(m.id); m.error ? q.rej(new Error(JSON.stringify(m.error))) : q.res(m.result); } };
 const bsend = (method, params) => new Promise((res, rej) => { const id = ++bid; bpend.set(id, { res, rej }); bws.send(JSON.stringify({ id, method, params: params || {} })); });
 
-// 共享 OCR
-const py = spawn(PY, [path.join(WORK, 'ocr_server.py')], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+// 共享 OCR: 只有老方式(浏览器过 CF + 验证码 + 收 zip)才需要; 图片直取模式不启动它
+// 打包版不含 ocr_server.py, 走到老方式时直接明确报错, 不留半截状态
+let py = null;
+let ocrAsk = null;
 const q = [], waiters = []; let obuf = '';
-py.stdout.on('data', (d) => { obuf += d.toString(); let i; while ((i = obuf.indexOf('\n')) >= 0) { const l = obuf.slice(0, i).trim(); obuf = obuf.slice(i + 1); if (!l || l === 'READY') continue; if (waiters.length) waiters.shift()(l); else q.push(l); } });
-py.stderr.on('data', () => {});
-const ocrAsk = (f) => new Promise((res) => { if (q.length) return res(q.shift()); waiters.push(res); py.stdin.write(f + '\n'); });
+if (!IMG_MODE) {
+  const OCR = path.join(WORK, 'ocr_server.py');
+  if (!fs.existsSync(OCR)) { console.error('  [缺少验证码识别组件] 老方式需要它; 请用图片直取(--img)'); process.exit(2); }
+  py = spawn(PY, [OCR], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+  py.stdout.on('data', (d) => { obuf += d.toString(); let i; while ((i = obuf.indexOf('\n')) >= 0) { const l = obuf.slice(0, i).trim(); obuf = obuf.slice(i + 1); if (!l || l === 'READY') continue; if (waiters.length) waiters.shift()(l); else q.push(l); } });
+  py.stderr.on('data', () => {});
+  ocrAsk = (f) => new Promise((res) => { if (q.length) return res(q.shift()); waiters.push(res); py.stdin.write(f + '\n'); });
+}
 
 // 全局互斥: 取验证码 -> 识别 -> 提交 必须原子完成
 let chain = Promise.resolve();
@@ -201,17 +213,46 @@ async function workerInner(url, idx) {
     const pages = fs.readdirSync(chDir).filter(f => /\.(webp|jpg|jpeg|png|gif)$/i.test(f)).length;
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
     chTimes.push(+secs);
+    BOOK_DIRS.add(path.relative(LIB, path.join(LIB, CAT, title)).replace(/\\/g, '/'));
     console.log(tag + ' 第' + ch.i + '話 OK ' + (sz / 1048576).toFixed(2) + 'MB ' + pages + '页 候选=' + cands[0] + ' 本话 ' + secs + 's | ' + rep[1]);
     return true;
   };
 
-  for (const ch of todo) { if (await doChapter(ch)) ok++; else failed.push(ch); }
-  for (let pass = 2; pass <= 5 && failed.length; pass++) {
-    console.log(tag + ' 重试第 ' + pass + ' 轮 (' + failed.length + ' 话)');
-    await sleep(2000);
-    const still = [];
-    for (const ch of failed) { if (await doChapter(ch)) ok++; else still.push(ch); }
-    failed.length = 0; failed.push(...still);
+  if (IMG_MODE) {
+    // ---- 图片直取：浏览器只用来拿章节表（上面已完成），图片走 CDN 并发下载 ----
+    console.log(tag + ' [直取] ' + todo.length + ' 话，并发 ' + IMG_WORKERS + '（跳过验证码/zip）');
+    const pyImg = path.join(WORK, 'jm-img.py');
+    const r = spawnSync(PY, [pyImg, ...todo.map(c => c.id), '--book', title, '--lib', LIB,
+      '--start', String(todo[0].i), '--workers', String(IMG_WORKERS)],
+      { encoding: 'utf8', timeout: 6 * 3600 * 1000 });
+    if (r.stdout) process.stdout.write(r.stdout);
+    if (r.stderr) process.stderr.write(r.stderr);
+    if (r.status !== 0) console.log(tag + ' [直取] python 退出码 ' + r.status);
+    // jm-img 会做简繁同名匹配，实际落的目录名可能与本页解析出的不同，以它返回的为准
+    try {
+      const mm = String(r.stdout || '').match(/__JSON__(.+)/);
+      if (mm) {
+        const j = JSON.parse(mm[1].trim());
+        for (const a of (j.albums || [])) if (a.dir && fs.existsSync(a.dir)) BOOK_DIRS.add(path.relative(LIB, a.dir).replace(/\\/g, '/'));
+      }
+    } catch (e3) {}
+    for (const ch of todo) {
+      const dir = path.join(LIB, CAT, title, '第' + String(ch.i).padStart(2, '0') + '話');
+      const n = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => /\.(webp|jpg|jpeg|png|gif)$/i.test(f)).length : 0;
+      if (n > 0) {
+        ok++;
+        console.log(tag + ' 第' + ch.i + '話 OK ' + n + ' 页（直取，已跳过切页拼合）');
+      } else failed.push(ch);
+    }
+  } else {
+    for (const ch of todo) { if (await doChapter(ch)) ok++; else failed.push(ch); }
+    for (let pass = 2; pass <= 5 && failed.length; pass++) {
+      console.log(tag + ' 重试第 ' + pass + ' 轮 (' + failed.length + ' 话)');
+      await sleep(2000);
+      const still = [];
+      for (const ch of failed) { if (await doChapter(ch)) ok++; else still.push(ch); }
+      failed.length = 0; failed.push(...still);
+    }
   }
   if (failed.length) console.log(tag + ' 仍未成功: ' + failed.map(f => f.i).join(','));
   // 写 library.json: 简介 + 来源 + 作者
@@ -240,7 +281,17 @@ async function workerInner(url, idx) {
 }
 
 const results = await Promise.all(urls.map((u, i) => worker(u, i).catch(e => { console.log('[专辑' + (i + 1) + '] 异常: ' + String(e.message).slice(0, 140)); return null; })));
-execSync('node "' + path.join(LIB, '_scripts', 'build-library.mjs') + '" --lib "' + LIB + '"', { stdio: 'inherit' });
+{
+  const blArgs = [path.join(LIB, '_scripts', 'build-library.mjs'), '--lib', LIB];
+  const dirs = Array.from(BOOK_DIRS);
+  if (dirs.length && dirs.length <= 40) {
+    blArgs.push('--only', dirs.join(','));
+    console.log('增量重建: ' + dirs.length + ' 本（其余沿用 _manifest.json）');
+  } else {
+    console.log('全量重建: 本次动过的书 ' + dirs.length + ' 本，不划算或没记录');
+  }
+  spawnSync(process.execPath, blArgs, { stdio: 'inherit' });
+}
 try { fs.rmSync(STAGE, { recursive: true, force: true }); } catch {}
 try { py.stdin.end(); } catch {}
 try { bws.close(); } catch {}

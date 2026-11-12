@@ -12,7 +12,7 @@
 import { S } from '../app/state.js';
 import { setProg, meta, setMeta, prog, isBigPlat, platformOf, manifestOf, totalPages } from '../library/store.js';
 import { renderChapters } from '../reader/panel.js';
-import { render, applyThumbs } from '../reader/render.js';
+import { render, applyThumbs, scrollToPage, cancelScrollRestore } from '../reader/render.js';
 import { NAVFWD, comic, setComic, io, setIo } from '../reader/state.js';
 import { SET } from '../settings/panel.js';
 import { imgFile, nOf, chLabel, pageList } from '../shared/chapter.js';
@@ -25,26 +25,14 @@ import { card } from '../shelf/render.js';
 // ---- 本模块持有的状态(所有读写点都在本模块内) ----
 let lastVT = 0, VT_ON = true, vtBusy = false;   // 视图过渡节流: 连打时跳过 / 上一个还没跑完就直改
 let bmJump = false, bmDir = null, bmAt = null;  // 书签跳转: 跳转期间及停留期间都不写进度
+let cameFromHistory = false;   // 是从"历史"页点进来的：退出阅读器时要还原历史页，而不是直接回书架
 
 function focusOpenedPage(pi) {
   requestAnimationFrame(function () {
     var stage = document.getElementById("stage");
     if (!stage) return;
-    if (S.mode === "scroll") {
-      var im = stage.querySelector('.scrollimg[data-i="' + pi + '"]');
-      if (!im) return;
-      var go = function () {
-        var w = im.closest(".pagewrap") || im;
-        w.scrollIntoView({ block: "start" });
-      };
-      if (im.complete) go();
-      else {
-        im.addEventListener("load", go, { once: true });
-        im.addEventListener("error", go, { once: true });
-      }
-    } else {
-      stage.scrollTo({ left: 0, top: 0 });
-    }
+    if (S.mode === "scroll") { scrollToPage(pi); return; }   // 长条: 交给 render.js 的对齐循环(逐张解码反复校正)
+    stage.scrollTo({ left: 0, top: 0 });
   });
 }
 
@@ -224,6 +212,10 @@ export function openComic(c) {
       }
     }
   }
+  // 从"历史"页进来时，历史页要收起来，否则会和阅读器叠在一起
+  var elHist = document.getElementById("history");
+  cameFromHistory = !!(elHist && !elHist.classList.contains("hide"));
+  if (cameFromHistory) elHist.classList.add("hide");
   elShelf.classList.add("hide");
   elReader.classList.remove("hide");
   armHistoryBack();                      // 压一条历史, 让系统返回手势落在阅读器上
@@ -235,8 +227,7 @@ export function openComic(c) {
     elReader.style.opacity = "";
   };
   }
-  renderChapters(); render();
-  document.title = (c.name || c.dir);
+  renderChapters(); render();   // render 里的 updateInfo 会把标题写成"书名 · 话 页码/总页数"
 }
 export function perfSample() {
   var frames = [], long = [];
@@ -302,6 +293,7 @@ export function flyCloseComic() {
 export function closeComic() {
   disarmHistoryBack();
   resetReaderFullscreen();
+  cancelScrollRestore();
   save();
   if (comic) NAVFWD.push(comic.dir);
   var dir = comic ? comic.dir : null;
@@ -312,6 +304,13 @@ export function closeComic() {
   elReader.style.inset = "0";
   elReader.style.zIndex = "100";
   elShelf.classList.remove("hide");
+  // 从历史页进来的：退出阅读器后回到历史页，而不是停在书架
+  if (cameFromHistory) {
+    var elHist2 = document.getElementById("history");
+    if (elHist2) elHist2.classList.remove("hide");
+    elShelf.classList.add("hide");
+    cameFromHistory = false;
+  }
   if (vtBusy) {
     // 飞回去: 由 View Transition 负责过渡, 这里立刻收尾(不再叠一层淡出)
     elReader.classList.add("hide");

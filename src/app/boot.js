@@ -13,6 +13,7 @@ import { loadShelfView } from '../shared/storage.js';
 import { applyFRowState } from '../shelf/filter-row.js';
 import { renderShelf } from '../shelf/render.js';
 import { loadBookTimes } from '../shelf/book-actions.js';
+import { maybeShowGuide } from '../shell/guide.js';
 
 export function afterBoot() {
   if (STANDALONE) {
@@ -65,6 +66,8 @@ export function afterBoot() {
       setTimeout(restore, 1000);
     }
   }
+  // 第一次用: 弹一次使用引导(看过就不再自动弹; 设置里可以重看)
+  try { maybeShowGuide(); } catch (e) {}
 }
 
 // ---- 由 core 注入 ----

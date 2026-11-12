@@ -11,6 +11,7 @@
 import { hint, showModal, closeModal, modalFoot } from '../shared/ui.js';
 import { getBgHist, setBgHist } from '../shared/storage.js';
 import { normName } from '../shared/text.js';
+import { showGuide } from '../shell/guide.js';
 
 // ---- 由 core 注入的同名依赖(别改名字, 改了搬来的代码就找不到) ----
 let DISK = null, renderShelf, renderCatTabs, invalidateAllCards, authorGroups,
@@ -115,6 +116,15 @@ export function openSettings() {
       return panel;
     }
     var tabBtns = [];
+    // 使用引导入口(随时重看首次引导)
+    var guideRow = document.createElement('div');
+    guideRow.style.cssText = 'margin:-4px 0 10px'
+    var guideBtn = document.createElement('button');
+    guideBtn.className = 'btn ghost';
+    guideBtn.textContent = '使用引导（怎么加书 / 怎么操作）';
+    guideBtn.onclick = function () { closeModal(); setTimeout(function () { showGuide(true); }, 200); };
+    guideRow.appendChild(guideBtn);
+    box.appendChild(guideRow);
     var pAppearance = makeTab('外观');
     var pDisplay = makeTab('显示');
     var pAdvanced = makeTab('高级');
@@ -317,6 +327,70 @@ export function openSettings() {
     applyCoverOpaque(coverChk.checked);
 
     // === 高级 tab ===
+    // 下载
+    var dlSep = document.createElement('div');
+    dlSep.style.cssText = 'border-top:1px solid var(--border);margin:14px 0 8px;padding-top:10px;font-weight:600';
+    dlSep.textContent = '下载';
+    pAdvanced.appendChild(dlSep);
+    var ehLbl = document.createElement('label'); ehLbl.textContent = 'E-Hentai 画质档位'; pAdvanced.appendChild(ehLbl);
+    var ehSel = document.createElement('select');
+    [['standard', '降级档（站点压缩版，快，默认）'], ['original', '原图（按站点标注的原始尺寸，单张几 MB~十几 MB，很慢）']].forEach(function (o) {
+      var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; ehSel.appendChild(op);
+    });
+    pAdvanced.appendChild(ehSel);
+    var ehHint = document.createElement('div'); ehHint.className = 'hint';
+    ehHint.textContent = 'EH 对高频 IP 只给压缩过的降级档；选原图会走 /fullimg 拿上传者原本的文件 —— 每张的尺寸和体积都不一样（站点在页面上标注），速度约慢 5~10 倍。原图拿不到时自动退回降级档。只影响 EH。';
+    pAdvanced.appendChild(ehHint);
+    (function () {
+      var api = (window.mangaLib && window.mangaLib.downloadPrefs);
+      if (!api) { ehSel.disabled = true; ehHint.textContent += '（需要桌面版）'; return; }
+      api.get().then(function (j) { ehSel.value = (j && j.ehQuality === 'original') ? 'original' : 'standard'; }).catch(function () {});
+      ehSel.onchange = function () { api.set({ ehQuality: ehSel.value }); ehHint.textContent = (ehSel.value === 'original' ? '已切到原图：按站点标注的原始尺寸下载，会明显变慢。' : '已切回降级档：下载快，画质是站点压缩过的版本。') + '（对下一本生效）'; };
+    })();
+
+    // 工具（原来靠根目录的两个 .cmd）
+    var toolSep = document.createElement('div');
+    toolSep.style.cssText = 'border-top:1px solid var(--border);margin:14px 0 8px;padding-top:10px;font-weight:600';
+    toolSep.textContent = '工具';
+    pAdvanced.appendChild(toolSep);
+    var toolRow = document.createElement('div');
+    toolRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin:4px 0';
+    var impBtn = document.createElement('button'); impBtn.className = 'btn ghost'; impBtn.textContent = '扫描下载文件夹并收录';
+    impBtn.title = '扫 Downloads 里的 <id>.zip，自动反查书名后入库（需要调试浏览器，会自动拉起来）';
+    var clrBtn = document.createElement('button'); clrBtn.className = 'btn ghost'; clrBtn.textContent = '清理浏览器缓存';
+    clrBtn.title = '只删缓存目录，不会动 Cookies / 登录态';
+    toolRow.appendChild(impBtn); toolRow.appendChild(clrBtn);
+    pAdvanced.appendChild(toolRow);
+    var toolOut = document.createElement('div'); toolOut.className = 'hint';
+    toolOut.style.cssText = 'white-space:pre-wrap;max-height:120px;overflow-y:auto;display:none;margin-top:6px';
+    pAdvanced.appendChild(toolOut);
+    (function () {
+      var api = (window.mangaLib && window.mangaLib.tools);
+      if (!api) { impBtn.disabled = true; clrBtn.disabled = true; toolOut.style.display = 'block'; toolOut.textContent = '（需要桌面版）'; return; }
+      function show(txt, bad) {
+        toolOut.style.display = 'block';
+        toolOut.style.color = bad ? '#ff8a80' : '';
+        toolOut.textContent = txt;
+      }
+      function tail(s, n) { return String(s || '').split(/\r?\n/).filter(Boolean).slice(-(n || 6)).join('\n'); }
+      impBtn.onclick = async function () {
+        impBtn.disabled = true; var old = impBtn.textContent; impBtn.textContent = '扫描中…';
+        show('正在扫描下载文件夹…（第一次会先把调试浏览器拉起来，可能要几十秒）');
+        var r2 = await api.importZips();
+        impBtn.disabled = false; impBtn.textContent = old;
+        show(((r2 && r2.ok) ? '完成。' : '未成功（退出码 ' + (r2 && r2.code) + '）。') +
+          (r2 && r2.dir ? '\n目录: ' + r2.dir : '') + (r2 && r2.browser ? '' : '\n注意: 调试浏览器没起来，反查书名会失败') +
+          (tail(r2 && r2.out) ? '\n' + tail(r2 && r2.out) : ''), !(r2 && r2.ok));
+      };
+      clrBtn.onclick = async function () {
+        clrBtn.disabled = true; var old2 = clrBtn.textContent; clrBtn.textContent = '清理中…';
+        show('正在清理缓存目录（不会动登录态）…');
+        var r2 = await api.clearProfile();
+        clrBtn.disabled = false; clrBtn.textContent = old2;
+        show(((r2 && r2.ok) ? '完成。' : '未完成。') + (tail(r2 && r2.out) ? '\n' + tail(r2 && r2.out) : ''), !(r2 && r2.ok));
+      };
+    })();
+
     var netChk = chk(pAdvanced, 'netAlias', '联网刷新别名');
     netChk.title = '更新书库时补日/英别名';
     var netHint = document.createElement('div'); netHint.className = 'sub';

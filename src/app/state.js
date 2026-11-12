@@ -7,7 +7,7 @@
 // 那些要么在模块内提供 setter, 要么留在 core 里。
 
 // 阅读器 + 书架的界面状态(S.ci 当前话 / S.pi 当前页 / S.filter 分类筛 ...)
-export const S = { ci: 0, pi: 0, mode: "single", fit: "height", dir: "ltr", cover: true, sidebar: true, wheel: true, zoom: false, zscale: 1, tx: 0, ty: 0, thumbs: false, sort: "recent", groups: [], q: "", filter: "all", authors: [], plats: [], ratings: [], plat: "", author: "", rating: "", theme: "dark", bright: 1, authOpen: false, platOpen: false, album: "" };
+export const S = { ci: 0, pi: 0, mode: "single", fit: "height", dir: "ltr", cover: true, sidebar: true, wheel: true, zoom: false, zscale: 1, scale: 1, tx: 0, ty: 0, thumbs: false, sort: "recent", groups: [], q: "", filter: "all", authors: [], plats: [], ratings: [], plat: "", author: "", rating: "", theme: "dark", bright: 1, authOpen: false, platOpen: false, album: "" };
 
 // library.json 的内容(整库元数据)。它是**异步填进来的**(DISK.getAll), 所以不能"按值注入"给别的模块
 // —— 那样注入的会是 null 快照。放在这里用实时绑定, 谁用谁拿到最新的。

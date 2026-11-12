@@ -82,7 +82,7 @@ export function openDownload(tab) {
     var t2 = document.createElement("button"); t2.className = "tab"; t2.textContent = "禁漫天堂";
     var t3 = document.createElement("button"); t3.className = "tab"; t3.textContent = "浏览器标签";
     t1.title = "任意适配站点的目录页链接（再漫画 / 戰姬求生記 等）";
-    t2.title = "18comic：自动过验证码、逐话下载、切页校验、入库";
+    t2.title = "18comic：图片直取、逐话下载、切页校验、入库";
     t3.title = "从浏览器（open-chrome.mjs 启动的那个，带 9333 端口）收下正在看的作品页";
     bar.appendChild(t1); bar.appendChild(t2); bar.appendChild(t3);
     box.appendChild(bar); box.appendChild(pane);
@@ -117,7 +117,8 @@ export function openDownload(tab) {
             var pg = (rr.pagePreview && rr.pagePreview.pages && rr.pagePreview.pages[0]) || null;
             var im = t.url.match(/\/(?:g|artworks)\/(\d+)/);
             var item = {
-              title: rr.title || String(t.title).slice(0, 60), url: t.url, id: im ? im[1] : "",
+              // 标题兜底：解析失败 + 标签标题也空时，用 url 里的 id，别落成"(未命名)"
+              title: rr.title || (String(t.title || '').trim()) || (im && im[1] ? 'EH ' + im[1] : t.url), url: t.url, id: im ? im[1] : "",
               thumb: rr.cover || (pg && pg.thumb) || "", extra: rr.status || ""
             };
             if (pg) { item.cl = (typeof pg.cl === "number") ? pg.cl : null; item.ct = pg.ct || 0; item.cw = pg.cw || 0; item.ch = pg.ch || 0; }
@@ -209,6 +210,23 @@ export function buildGeneralPane(box, presetUrl, onResolved) {
       } catch (e) { hint("读不到剪贴板，请用 Ctrl+V 或右键粘贴"); }
     };
     urlrow.appendChild(pasteBtn);
+    // 识别当前页：直接读调试浏览器里正在看的那一页，填进地址框，顺手把那个标签关掉
+    var curBtn = document.createElement("button");
+    curBtn.className = "btn ghost"; curBtn.type = "button"; curBtn.textContent = "识别当前页";
+    curBtn.title = "读浏览器里正在看的那一页：URL 填进来，然后把那个标签关掉";
+    curBtn.onclick = function () {
+      hint("正在找你在看的那一个标签…");
+      Promise.resolve(DISK.tabsCurrent()).then(function (c) {
+        if (!c || !c.ok) { hint("没找到：" + ((c && c.msg) || "调试浏览器没开")); return; }
+        var t = c.tab;
+        if (!t || !t.url) { hint("没有正在看的标签"); return; }
+        ui.value = t.url; ui.focus();
+        Promise.resolve(DISK.tabsClose(t.id)).then(function (cr) {
+          hint("已填入" + (cr && cr.ok ? "并关闭那个标签" : "（关标签失败）") + "：" + String(t.title || t.url).slice(0, 28));
+        }).catch(function () { hint("已填入：" + String(t.title || t.url).slice(0, 28)); });
+      }).catch(function (e) { hint("读出错：" + String(e)); });
+    };
+    urlrow.appendChild(curBtn);
     if (presetUrl) {   // 浏览器标签页签送进来的: 自动填好并触发解析(go 还没建好, 所以放到下一拍)
       ui.value = presetUrl;
       setTimeout(function () { try { go.click(); } catch (e) {} }, 80);
@@ -294,7 +312,7 @@ export function buildGeneralPane(box, presetUrl, onResolved) {
       pct.style.display = "block";
       log.style.display = "block";
       st.style.display = "block";
-      cancel.textContent = "取消下载";
+      cancel.textContent = "暂停";
       go.style.display = "none";
       bg.style.display = "";
       [ui, ni, fi, ti].forEach(function (x) { x.disabled = true; }); mc.disabled = true;
@@ -320,10 +338,23 @@ export function buildGeneralPane(box, presetUrl, onResolved) {
         .catch(function () {});
     }
 
+    // 现在是「暂停」不是「取消」：断点续传已开，中断不会重新下已有的图。
+    // 记住这次填的地址，暂停后按钮变成「继续下载」，一点就接着下。
+    var lastUrl = "";
     cancel.onclick = function () {
       if (!S2.running) { closeModal(); return; }
+      lastUrl = (ui && ui.value || "").trim();
       if (S2.src === "jm") { if (DISK.jmCancel) DISK.jmCancel(); }
       else DISK.dlCancel();
+      cancel.textContent = "已暂停";
+      setTimeout(function () {
+        try {
+          if (lastUrl) { ui.value = lastUrl; ui.disabled = false; }
+          go.style.display = "";
+          go.disabled = false;
+          go.textContent = lastUrl ? "继续下载" : "开始下载";
+        } catch (e) {}
+      }, 600);
     };
     [ui, ni, fi, ti].forEach(function (x) { x.onkeydown = function (ev) { ev.stopPropagation(); }; });
     mc.onkeydown = function (ev) { ev.stopPropagation(); };
@@ -360,7 +391,7 @@ export function buildGeneralPane(box, presetUrl, onResolved) {
       // 真正启动下载: chaptersArg 为勾选的话序号 "1,3,5", 不传则下全部
       async function doStart(chaptersArg) {
         go.disabled = true; go.textContent = "下载中…";
-        cancel.textContent = "取消下载";
+        cancel.textContent = "暂停";
         S2.running = true; window._dlRunning = true;
         bg.style.display = "";
         var bd3 = document.getElementById("btn-download");
@@ -394,10 +425,70 @@ export function buildGeneralPane(box, presetUrl, onResolved) {
 
 export function buildJmPane(box) {
     if (!DISK || !DISK.jmStart) { hint("需要桌面版：请用「启动书库.cmd」打开"); return; }
+
+    /* ---------- 主区：图片直取（默认） ---------- */
     var s = document.createElement("div"); s.className = "sub";
-    s.textContent = "支持：JM 编号（如 JM1452133）、纯数字（1452133）、专辑链接、单话链接（/photo/<id>），多个用空格或换行分开；换镜像域名也认编号。自动完成：过 CF → 点免等关广告 → 识别验证码 → 逐话下载 → 切页拼合+像素校验 → 入库 → 重建书库，已入库的自动跳过。";
+    s.textContent = "图片直取：走禁漫接口取书名和章节表、图片走图床并发下载并还原乱序 —— 不用点「免等待」、不用等网站把 zip 打完再解压。全程不开浏览器，也不需要账号（少数隐藏内容才要登录）。";
     box.appendChild(s);
-    var lb = document.createElement("label"); lb.textContent = "浏览器（用它的登录态）"; box.appendChild(lb);
+    var s2 = document.createElement("div"); s2.className = "stat"; s2.style.cssText = "display:block;margin-bottom:6px";
+    s2.textContent = "支持：JM 编号（JM1452133）、纯数字（1452133）、专辑链接、单话链接（https://18comic.vip/photo/<id>），多个用空格或换行分开；换镜像域名也认编号。已入库的话自动跳过。";
+    box.appendChild(s2);
+
+    /* ---------- 收集开着的禁漫标签（Chrome 调试端口 9333） ---------- */
+    // 和 EH 那边一个路子: 读浏览器里开着的作品页 → 取链接 → 关标签。
+    // 差别: 禁漫这边只把链接按行填进下面的输入框, 不自动开跑(由你自己点开始)。
+    var collectRow = document.createElement("div");
+    collectRow.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 8px";
+    var collectB = document.createElement("button"); collectB.className = "btn ghost";
+    collectB.textContent = "收集开着的禁漫标签";
+    collectB.title = "读 Chrome（调试端口 9333）里开着的禁漫作品页（/album/<id>、/photo/<id>）：链接按行填进下面的输入框，取到链接的标签顺手关掉。首页/搜索页/标签列表页不收也不关。";
+    var collectStat = document.createElement("span"); collectStat.className = "stat";
+    collectStat.style.cssText = "margin:0;color:#8f96a0";
+    collectRow.appendChild(collectB); collectRow.appendChild(collectStat);
+    box.appendChild(collectRow);
+    collectB.onclick = async function () {
+      if (!DISK || !DISK.tabsJmCollect) { collectStat.textContent = "需要较新的桌面版：用「启动书库.cmd」重开 App"; return; }
+      collectB.disabled = true; collectB.textContent = "收集中…"; collectStat.textContent = "";
+      var r = null;
+      try { r = await DISK.tabsJmCollect(9333); }
+      catch (e) { r = { ok: false, msg: String(e && e.message || e) }; }
+      collectB.disabled = false; collectB.textContent = "收集开着的禁漫标签";
+      if (!r || !r.ok) { collectStat.textContent = "读取失败：" + ((r && r.msg) || "未知错误"); return; }
+      var items = r.items || [];
+      if (!items.length) {
+        collectStat.textContent = r.tabs ? ("没找到作品页：浏览器里有 " + r.tabs + " 个禁漫标签，但都不是 /album/ 或 /photo/ 页") : "没找到开着的禁漫作品页";
+        return;
+      }
+      // 去重: 已经手填在输入框里的(编号或链接)不再重复追加
+      var have = String(ta.value || "").split(/[\s,;，；]+/).filter(Boolean);
+      var added = [];
+      items.forEach(function (it) {
+        var u = String(it.url || "").trim();
+        if (!u || have.indexOf(u) >= 0 || added.indexOf(u) >= 0) return;
+        added.push(u);
+      });
+      if (added.length) {
+        var cur = String(ta.value || "").replace(/[\s,;，；]+$/, "");
+        ta.value = (cur ? cur + "\n" : "") + added.join("\n");
+      }
+      var dup = items.length - added.length;
+      var closedN = r.closed || 0, tabN = r.tabs || items.length;
+      collectStat.textContent = "收进 " + added.length + " 条" + (dup > 0 ? "（" + dup + " 条已在输入框里）" : "") +
+        " · 关掉 " + closedN + "/" + tabN + " 个标签" + (closedN < tabN ? "（关不掉的留在那儿）" : "");
+    };
+
+    var l1 = document.createElement("label"); l1.textContent = "专辑链接"; box.appendChild(l1);
+    var ta = document.createElement("textarea"); ta.rows = 4; ta.placeholder = "JM1452133\n或 https://18comic.vip/album/1452133/?series_sort=2\n或单话 https://18comic.vip/photo/1452133"; box.appendChild(ta);
+
+    /* ---------- 浏览器（只有接口被 Cloudflare 拦、需要回退取章节表时才用得上） ---------- */
+    var det = document.createElement("details");
+    det.style.cssText = "margin:0 0 8px;border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:0 12px";
+    var sum = document.createElement("summary");
+    sum.style.cssText = "cursor:pointer;padding:9px 0;color:#9aa3ad;font-size:12.5px;outline:none";
+    sum.textContent = "浏览器（可选）：图片直取被拦时才需要，用它取章节表";
+    det.appendChild(sum);
+
+    var lb = document.createElement("label"); lb.textContent = "浏览器（不登录也能下，遇到隐藏内容再登录）"; det.appendChild(lb);
     var sb = document.createElement("select"); sb.id = "jm-browser";
     [["chrome", "Google Chrome（默认，用自动化自己的账号）"], ["edge", "Edge（用 Edge 的登录态）"]].forEach(function (o) {
       var op = document.createElement("option"); op.value = o[0]; op.textContent = o[1]; sb.appendChild(op);
@@ -415,10 +506,26 @@ export function buildJmPane(box) {
       jmAppend("[浏览器] " + ((rr && rr.msg) || (rr && rr.ok ? "已就绪" : "失败")) + "\n");
     };
     rowB.appendChild(sb); rowB.appendChild(openB);
-    box.appendChild(rowB);
+    det.appendChild(rowB);
+    box.appendChild(det);
 
-    var l1 = document.createElement("label"); l1.textContent = "专辑链接"; box.appendChild(l1);
-    var ta = document.createElement("textarea"); ta.rows = 4; ta.placeholder = "JM1452133\n或 https://18comic.vip/album/1452133/?series_sort=2\n或单话 https://18comic.vip/photo/1452133"; box.appendChild(ta);
+    // 默认只有图片直取；「老方式」入口由主进程的能力查询决定（有 ocr_server.py 才挂），
+    // 界面模块 src/download/legacy-jm.js 在打包时被排除，所以打包版连这段代码都没有。
+    var imgMode = true;
+    if (DISK && DISK.jmCaps) {
+      DISK.jmCaps().then(function (cap) {
+        if (!cap || !cap.legacy) return;
+        import(new URL('./legacy-jm.js', import.meta.url).href).then(function (m) {
+          m.mountLegacy({
+            box: box, anchor: det, DISK: DISK,
+            startRun: startRun,
+            getMode: function () { return imgMode; },
+            setMode: function (v) { imgMode = v; syncGoLabel(); }
+          });
+        }).catch(function () {});
+      }).catch(function () {});
+    }
+    /* ---------- 队列（两种模式共用，跟随上面选中的模式） ---------- */
     var l3 = document.createElement("label"); l3.textContent = "下载队列（逐本排队，失败自动重试 3 次；关掉 App 也留在这儿）"; box.appendChild(l3);
     var qbox = document.createElement("div"); qbox.id = "jmqbox"; box.appendChild(qbox);
     function renderJmq(q) {
@@ -456,21 +563,40 @@ export function buildJmPane(box) {
     JmQRender = renderJmq;
     if (DISK && DISK.jmQueue && DISK.jmQueue.list) { try { DISK.jmQueue.list().then(renderJmq); } catch (e) {} }
 
+    /* ---------- 日志 ---------- */
     var l2 = document.createElement("label"); l2.textContent = "运行日志"; box.appendChild(l2);
     var logBox = document.createElement("div"); logBox.id = "dllog"; box.appendChild(logBox);
+
+    /* ---------- 底部按钮 ---------- */
     var foot = document.createElement("div"); foot.id = "mfoot"; box.appendChild(foot);
-    var addQ = document.createElement("button"); addQ.className = "btn"; addQ.textContent = "加入队列";
-    var go = document.createElement("button"); go.className = "btn ghost"; go.textContent = "直接开始";
+    var go = document.createElement("button"); go.className = "btn";
+    var addQ = document.createElement("button"); addQ.className = "btn ghost"; addQ.textContent = "加入队列";
     var stop = document.createElement("button"); stop.className = "btn ghost"; stop.textContent = "暂停队列"; stop.style.marginRight = "auto";
     var clrQ = document.createElement("button"); clrQ.className = "btn ghost"; clrQ.textContent = "清空已完成";
     var lg = document.createElement("button"); lg.className = "btn ghost"; lg.textContent = "日志文件夹"; lg.title = "打开 _scripts\\jm\\logs（每天一个文件，下载/更新都有记录）";
     lg.onclick = function () { if (DISK && DISK.logsOpen) DISK.logsOpen(); else hint("仅桌面版支持"); };
     var close = document.createElement("button"); close.className = "btn ghost"; close.textContent = "关闭";
-    foot.appendChild(addQ); foot.appendChild(go); foot.appendChild(stop); foot.appendChild(lg); foot.appendChild(clrQ); foot.appendChild(close);
+    foot.appendChild(go); foot.appendChild(addQ); foot.appendChild(stop); foot.appendChild(lg); foot.appendChild(clrQ); foot.appendChild(close);
+
+    function syncGoLabel() { go.textContent = imgMode ? "开始下载（图片直取）" : "开始下载（老方式）"; }
+    syncGoLabel();
+
+    async function startRun(forceImg) {
+      var use = (forceImg === undefined) ? imgMode : !!forceImg;
+      var txt = ta.value.trim();
+      if (!txt) { hint("先填 JM 编号或链接"); return; }
+      go.disabled = true; go.textContent = "下载中…";
+      append("[" + (use ? "直取" : "老方式") + "] " + txt.split(/[\s,;，；]+/).filter(Boolean).length + " 个目标\n");
+      JM_BUSY = true; syncJmBtn();
+      var r = await DISK.jmStart(txt, sb.value, use);
+      if (!r || !r.ok) { go.disabled = false; syncGoLabel(); JM_BUSY = false; syncJmBtn(); append("[错误] " + ((r && r.msg) || "启动失败") + "\n"); }
+    }
+    go.onclick = function () { startRun(); };
     addQ.onclick = async function () {
       var txt = ta.value.trim();
       if (!txt) { hint("先填 JM 编号或链接"); return; }
       addQ.disabled = true;
+      if (DISK.jmSetMode) { try { await DISK.jmSetMode(true); } catch (e) {} }
       var r = await DISK.jmQueue.add(txt);
       addQ.disabled = false;
       if (!r || !r.ok) { hint((r && r.msg) || "没识别出目标(需要重启 App 才能用队列)"); return; }
@@ -478,15 +604,6 @@ export function buildJmPane(box) {
       ta.value = "";
       renderJmq(r);
       hint("已加入队列 " + r.added + " 本");
-    };
-    go.onclick = async function () {
-      var txt = ta.value.trim();
-      if (!txt) { hint("先填 JM 编号或链接"); return; }
-      go.disabled = true; go.textContent = "下载中…";
-      append("[开始] " + txt.split(/[\s,;，；]+/).filter(Boolean).length + " 个目标 | 浏览器: " + (sb.value === "edge" ? "Edge" : "Chrome") + "\n");
-      JM_BUSY = true; syncJmBtn();
-      var r = await DISK.jmStart(txt, sb.value);
-      if (!r || !r.ok) { go.disabled = false; go.textContent = "直接开始"; JM_BUSY = false; syncJmBtn(); append("[错误] " + ((r && r.msg) || "启动失败") + "\n"); }
     };
     stop.onclick = async function () {
       if (DISK.jmQueue) await DISK.jmQueue.pause();
@@ -953,7 +1070,7 @@ export function showWorkList(S2, r, items, ui, ni, fi, ti, mc, cancelBtn, goBtn,
       }
       else if (ev.type === "error") { dlLog(S2, "批量结束：" + (ev.message || "错误"), "er"); dlDone(S2, false); }
       else if (ev.type === "cancelled") { dlLog(S2, "已取消", "er"); dlDone(S2, false); }
-    });
+    }, 'batch');
     DISK.dlStartBatch({ jobs: jobs, from: r.url }).then(function (res) {
       if (!res || !res.ok) { dlLog(S2, "启动失败: " + ((res && res.msg) || "未知错误"), "er"); dlDone(S2, false); }
     });

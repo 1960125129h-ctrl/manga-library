@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="漫画书库">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
-<title>漫画书库重构v0</title>
+<title>书库</title>
   <link rel="stylesheet" href="src/styles/01-tokens.css">
   <link rel="stylesheet" href="src/styles/02-shelf.css">
   <link rel="stylesheet" href="src/styles/03-reader.css">
@@ -35,7 +35,7 @@
 </div>
 <div id="shelf" class="view">
   <header id="shelfbar">
-    <h1>漫画书库重构v0</h1>
+    <h1>书库</h1>
     <div id="searchwrap"><input id="search" placeholder="搜索书名…   ( / )"><button id="btn-sitesearch" title="用这个关键词跨站搜索正经漫画站（再漫画 / Komiic …）">跨站搜索</button></div>
     <button id="btn-filter" title="展开/收起筛选面板：分组 / 排序 / 作者 / 分级 / 平台"><span id="btn-filter-txt">筛选 ▾</span><span class="fbadge clean" id="btn-filter-badge"></span></button>
     <div id="appactions" class="grp">
@@ -80,6 +80,11 @@
         <button class="b" id="m-double" title="双页 (2)">双页</button>
         <button class="b" id="m-scroll" title="长条 (3)">长条</button>
       </div>
+      <div class="grp" id="scrollscale" style="display:none" title="长条模式专用：调整整本的显示宽度（不影响单页/双页）">
+        <button class="b" id="bscaleout" title="缩小（每次 -10%）">－</button>
+        <span class="val" id="bscaletxt">100%</span>
+        <button class="b" id="bscalein" title="放大（每次 +10%）">＋</button>
+      </div>
       <div class="grp">
         <button class="b" id="f-width" title="适应宽度">适宽</button>
         <button class="b" id="f-height" title="适应高度">适高</button>
@@ -100,11 +105,6 @@
         <button class="b" id="bbm" title="给当前页加书签 (B)">书签</button>
         <button class="b" id="bfull" title="全屏 (F)">全屏</button>
       </div>
-      <div id="info">
-        <span id="chname">-</span>
-        <input id="pageinput" type="text" inputmode="numeric" title="输入页码后回车跳转">
-        <span id="pageinfo">/ 0</span>
-      </div>
     </div>
     <button id="tap-prev" class="tap-zone" type="button" aria-label="上一页" tabindex="-1"></button>
     <button id="tap-next" class="tap-zone" type="button" aria-label="下一页" tabindex="-1"></button>
@@ -115,6 +115,10 @@
   </div>
   <aside id="thumbs">
     <button class="sidehandle" id="thumbtoggle" title="展开预览 (P)"><span>›</span></button>
+    <div id="info">
+      <span id="chname" title="当前话">-</span>
+      <span class="pg"><input id="pageinput" type="text" inputmode="numeric" title="输入页码后回车跳转"><span id="pageinfo">/ 0</span></span>
+    </div>
     <h2>预览 <button class="mini" id="prevrev" title="预览/翻页顺序">顺序</button></h2>
     <div id="thumblist"></div>
   </aside>

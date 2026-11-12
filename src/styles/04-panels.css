@@ -139,3 +139,12 @@ body[data-shelf-theme="eye"] .tab.add:hover{color:#1a2a1a}
 #mbox .stat{color:#c3c8d0;font-size:12.5px;margin:10px 0 0;line-height:1.55;word-break:break-all}
 #mbox textarea{width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--fg);border-radius:7px;padding:8px 11px;font-family:inherit;font-size:12.5px;line-height:1.65;outline:none;resize:vertical}
 #mbox textarea:focus{border-color:#2f6df6}
+
+
+/* ===== 下载弹窗 · 禁漫页 ===== */
+/* 老方式的详细设置收在折叠块里，主界面只留图片直取 */
+#dlbox details, .dl-pane details { border-color: rgba(255,255,255,.09); }
+#dlbox details summary, .dl-pane details summary { color: #9aa3ad; user-select: none; }
+#dlbox details summary:hover, .dl-pane details summary:hover { color: #d3d9e0; }
+#dlbox details[open] summary, .dl-pane details[open] summary { color: #d3d9e0; }
+#dlbox details summary::-webkit-details-marker { opacity: .6; }

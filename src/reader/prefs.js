@@ -12,7 +12,7 @@ import { S } from '../app/state.js';
 
 const API = '/api/reader-prefs';
 const LKEY = 'readerPrefs';          // 本机镜像: 启动瞬间先按它渲染, 再异步跟文件对齐
-export const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright'];
+export const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright', 'scale'];
 const MODES = ['single', 'double', 'scroll'];
 const FITS = ['width', 'height', 'page', 'original'];
 const THEMES = ['dark', 'light', 'eye', 'paper'];
@@ -27,7 +27,7 @@ function coarse() { try { return !!(window.matchMedia && window.matchMedia('(poi
 export function defaults() {
   return { mode: 'single', fit: 'height', dir: 'ltr', cover: false,
            sidebar: !coarse(), thumbs: false, wheel: true, rev: false, prevRev: false,
-           theme: 'dark', bright: 1 };
+           theme: 'dark', bright: 1, scale: 1 };
 }
 
 // 只认列出来的键, 并且逐个校验类型/取值 —— 文件坏了或手改错了也不会把界面搞崩
@@ -45,6 +45,9 @@ export function sanitize(src) {
   o.prevRev = !!s.prevRev;
   o.theme = THEMES.indexOf(s.theme) >= 0 ? s.theme : d.theme;
   o.bright = (typeof s.bright === 'number' && s.bright >= 0 && s.bright <= 1) ? s.bright : d.bright;
+  // 长条模式的整本缩放比例：40%~160%，越界夹住
+  var sc = Number(s.scale);
+  o.scale = (isFinite(sc) && sc >= 0.1 && sc <= 1.6) ? Math.round(sc * 100) / 100 : d.scale;
   return o;
 }
 
@@ -63,6 +66,14 @@ export function applyToState(p) {
   S.sidebar = v.sidebar; S.thumbs = v.thumbs; S.wheel = v.wheel;
   S.rev = v.rev; S.prevRev = v.prevRev;
   S.theme = v.theme; S.bright = v.bright;
+  S.scale = v.scale;
+  // 立刻把比例写到 CSS 变量和工具栏文字上：
+  // 打开书时 render() 可能早于 prefs 异步回来，只靠 render 会显示成 100%
+  try {
+    document.documentElement.style.setProperty("--scroll-scale", String(v.scale));
+    var st = document.getElementById("bscaletxt");
+    if (st) st.textContent = Math.round(v.scale * 100) + "%";
+  } catch (err) {}
   return v;
 }
 

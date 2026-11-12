@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { requireBrowser } from '../lib/browser.mjs';
 
 const WORK = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(WORK, '..', '..');
@@ -10,7 +11,7 @@ const OUT = path.join(ROOT, '_visual-check');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'manga-mobile-'));
 const HTTP_PORT = 9581;
 const CDP_PORT = 9591;
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME = requireBrowser('chrome', '手机端截图');
 const W = Number(process.env.MOBILE_W || 390);
 const H = Number(process.env.MOBILE_H || 844);
 fs.mkdirSync(OUT, { recursive: true });

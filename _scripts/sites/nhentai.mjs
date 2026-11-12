@@ -6,6 +6,11 @@ export const id = 'nhentai';
 export const label = 'nhentai';
 export const home = 'https://nhentai.net/';
 export function match(url) { return /nhentai\.net/i.test(String(url || '')); }
+// 实测：并发 4 → 12 是 3 倍（20 张 5.7MB：12.5s → 4.2s，未触发 429）。
+// 图片有 i1~i4 四个节点，按页号轮换分散压力（单吃 i1 实测会偶发失败）。
+export const jobs = 12;
+const IMG_HOSTS = ['i1.nhentai.net', 'i2.nhentai.net', 'i3.nhentai.net', 'i4.nhentai.net'];
+function imgHost(n) { return IMG_HOSTS[(Math.max(1, parseInt(n, 10) || 1) - 1) % IMG_HOSTS.length]; }
 export function galleryId(url) {
   const s = String(url || '').trim();
   const m = s.match(/\/g\/(\d+)/);
@@ -49,7 +54,7 @@ export async function pageList(gid) {
   const pages = Array.isArray(j.pages) ? j.pages : [];
   return pages.map(function (p, i) {
     const n = p.number || (i + 1);
-    const full = String(p.path || '').indexOf('galleries/') === 0 ? ('https://i1.nhentai.net/' + p.path) : '';
+    const full = String(p.path || '').indexOf('galleries/') === 0 ? ('https://' + imgHost(n) + '/' + p.path) : '';
     const th = String(p.thumbnail || '').indexOf('galleries/') === 0 ? ('https://t.nhentai.net/' + p.thumbnail) : '';
     return { n: n, url: full, thumb: th, w: p.width || 0, h: p.height || 0, headers: hd };
   });
@@ -84,7 +89,7 @@ export async function images(chapter) {
       if (!/^https?:/i.test(full)) {
         const rel = String(p.path || p.url || '');
         if (rel.indexOf('galleries/') !== 0) return;
-        full = 'https://i1.nhentai.net/' + rel;
+        full = 'https://' + imgHost(n) + '/' + rel;
       }
       out2.push({ url: full, pageNum: n, headers: hd });
     });
@@ -131,9 +136,9 @@ export async function images(chapter) {
 
   const out = [];
   if (Array.isArray(pages) && pages.length) {
-    pages.forEach((p, i) => out.push({ url: cdn + '/galleries/' + mid + '/' + (i + 1) + '.' + extOf(p && p.t), headers: hd }));
+    pages.forEach((p, i) => { const n = i + 1; out.push({ url: 'https://' + imgHost(n) + '/galleries/' + mid + '/' + n + '.' + extOf(p && p.t), headers: hd }); });
   } else {
-    for (let i = 1; i <= (chapter.pages || 0); i++) out.push({ url: cdn + '/galleries/' + mid + '/' + i + '.' + ext, headers: hd });
+    for (let i = 1; i <= (chapter.pages || 0); i++) out.push({ url: 'https://' + imgHost(i) + '/galleries/' + mid + '/' + i + '.' + ext, headers: hd });
   }
   return out;
 }

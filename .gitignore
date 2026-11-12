@@ -1,4 +1,4 @@
-# ---- 书库内容(几百 GB 级, 绝不进仓库) ----
+# ---- 书库内容（几百 GB 级）绝不进仓库 ----
 漫画/
 _thumbs/
 _预览/
@@ -25,7 +25,7 @@ _pkg-boot.log
 node_modules/
 _app/node_modules/
 
-# ---- 抓取用的浏览器 profile(含登录态, 且被进程锁着) 与临时产物, 统一在 _cache/ ----
+# ---- 抓取用的浏览器 profile（含登录态，且被进程锁着）与临时产物，统一在 _cache/ ----
 _cache/
 _scripts/jm/logs/
 
@@ -37,7 +37,8 @@ _css-backup/
 _*.cjs
 _batch.json
 *.tmp
-# ---- 第三方二进制(ffmpeg/ffprobe/ffplay 三个 exe 就 295 MB, 装包时拷进来即可) ----
+
+# ---- 第三方二进制（ffmpeg/ffprobe/ffplay 三个 exe 近 295 MB，装包时拷进来即可） ----
 _scripts/tools/
 
 # ---- 运行时日志 ----
@@ -45,3 +46,18 @@ _scripts/tools/
 session*.jsonl
 _scripts/jm/.app-pid
 _scripts/jm/.app-port
+
+# ---- 抓取站点的登录 cookie（绝不能进仓库） ----
+_scripts/sites/cookies/
+_scripts/sites/download-prefs.json
+
+# ---- 运行状态 / 抓取缓存 / 调试产物(不进仓库) ----
+_scripts/jm/.port
+_scripts/jm/pending.json
+_scripts/jm/queue.json
+_scripts/jm/_zm*.html
+_scripts/jm/_manga-only*
+_scripts/jm/待下载*.txt
+_scripts/sites/cache-pixiv*.json
+_visual-check/dl-general.png
+_visual-check/verify-panel.png

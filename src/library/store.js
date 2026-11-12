@@ -50,6 +50,18 @@ export function setProg(dir, o) {
   }
   try { localStorage.setItem(PKEY + dir, JSON.stringify(o)); } catch (e) {}
 }
+// 立刻把还在防抖队列里的进度写盘: 关窗前用(否则最后 350ms 内的翻页会丢)
+export function flushProg() {
+  for (var k in saveTimers) {
+    var t = saveTimers[k];
+    if (t) clearTimeout(t);
+    delete saveTimers[k];
+    if (!DISK || !DISK.setProgress) continue;
+    var v = CACHE && CACHE[k];
+    if (!v) continue;
+    try { DISK.setProgress(k, v); } catch (e) {}
+  }
+}
 export function libSave() {
   if (libTimer) clearTimeout(libTimer);
   if (!DISK || !DISK.saveLibrary) return;   // 浏览器里只读, 不落盘(桌面版才会写 library.json)

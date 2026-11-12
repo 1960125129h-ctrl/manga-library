@@ -1,11 +1,11 @@
-// 找 Python 解释器 —— 缩略图 / OCR / 拼页 三件事都靠它
+// 找 Python 解释器 —— 缩略图 / 拼页 / 切页校验 三件事都靠它
 //
 // 【为什么要单独一个模块】
 // 以前这个路径是**写死在 4 个文件里**的:
 //   C:\Users\终楠\AppData\Local\Programs\Python\Python311\python.exe
 // 换电脑、改用户名、或者把项目交给别人 —— 三件事会**一起坏**, 而且是静默地坏:
 //   · 缩略图不再生成      -> 表现为"书架卡片没图"
-//   · 禁漫验证码识别不了  -> 表现为"下载卡在验证码"
+//   · 禁漫拼页没做出来    -> 表现为"长条图没拼上"
 //   · 拼页不生效          -> 表现为"长条图没拼上"
 // 都不会报"找不到 Python"。
 //
@@ -64,7 +64,7 @@ export function requirePython(what) {
   console.error('');
   console.error('  [找不到 Python] ' + (what || '这个功能') + ' 需要它。');
   console.error('  装一个:  https://www.python.org/downloads/   (装完可能要重开一次终端)');
-  console.error('  装依赖:  pip install pillow easyocr opencv-python numpy');
+  console.error('  装依赖:  pip install pillow opencv-python numpy');
   console.error('  或指定:  set MANGA_PY=D:\\somewhere\\python.exe');
   console.error('');
   process.exit(2);

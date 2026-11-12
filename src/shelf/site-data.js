@@ -17,6 +17,7 @@ export const SITES = [
     { n: '抖音 douyin', u: 'https://www.douyin.com/', note: '只收图文作品（视频不下），动图用 ffmpeg 转 GIF；枚举要走调试浏览器', done: true }
   ] },
   { g: '同人 / 其它', list: [
+    { n: '禁漫天堂 18comic', u: 'https://18comic.vip/', alt: '镜像轮换：18comic.org / 18comic.club / 18comic.one / jmcomic1.me（换域名也认 JM 编号）', note: '中文 R-18 同人志为主；打开时若出现 Cloudflare「Just a moment」稍等一下会自动过。整本下载走「下载漫画 → 禁漫天堂」页签（图片直取，不用浏览器）', done: true },
     { n: 'nhentai', u: 'https://nhentai.net/', note: '英文同人志站，v2 API + 图片直链；直连会被 CF 403，先跑 site-login 抓 cookie', done: true },
     { n: 'E-Hentai', u: 'https://e-hentai.org/', alt: 'https://exhentai.org/（要论坛登录的 igneous cookie）', note: '画廊 = 一本书；纯 HTTP 走 cookie，不用浏览器。看图片额度：登录后打开 https://e-hentai.org/home.php 的 Image Limits 一段', done: true },
     { n: 'Pixiv', u: 'https://www.pixiv.net/', alt: '作品页 /artworks/<id> 或作者主页 /users/<uid>', note: '两个都能下：作品=一话(多页自动展开)，作者主页=一本书', done: true }

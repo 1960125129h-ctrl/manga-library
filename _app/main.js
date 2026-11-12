@@ -6,13 +6,152 @@ const fsp = require('node:fs/promises');
 const { cpSync } = require('node:fs');
 const { pathToFileURL, fileURLToPath } = require('node:url');
 
-const DEFAULT_LIB = path.resolve(__dirname, '..');
+// 打包版把配置/缓存/进度放在「程序目录\data」里: 整个文件夹拷走就能带走设置。
+// 两条约束:
+//   ① 卸载时这个 data 目录要保留(安装脚本 installer.nsh 里显式排除了它), 漫画数据更是一个字节都不碰;
+//   ② 装在 Program Files 这类不可写位置时自动回落到 %APPDATA%\\shuku-app, 免得启动就崩。
+try {
+  if (app.isPackaged && !process.env.MANGA_USERDATA) {
+    const exeDir = path.dirname(app.getPath('exe'));
+    const local = path.join(exeDir, 'data');
+    let ok = false;
+    try {
+      fs.mkdirSync(local, { recursive: true });
+      fs.accessSync(local, fs.constants ? fs.constants.W_OK : 2);
+      ok = true;
+    } catch (e) { ok = false; }
+    const pkgProfile = ok ? local : path.join(app.getPath('appData'), 'shuku-app');
+    try { fs.mkdirSync(pkgProfile, { recursive: true }); } catch (e) {}
+    app.setPath('userData', pkgProfile);
+  }
+} catch (e) {}
+
+// 验收/多开隔离: MANGA_USERDATA 指向独立目录时, userData 跟着走(单实例锁也在里面)
+// 不设这个变量时行为完全不变
+try {
+  const ud = process.env.MANGA_USERDATA;
+  if (ud) { fs.mkdirSync(ud, { recursive: true }); app.setPath('userData', ud); }
+} catch (e) {}
+
+// 书库根默认值: 开发版=项目目录; 打包版=我的文档\漫画书库
+// (打包版 __dirname 在 asar 里, 上一级是安装目录的 resources —— 那里通常不可写, 不能当默认书库)
+const DEFAULT_LIB = (function () {
+  if (!app.isPackaged) return path.resolve(__dirname, '..');
+  try { return path.join(app.getPath('documents'), '漫画书库'); } catch (e) {}
+  try { return path.join(app.getPath('userData'), 'library'); } catch (e) {}
+  return path.resolve(__dirname, '..');
+})();
 
 function cfgFile() { return path.join(app.getPath('userData'), 'config.json'); }
 function readCfg() { try { return JSON.parse(fs.readFileSync(cfgFile(), 'utf8')); } catch (e) { return {}; } }
 function writeCfg(c) { try { fs.mkdirSync(path.dirname(cfgFile()), { recursive: true }); fs.writeFileSync(cfgFile(), JSON.stringify(c, null, 2), 'utf8'); } catch (e) {} }
 
 let LIB = readCfg().libraryRoot || DEFAULT_LIB;
+
+/* ---------- 环境解析: 代理 / 真实 Node / 打包版资源同步 ---------- */
+
+// 代理: 配置里没写就沿用旧的 127.0.0.1:7890; 写 off 或空串 = 直连
+function proxyUrl() {
+  let v = 'http://127.0.0.1:7890';
+  try { const c = readCfg(); if (Object.prototype.hasOwnProperty.call(c, 'proxy')) v = c.proxy; } catch (e) {}
+  const s = String(v == null ? '' : v).trim();
+  if (!s || s === 'off' || s === 'none' || s === 'direct') return '';
+  return /^https?:\/\//i.test(s) ? s : 'http://' + s;
+}
+function proxyEnv() {
+  const p = proxyUrl();
+  if (!p) return { MANGA_PROXY: 'off' };
+  return { HTTP_PROXY: p, HTTPS_PROXY: p, NODE_USE_ENV_PROXY: '1', MANGA_PROXY: p };
+}
+
+// 真实 Node(>=24): 随包 node.exe 优先, 其次 PATH。
+// 不能用 Electron 内置 Node 顶替 —— 那是 22, 不认 NODE_USE_ENV_PROXY, 走代理的站会静默失败。
+function resolveNodeBin() {
+  const cands = [];
+  try { if (process.env.MANGA_NODE) cands.push(process.env.MANGA_NODE); } catch (e) {}
+  cands.push(path.join(LIB, '_scripts', 'tools', 'node', 'node.exe'));
+  try { if (process.resourcesPath) cands.push(path.join(process.resourcesPath, '_scripts', 'tools', 'node', 'node.exe')); } catch (e) {}
+  for (const c of cands) { try { if (c && fs.existsSync(c)) return c; } catch (e) {} }
+  return 'node';
+}
+
+/* 打包版资源同步
+   书库目录里的 src/(界面) 和 _scripts/(下载器) 是外壳的附属品: 外壳换版本, 它们必须跟着换。
+   以前是"目标不存在才拷", 于是装第二版之后外壳新、界面和脚本永远是首发那版, 且毫无报错。
+   现在用资源签名当版本戳: 签名变了覆盖一遍; 用户数据(漫画/进度/收藏/cookies)一个不动。 */
+function resSignature() {
+  const RES = process.resourcesPath;
+  const keys = ['src/index.html', 'src/main.js', 'service-worker.js', 'manifest.webmanifest',
+    '_scripts/build-library.mjs', '_scripts/sites/fetch-book.mjs'];
+  const parts = [];
+  for (const k of keys) {
+    try { const st = fs.statSync(path.join(RES, k)); parts.push(k + ':' + st.size + ':' + Math.floor(st.mtimeMs)); }
+    catch (e) { parts.push(k + ':-'); }
+  }
+  try { return require('node:crypto').createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 12); }
+  catch (e) { return String(app.getVersion()); }
+}
+// 书库目录不能选在程序自己的安装目录里(也不能把安装目录包进去):
+// 否则首启会把 ~300MB 的 src/_scripts 灌进安装目录, 卸载时又清不掉, 看着就像"卸载不干净"
+function badLibraryTarget(p) {
+  try {
+    const appDir = path.dirname(app.getPath('exe'));
+    const a = path.resolve(p).toLowerCase();
+    const b = path.resolve(appDir).toLowerCase();
+    const within = function (x, y) { return x === y || x.indexOf(y + path.sep) === 0; };
+    return within(a, b) || within(b, a);
+  } catch (e) { return false; }
+}
+function copyTree(src, dst, opts) {
+  const o = opts || {};
+  if (!fs.existsSync(src)) return false;
+  if (o.skipIfExists && fs.existsSync(dst)) return false;
+  try { fs.mkdirSync(path.dirname(dst), { recursive: true }); } catch (e) {}
+  cpSync(src, dst, { recursive: true, force: true, errorOnExist: false, filter: o.filter });
+  return true;
+}
+function copyScripts(src, dst) {   // 覆盖脚本, 但跳过 tools/(几百 MB) 与 node_modules
+  if (!fs.existsSync(src)) return false;
+  try { fs.mkdirSync(dst, { recursive: true }); } catch (e) {}
+  cpSync(src, dst, {
+    recursive: true, force: true, errorOnExist: false,
+    filter: function (s) {
+      const rel = path.relative(src, s);
+      if (!rel) return true;
+      const segs = rel.split(path.sep);
+      return segs.indexOf('tools') < 0 && segs.indexOf('node_modules') < 0;
+    }
+  });
+  return true;
+}
+function syncLibraryResources(force) {
+  if (!app.isPackaged) return false;
+  const RES = process.resourcesPath;
+  const stampFile = path.join(LIB, '.pkg-version');
+  const sig = resSignature();
+  let old = '';
+  try { old = fs.readFileSync(stampFile, 'utf8').trim(); } catch (e) {}
+  if (!old) { try { old = String(readCfg().resSig || ''); } catch (e) {} }   // 书库目录不可写时的兜底
+  if (!force && old === sig) return false;
+  try { fs.mkdirSync(LIB, { recursive: true }); } catch (e) {}
+  const put = function (rel, opts) {
+    try {
+      const s = path.join(RES, rel), d = path.join(LIB, rel);
+      if (opts && opts.onlyIfMissing && fs.existsSync(d)) return;
+      if (rel === '_scripts') copyScripts(s, d);
+      else copyTree(s, d, opts);
+    } catch (e) { logLine('启动', '[资源] ' + rel + ' 同步失败: ' + ((e && e.message) || e)); }
+  };
+  ['src', 'icons', 'manifest.webmanifest', 'service-worker.js'].forEach(function (r) { put(r); });
+  ['library.json', '角色作品表.json', '外部目录.json'].forEach(function (r) { put(r, { onlyIfMissing: true }); });
+  put('_scripts');
+  copyTree(path.join(RES, '_scripts', 'tools'), path.join(LIB, '_scripts', 'tools'), { skipIfExists: true });
+  try { fs.writeFileSync(stampFile, sig, 'utf8'); } catch (e) {}
+  try { writeCfg(Object.assign({}, readCfg(), { resSig: sig })); } catch (e) {}
+  logLine('启动', '[资源] 已同步到 ' + LIB + ' (sig=' + sig + ')');
+  return true;
+}
+
 // 渲染层入口与书库数据: 都不再由 build-library 生成内联 HTML, 改成运行时装配
 const rendererPath = () => path.join(LIB, 'src', 'index.html');
 const manifestPath = () => path.join(LIB, '_manifest.json');
@@ -30,7 +169,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 let libWatcher = null;
-const NODE_BIN = 'node';   // 真实 Node(24), 走 PATH; 漫画站要走代理时必须用它
+let NODE_BIN = 'node';   // 启动时由 resolveNodeBin() 换成真实 Node(>=24): 随包 node.exe 优先, 其次 PATH
 let jmRunning = false;    // 禁漫任务在跑时不让自动刷新把日志冲掉
 let dlActive = false;     // 通用下载(fetch-book)任务在跑时不让自动刷新: 与任务生命周期绑定, 不固定 30 分钟
 let pendingReload = false;
@@ -272,7 +411,7 @@ function createWindow() {
   win = new BrowserWindow(Object.assign({
     width: 1440, height: 940, minWidth: 900, minHeight: 600,
     backgroundColor: '#111214',
-    title: '漫画书库重构v0',
+    title: '书库',
     frame: false,            // 自绘标题栏(src/shell/titlebar) —— 去掉系统边框, 才有"桌面应用"的样子
     autoHideMenuBar: true,
     show: false,
@@ -295,6 +434,7 @@ function createWindow() {
   win.once('ready-to-show', () => win.show());
   win.loadFile(rendererPath());
   win.webContents.setWindowOpenHandler((o) => { shell.openExternal(o.url); return { action: 'deny' }; });
+
   // 全局右键菜单: 输入框/文本框里给 剪切/复制/粘贴/全选
   win.webContents.on('context-menu', (e, params) => {
     const items = [];
@@ -367,7 +507,7 @@ function createTray() {
     let img = nativeImage.createFromPath(p);
     if (img.isEmpty()) { logLine('启动', '[托盘] 图标解码为空'); return; }
     tray = new Tray(img);
-    tray.setToolTip('漫画书库');
+    tray.setToolTip('书库');
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: '显示主窗口', click: () => { try { if (win) { win.show(); win.focus(); } } catch (e) {} } },
       { label: '隐藏到托盘', click: () => { try { if (win) win.hide(); } catch (e) {} } },
@@ -393,8 +533,11 @@ const SMOKE = process.argv.includes('--smoke');
 
 app.whenReady().then(async () => {
   try { setTimeout(() => { try { sweepPreviewCache(); } catch (e) {} }, 4000); } catch (e) {}   // 启动 4 秒后兜底清理预览缓存
-  // 打包版首次启动: 弹窗选书库根目录, 拷初始模板文件
-  if (app.isPackaged && !readCfg().libraryRoot) {
+  // 打包版首次启动(或书库目录丢了): 弹窗选书库根目录, 再把随包资源同步进去
+  const cfg0 = readCfg();
+  // 第三项: 老配置里如果指到了安装目录(以前允许这么选), 也当成无效, 重新问一遍
+  const rootBad = !!cfg0.libraryRoot && (!fs.existsSync(cfg0.libraryRoot) || badLibraryTarget(cfg0.libraryRoot));
+  if (app.isPackaged && (!cfg0.libraryRoot || rootBad)) {
     const { response } = await dialog.showMessageBox({
       type: 'info',
       buttons: ['选择文件夹', '退出'],
@@ -405,37 +548,26 @@ app.whenReady().then(async () => {
     if (response === 1) { app.quit(); return; }
     const picked = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'], title: '选择书库根目录' });
     if (picked.canceled || !picked.filePaths[0]) { app.quit(); return; }
-    LIB = picked.filePaths[0];
+    let chosen = picked.filePaths[0];
+    while (badLibraryTarget(chosen)) {
+      dialog.showErrorBox('这个文件夹不能用', '选中的是程序自己所在的目录（或者把程序目录包在了里面）。' + '\n\n' + '书库要单独一个空文件夹，例如 D:\\漫画书库。请重新选择。');
+      const again = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'], title: '重新选择书库根目录' });
+      if (again.canceled || !again.filePaths[0]) { app.quit(); return; }
+      chosen = again.filePaths[0];
+    }
+    LIB = chosen;
     writeCfg({ ...readCfg(), libraryRoot: LIB });
-    // 拷初始模板文件 + 脚本资源（如果目标里没有）
-    const RES = process.resourcesPath;
-    ['library.json', '角色作品表.json', '外部目录.json'].forEach(function (f) {
-      try {
-        const dst = path.join(LIB, f);
-        if (!fs.existsSync(dst)) fs.copyFileSync(path.join(RES, f), dst);
-      } catch (e) {}
-    });
-    // 拷 _scripts（首次启动，已存在则跳过）
-    try {
-      const srcScripts = path.join(RES, '_scripts');
-      const dstScripts = path.join(LIB, '_scripts');
-      if (fs.existsSync(srcScripts) && !fs.existsSync(dstScripts)) {
-        fs.mkdirSync(dstScripts, { recursive: true });
-        cpSync(srcScripts, dstScripts, { recursive: true });
-      }
-    } catch (e) { console.error('拷 _scripts 失败', e); }
-    // 拷渲染层源码 src/: 界面从这里加载(rendererPath), 不拷打开就是白屏
-    try {
-      const srcDir = path.join(RES, 'src');
-      const dstSrc = path.join(LIB, 'src');
-      if (fs.existsSync(srcDir) && !fs.existsSync(dstSrc)) cpSync(srcDir, dstSrc, { recursive: true });
-    } catch (e) { console.error('拷 src 失败', e); }
-    // 拷书库.html(旧版单文件界面, 留着兼容)
-    try {
-      const dstHtml = path.join(LIB, '书库.html');
-      if (!fs.existsSync(dstHtml)) fs.copyFileSync(path.join(RES, '书库.html'), dstHtml);
-    } catch (e) {}
+    // 首次启动: 全量同步模板数据 + 界面源码(src) + 下载脚本(_scripts) + 手机端资源(icons/manifest/service-worker)
+    syncLibraryResources(true);
   }
+  // 非首次启动: 资源签名变了才同步(打包版升级后自动换 src/_scripts/icons, 用户数据不动)
+  if (app.isPackaged) { try { syncLibraryResources(false); } catch (e) { logLine('启动', '[资源] 同步异常: ' + ((e && e.message) || e)); } }
+  // 真实 Node(>=24): 打包版用随包的 node.exe; 开发版用 PATH 上的 node
+  NODE_BIN = resolveNodeBin();
+  // 代理: 配置优先(默认仍是 127.0.0.1:7890, 设 off 走直连); 子进程靠继承的 MANGA_PROXY 读取
+  process.env.MANGA_PROXY = proxyUrl() || 'off';
+  logLine('启动', '[环境] node=' + NODE_BIN + ' proxy=' + process.env.MANGA_PROXY + ' lib=' + LIB);
+
   // pixiv 图片(i.pximg.net)需要 Referer 头才能访问, 自动给这类请求加上
   try {
     const { session } = require('electron');
@@ -444,13 +576,14 @@ app.whenReady().then(async () => {
       cb({ requestHeaders: details.requestHeaders });
     });
   } catch (e) {}
-  createWindow();
-  watchLibrary();
   // 书库数据文件必须存在, 否则界面一启动就报"读 _manifest.json 失败"(空库也要有)
+  // 注意: 必须在 createWindow() 之前 —— 首启时渲染层一起来就读它, 晚一步就是偶发白屏
   try {
     const mf = path.join(LIB, '_manifest.json');
     if (!fs.existsSync(mf)) fs.writeFileSync(mf, JSON.stringify({ count: 0, comics: [] }), 'utf8');
   } catch (e) {}
+  createWindow();
+  watchLibrary();
   // 双击关联文件启动: 等窗口先出来, 再导(导入要解压+重建, 会占用一会儿)
   try {
     const f0 = pickArchiveArg(process.argv);
@@ -463,7 +596,8 @@ app.whenReady().then(async () => {
   }
 
   if (SMOKE) {
-    const SMOKE_FILE = path.join(__dirname, 'smoke-result.json');
+    // 打包版 __dirname 在 asar 里(只读): 开发版照旧写 _app/, 打包版写临时目录
+    const SMOKE_FILE = app.isPackaged ? path.join(app.getPath('temp'), 'manga-smoke-result.json') : path.join(__dirname, 'smoke-result.json');
     const R = { stage: 'start', logs: [] };
     const flush = () => { try { fs.writeFileSync(SMOKE_FILE, JSON.stringify(R, null, 2), 'utf8'); } catch (e) {} };
     flush();
@@ -601,7 +735,7 @@ ipcMain.handle('state:all', async () => ({
 // 工作台整体读写。渲染进程是唯一写入方, 所以这里不做合并; 但写前会做一次结构性校验,
 // 防止半成品(比如 images 变成数组)被落盘 —— 那个文件丢了就等于参考图全丢。
 /* ================= 阅读器显示偏好(全局) ================= */
-const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright'];
+const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright', 'scale'];
 const PREF_MODES = ['single', 'double', 'scroll'];
 const PREF_FITS = ['width', 'height', 'page', 'original'];
 const PREF_THEMES = ['dark', 'light', 'eye', 'paper'];
@@ -619,6 +753,9 @@ function sanitizePrefs(src) {
   o.prevRev = !!s.prevRev;
   o.theme = PREF_THEMES.indexOf(s.theme) >= 0 ? s.theme : 'dark';
   o.bright = (typeof s.bright === 'number' && s.bright >= 0 && s.bright <= 1) ? s.bright : 1;
+  // 长条模式的整本缩放比例：40%~160%
+  const sc = Number(s.scale);
+  o.scale = (isFinite(sc) && sc >= 0.1 && sc <= 1.6) ? Math.round(sc * 100) / 100 : 1;
   return o;
 }
 /* 首次迁移: 文件还不存在时, 以"最近读的那本书"里存的偏好作为全局初值
@@ -888,7 +1025,7 @@ function startPickDetails(ids, sender) {
   const { spawn } = require('node:child_process');
   pickChild = spawn(NODE_BIN, [script, '--pick-details', '--ids', ids.join(',')], {
     cwd: LIB,
-    env: { ...process.env, HTTP_PROXY: 'http://127.0.0.1:7890', HTTPS_PROXY: 'http://127.0.0.1:7890', NODE_USE_ENV_PROXY: '1', JM_PROXY_READY: '1' }
+    env: { ...process.env, ...proxyEnv(), JM_PROXY_READY: '1' }
   });
   const child = pickChild;
   let buf = '';
@@ -1178,6 +1315,16 @@ function isWorkTabUrl(u) {
          /pixiv\.net\/users\/\d+/i.test(u) ||
          /e-hentai\.org\/tag\//i.test(u);
 }
+// 禁漫作品页: 只认 /album/<id> 和 /photo/<id>; 首页/搜索页/标签列表页一律不算(容器页会展开成上百本)
+// 镜像域名很多(18comic.vip/.org/.club/.one, jmcomic1.me ...), 所以按 host 里的 18comic/jmcomic 判断, 不写死域名
+function isJmWorkTabUrl(u) {
+  const s = String(u || '');
+  try {
+    const x = new URL(s);
+    if (!/(^|\.)(18comic|jmcomic)\w*\.[a-z]/i.test(x.hostname)) return false;
+    return /^\/(album|photo)\/\d+/i.test(x.pathname);
+  } catch (e) { return false; }
+}
 async function browserTabs() {
   try {
     const ac = new AbortController();
@@ -1267,8 +1414,12 @@ async function browserCurrentTab() {
   const pages = (list || []).filter((x) => x.type === 'page' && x.url && !/^(devtools:|chrome:|about:)/i.test(x.url));
   const probe = await Promise.all(pages.map((x) => probeTabVisible(x).then((v) => ({ x: x, v: v }))));
   const vis = probe.filter((p) => p.v && p.v.indexOf('visible') === 0);
-  const pick = vis.filter((p) => p.v.indexOf('|true') > 0)[0] || vis[0] || null;
-  if (!pick) return { ok: false, msg: '没找到正在看的那个标签（浏览器可能最小化了），请用「列出开着的标签」挑' };
+  let pick = vis.filter((p) => p.v.indexOf('|true') > 0)[0] || vis[0] || null;
+  // 兜底：浏览器最小化 / 被别的窗口遮住时 probeTabVisible 拿不到可见性，
+  // 这时退而取最后一个 page 标签（/json/list 末尾通常是最近活动的），
+  // 总比直接报"没找到"好 —— 点「识别当前页」至少能拿到一个地址。
+  if (!pick && pages.length) pick = { x: pages[pages.length - 1], v: 'fallback' };
+  if (!pick) return { ok: false, msg: '浏览器里一个标签都没有，先打开一个页面' };
   return { ok: true, tab: { id: pick.x.id, url: pick.x.url, title: pick.x.title || '', active: true, work: isWorkTabUrl(pick.x.url) }, 可见数: vis.length };
 }ipcMain.handle('tabs:current', async () => browserCurrentTab());
 ipcMain.handle('tabs:close', async (e, id) => {
@@ -1282,6 +1433,56 @@ ipcMain.handle('tabs:close', async (e, id) => {
     return { ok: r.ok, msg: r.ok ? '' : '关标签失败(HTTP ' + r.status + ')' };
   } catch (e2) { return { ok: false, msg: '关标签失败: ' + String(e2 && e2.message || e2) }; }
 });
+
+// 禁漫页面被 Cloudflare 挑战过以后 URL 会挂上一串 __cf_chl_rt_tk=... 的一次性令牌。
+// 直接交出去会让同一个专辑变成两条不同的"链接"(去重也失效), 所以收的时候先剥掉这些参数。
+function normalizeJmUrl(u) {
+  let s = String(u || '').trim().replace(/#.*$/, '');   // 井号片段对下载没用, 直接扔
+  s = s.replace(/([?&])__cf_chl[a-z0-9_]*=[^&#]*/gi, '$1');   // 剥 CF 令牌
+  s = s.replace(/([?&])utm_[a-z]+=[^&#]*/gi, '$1');           // 顺手剥常见跟踪参数
+  s = s.replace(/[?&]+$/, '');                                // 参数剥光了别留孤零零的 ? / &
+  s = s.replace(/\?&/g, '?').replace(/&&/g, '&');
+  return s;
+}
+// ── 禁漫标签: 一次收走所有开着的作品页(album/photo), 链接交出去以后再把那些标签关掉 ──
+// 用在渲染层「禁漫天堂」页签的「收集开着的禁漫标签」按钮。读写都走 CDP 的 HTTP 端点, 不起子进程。
+// 识别规则和 EH 那边一个口径: 只认作品页; 首页/搜索页/标签列表页这种容器页不收也不关。
+async function jmTabsCollect(port) {
+  const p = Number(port) > 0 ? Number(port) : BROWSER_PORT;
+  let list = null;
+  try {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 3000);
+    const r = await fetch('http://127.0.0.1:' + p + '/json/list', { signal: ac.signal });
+    clearTimeout(timer);
+    if (!r.ok) return { ok: false, msg: '浏览器调试端口没响应(HTTP ' + r.status + ')' };
+    list = await r.json();
+  } catch (e) {
+    return { ok: false, msg: '连不上浏览器调试端口 ' + p + '（浏览器没开，或者不是用 open-chrome.mjs 启动的）' };
+  }
+  const pages = (list || []).filter((x) => x.type === 'page' && x.url && !/^(devtools:|chrome:|about:|edge:)/i.test(x.url));
+  const hits = pages.filter((x) => isJmWorkTabUrl(x.url));
+  const tabs = [];    // 要关的标签(同一个 url 开了两个标签就关两个)
+  const items = [];   // 交回渲染层的链接(按 url 去重, 输入框里不需要重复行)
+  for (const t of hits) {
+    const url = normalizeJmUrl(t.url);
+    if (!url) continue;
+    tabs.push({ id: t.id, url: url });
+    if (!items.some((x) => x.url === url)) items.push({ url: url, title: t.title || '' });
+  }
+  let closed = 0;
+  for (const t of tabs) {
+    try {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 3000);
+      const r = await fetch('http://127.0.0.1:' + p + '/json/close/' + encodeURIComponent(t.id), { signal: ac.signal });
+      clearTimeout(timer);
+      if (r.ok) closed++;
+    } catch (e) {}
+  }
+  return { ok: true, port: p, items: items, tabs: tabs.length, closed: closed };
+}
+ipcMain.handle('tabs:jm-collect', async (e, opts) => jmTabsCollect(opts && opts.port));
 
 ipcMain.handle('perf:log', (e, msg) => { try { logLine('性能', String(msg || '')); } catch (e2) {} return true; });   // 渲染进程的现场性能采样写进日志
 ipcMain.handle('dl:works-stop', () => {
@@ -1301,19 +1502,32 @@ ipcMain.handle('lib:comicPath', (e, dir) => path.join(LIB, dir));
 
 /* ============ 禁漫一键下载: 在 App 里跑 _scripts\jm\jm-auto.mjs, 日志实时回传 ============ */
 let jmProc = null;
-ipcMain.handle('jm:start', (e, urls, browser) => {
+// 老方式(浏览器过 CF + 验证码识别 + 收 zip)需要 ocr_server.py; 打包版不含它, 所以由能力查询决定界面给不给这个入口
+function jmCaps() {
+  let legacy = false;
+  try { legacy = fs.existsSync(path.join(LIB, '_scripts', 'jm', 'ocr_server.py')); } catch (e) {}
+  return { legacy: legacy, packaged: !!app.isPackaged };
+}
+ipcMain.handle('jm:caps', () => jmCaps());
+ipcMain.handle('jm:start', (e, urls, browser, imgMode) => {
   if (jmProc) return { ok: false, msg: '已有下载任务在跑' };
-  const script = path.join(LIB, '_scripts', 'jm', 'jm-auto.mjs');
-  if (!fs.existsSync(script)) return { ok: false, msg: '找不到 _scripts\\jm\\jm-auto.mjs' };
   // 这里不做格式过滤: JM1452133 / 纯数字 / 链接 都交给 _scripts\jm\target.mjs 归一化
   const list = (Array.isArray(urls) ? urls.join(' ') : String(urls || '')).split(/[\s,;，；]+/).filter(Boolean);
   if (!list.length) return { ok: false, msg: '没有有效目标' };
   const { spawn } = require('node:child_process');
-  jmRunning = true; pendingReload = false;
-  const args = [script, list.join(' ')];
+  let useImg = imgMode !== false && imgMode !== 'zip';
+  if (!useImg && !jmCaps().legacy) useImg = true;   // 没有验证码识别组件时强制走直取, 别把用户送进死路
+  jmImgMode = useImg;   // 队列沿用最近一次选择
   const useEdge = String(browser || 'chrome') === 'edge';   // 默认 Chrome
   const useChrome = !useEdge;
+  const script = path.join(LIB, '_scripts', 'jm', 'jm-auto.mjs');
+  if (!fs.existsSync(script)) return { ok: false, msg: '找不到 _scripts\\jm\\jm-auto.mjs' };
+  // --img 交给 jm-auto：先试接口直取（不开浏览器），被 Cloudflare 拦才回退浏览器
+  const args = [script, list.join(' ')];
   if (useEdge) args.push('--edge');
+  if (useImg) args.push('--img');
+  jmRunning = true; pendingReload = false;
+  // 不再传 JM_NO_BUILD：让子脚本自己按"本次动过的书"做增量重建，快得多
   jmProc = spawn(process.execPath, args, { cwd: LIB, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', JM_PORT: useChrome ? '9333' : '9334' } });
   const send = (t) => { logLine('禁漫', t); if (win && !win.isDestroyed()) win.webContents.send('jm:event', { type: 'log', line: String(t) }); };
   jmProc.stdout.on('data', (d) => send(d));
@@ -1326,29 +1540,78 @@ ipcMain.handle('jm:start', (e, urls, browser) => {
     jmProc = null;
     jmRunning = false;
     if (win && !win.isDestroyed()) win.webContents.send('jm:event', { type: 'done', code: code });
-    // 等 3 秒让大家看完日志, 再离线重建书库(不联网), 然后通知前端刷新而非整页 reload
+    // 子脚本成功时已经做过「只重建本次动过的书」的增量重建，这里不再全量扫一遍。
+    // 只有异常退出（可能是中途崩了、没走到重建）才兜底全量。
+    const needBuild = code !== 0;
     setTimeout(async () => {
-      logLine('禁漫', '[收尾重建] 开始');
       try {
         pendingReload = false;
         watchMuteUntil = Date.now() + 20000;
-        const script = path.join(LIB, '_scripts', 'build-library.mjs');
-        if (fs.existsSync(script)) {
-          const { spawnSync } = require('node:child_process');
-          const br = spawnSync(NODE_BIN, [script, '--lib', LIB, '--offline'], { cwd: LIB, env: { ...process.env }, stdio: 'ignore' });
-          logLine('禁漫', '[收尾重建] 退出码 ' + (br.status == null ? -1 : br.status));
+        if (needBuild) {
+          logLine('禁漫', '[兜底重建] 子进程异常退出，全量重建一次');
+          const script = path.join(LIB, '_scripts', 'build-library.mjs');
+          if (fs.existsSync(script)) {
+            const { spawnSync } = require('node:child_process');
+            const br = spawnSync(NODE_BIN, [script, '--lib', LIB, '--offline'], { cwd: LIB, env: { ...process.env }, stdio: 'ignore' });
+            logLine('禁漫', '[兜底重建] 退出码 ' + (br.status == null ? -1 : br.status));
+          }
+        } else {
+          logLine('禁漫', '[收尾] 增量重建已由下载脚本完成，跳过全量');
         }
         if (win && !win.isDestroyed()) win.webContents.send('library:rebuilt');
       } catch (e2) {
-        logLine('禁漫', '[收尾重建异常] ' + String(e2 && e2.message || e2));
+        logLine('禁漫', '[收尾异常] ' + String(e2 && e2.message || e2));
       }
-    }, 3000);
+    }, 1500);
   });
   return { ok: true, count: list.length, browser: useChrome ? 'chrome' : 'edge' };
 });
 /* ============ 下载队列: 排队(并发1) + 失败自动重试 + 持久化(关掉 App 下次继续) ============ */
 const QUEUE_MAX_TRIES = 3;
 let jmQueue = { items: [], running: false, wasRunning: false };
+let jmImgMode = true;   // 队列默认也走图片直取；用户点老方式时置 false
+ipcMain.handle('jm:setMode', (e, img) => { jmImgMode = img !== false && img !== 'zip'; return { ok: true, img: jmImgMode }; });
+/* 下载偏好（画质档位等）：写 _scripts\sites\download-prefs.json，适配器直接读这个文件 */
+function downloadPrefsFile() { return path.join(LIB, '_scripts', 'sites', 'download-prefs.json'); }
+/* ===== 设置页里的两个工具（原来靠根目录的 .cmd 才有）===== */
+function runNodeAsync(script, args, timeoutMs) {
+  return new Promise((resolve) => {
+    if (!fs.existsSync(script)) return resolve({ ok: false, code: -1, out: '找不到 ' + path.basename(script) });
+    const { spawn } = require('node:child_process');
+    const p2 = spawn(NODE_BIN, [script, ...(args || [])], { cwd: LIB, env: { ...process.env } });
+    let out = '';
+    p2.stdout.on('data', (d) => { out += String(d); });
+    p2.stderr.on('data', (d) => { out += String(d); });
+    const timer = setTimeout(() => { try { p2.kill(); } catch (x) {} }, timeoutMs || 300000);
+    p2.on('exit', (code) => { clearTimeout(timer); resolve({ ok: code === 0, code, out: out.slice(-4000) }); });
+    p2.on('error', (err) => { clearTimeout(timer); resolve({ ok: false, code: -1, out: String(err && err.message || err) }); });
+  });
+}
+// 只清缓存类目录，绝不碰 Cookies / LocalStorage（登录态）
+ipcMain.handle('tools:clearProfile', () => runNodeAsync(path.join(LIB, '_scripts', 'jm', 'clear-profile-cache.mjs'), [], 180000));
+// 扫 Downloads 里的 <id>.zip 入库；import-zips 要用调试浏览器反查书名，先确保它在
+ipcMain.handle('tools:importZips', async () => {
+  const dl = path.join(process.env.USERPROFILE || '', 'Downloads');
+  const PORT = Number(process.env.JM_PORT || 9333);
+  const up = async () => { try { const r = await fetch('http://127.0.0.1:' + PORT + '/json/version', { signal: AbortSignal.timeout(1200) }); return r.ok; } catch (x) { return false; } };
+  if (!(await up())) {
+    const { spawn } = require('node:child_process');
+    try { spawn(NODE_BIN, [path.join(LIB, '_scripts', 'jm', 'open-chrome.mjs')], { detached: true, stdio: 'ignore', env: { ...process.env, JM_PORT: String(PORT) } }).unref(); } catch (x) {}
+    for (let i = 0; i < 60; i++) { await new Promise((r) => setTimeout(r, 500)); if (await up()) break; }
+  }
+  const r = await runNodeAsync(path.join(LIB, '_scripts', 'jm', 'import-zips.mjs'), ['--dir', dl], 900000);
+  if (r.ok) { try { const { spawnSync } = require('node:child_process'); spawnSync(NODE_BIN, [path.join(LIB, '_scripts', 'build-library.mjs'), '--lib', LIB, '--offline'], { cwd: LIB, env: { ...process.env }, stdio: 'ignore' }); } catch (x) {} }
+  return { ok: r.ok, code: r.code, out: r.out, browser: await up(), dir: dl };
+});
+ipcMain.handle('prefs:getDownload', () => { try { return JSON.parse(fs.readFileSync(downloadPrefsFile(), 'utf8')); } catch (e2) { return {}; } });
+ipcMain.handle('prefs:setDownload', (e2, j) => {
+  try {
+    fs.mkdirSync(path.dirname(downloadPrefsFile()), { recursive: true });
+    const cur = (() => { try { return JSON.parse(fs.readFileSync(downloadPrefsFile(), 'utf8')); } catch (x) { return {}; } })();
+    fs.writeFileSync(downloadPrefsFile(), JSON.stringify(Object.assign(cur, j || {}), null, 2), 'utf8');
+    return { ok: true };
+  } catch (err) { return { ok: false, msg: String(err && err.message || err) }; }
+});
 let queueBrowser = 'chrome';
 function queueFile() { return path.join(LIB, '_scripts', 'jm', 'queue.json'); }
 function queueInfo() {
@@ -1381,6 +1644,7 @@ function spawnJmOne(url) {
     const useEdge = String(queueBrowser) === 'edge';
     const args = [script, url];
     if (useEdge) args.push('--edge');
+    if (jmImgMode) args.push('--img');
     jmRunning = true; pendingReload = false;
     jmProc = spawn(process.execPath, args, { cwd: LIB, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', JM_PORT: useEdge ? '9334' : '9333' } });
     let out = '';
@@ -1475,7 +1739,22 @@ async function openInDebug(rawUrl, browser) {
   const target = String(rawUrl || 'https://18comic.vip/').trim();
   const enc = encodeURIComponent(target);
   const isUp = async () => { try { const r0 = await fetch('http://127.0.0.1:' + port + '/json/version', { signal: AbortSignal.timeout(3000) }); return r0.ok; } catch (e) { return false; } };
+  const pageKey = (u) => String(u || '').replace(/#.*$/, '').replace(/\/+$/, '');
+  const findSameTab = async () => {
+    try {
+      const r0 = await fetch('http://127.0.0.1:' + port + '/json/list', { signal: AbortSignal.timeout(3000) });
+      if (!r0.ok) return null;
+      const list = await r0.json();
+      return (list || []).find((t) => t.type === 'page' && pageKey(t.url) === pageKey(target)) || null;
+    } catch (e0) { return null; }
+  };
   const openTab = async () => {
+    // 目标页已经开着(冷启动时启动脚本就是直接开它)就只前置, 不再垒一个重复标签
+    const same = await findSameTab();
+    if (same && same.id) {
+      try { await fetch('http://127.0.0.1:' + port + '/json/activate/' + same.id, { signal: AbortSignal.timeout(3000) }); } catch (e1b) {}
+      return true;
+    }
     try { const r1 = await fetch('http://127.0.0.1:' + port + '/json/new?' + enc, { method: 'PUT', signal: AbortSignal.timeout(4000) }); if (r1.ok) return true; } catch (e) {}
     try { const r2 = await fetch('http://127.0.0.1:' + port + '/json/new?' + enc, { signal: AbortSignal.timeout(4000) }); if (r2.ok) return true; } catch (e) {}
     return false;
@@ -1488,21 +1767,33 @@ async function openInDebug(rawUrl, browser) {
   const script = path.join(LIB, '_scripts', 'jm', useEdge ? 'open-edge.mjs' : 'open-chrome.mjs');
   if (!fs.existsSync(script)) return { ok: false, msg: '找不到启动脚本 ' + path.basename(script) };
   const { spawn } = require('node:child_process');
-  const run = new Promise((res) => {
-    const p2 = spawn(process.execPath, [script], { cwd: LIB, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', JM_PORT: String(port) } });
-    let out = '';
-    p2.stdout.on('data', (d) => { out += d; });
-    p2.stderr.on('data', (d) => { out += d; });
-    p2.on('error', (err) => res({ ok: false, msg: '启动失败: ' + String((err && err.message) || err) }));
-    p2.on('exit', async (code) => {
-      const last = out.trim().split('\n').filter(Boolean).pop() || ('退出码 ' + code);
-      if (!(await isUp())) return res({ ok: false, msg: '启动失败: ' + last });
-      const opened = await openTab();
-      res({ ok: true, opened: opened, msg: name + ' 已启动，' + (opened ? '已打开 ' + host : '请手动切到 ' + host) });
+  // 把目标页直接交给启动脚本当首标签: 以前不带 --url, 脚本按默认值先开禁漫首页,
+  // 用户点一个 EH/别的站链接会先看到浏览器去加载 18comic, 等它加载完才轮到自己要的那页。
+  try {
+    const p2 = spawn(process.execPath, [script, '--url', target], {
+      cwd: LIB, detached: true, stdio: 'ignore',
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', JM_PORT: String(port) }
     });
-  });
-  const timeout = new Promise((res) => setTimeout(() => res({ ok: false, msg: '启动超时(45 秒), 请手动跑 _scripts\\jm\\open-' + (useEdge ? 'edge' : 'chrome') + '.mjs' }), 45000));
-  return await Promise.race([run, timeout]);
+    p2.on('error', () => {});
+    p2.unref();
+  } catch (e) {
+    return { ok: false, msg: '启动失败: ' + String((e && e.message) || e) };
+  }
+  // 不等脚本跑完: 禁漫首页要过 Cloudflare, 脚本里的预处理最长 60 秒, 等它退出会超过 45 秒被误判成失败。
+  // 端口一就绪就把目标页交给用户; 脚本在后台自己继续做预处理。
+  const deadline = Date.now() + 90000;
+  while (Date.now() < deadline) {
+    if (await isUp()) {
+      for (let i = 0; i < 8; i++) {          // 给首标签一点时间把 URL 落到目标页, 免得又开一个重复标签
+        if (await findSameTab()) break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      const opened = await openTab();
+      return { ok: true, opened: opened, msg: name + ' 已启动，' + (opened ? '已打开 ' + host : '请手动切到 ' + host) };
+    }
+    await new Promise((r) => setTimeout(r, 800));
+  }
+  return { ok: false, msg: '启动超时(90 秒), 请手动跑 _scripts\\jm\\open-' + (useEdge ? 'edge' : 'chrome') + '.mjs' };
 }
 
 ipcMain.handle('jm:browser', async (e, browser) => {

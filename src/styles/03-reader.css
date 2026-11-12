@@ -27,7 +27,7 @@ body.bgimg #thumblist::-webkit-scrollbar-thumb{background:color-mix(in srgb, var
 .ch:hover{background:#22242a;color:#fff}
 .ch.on{background:#2f6df6;color:#fff;font-weight:600}
 .ch .n{float:right;opacity:.55;font-size:11px}
-#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
 #bar{display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--surface);border-bottom:1px solid var(--r-line,var(--border));flex-wrap:wrap;transition:background-color 1.2s cubic-bezier(.4,0,.2,1),border-color 1.2s cubic-bezier(.4,0,.2,1),color 1.2s cubic-bezier(.4,0,.2,1)}
 .grp{display:flex;gap:2px;background:var(--surface2);border-radius:7px;padding:2px}
 button.b{background:var(--surface2);border:1px solid var(--border);color:var(--fg);padding:5px 11px;border-radius:8px;cursor:pointer;font-size:12.5px;font-family:inherit;white-space:nowrap;transition:background-color 1.2s cubic-bezier(.4,0,.2,1),color 1.2s cubic-bezier(.4,0,.2,1),border-color 1.2s cubic-bezier(.4,0,.2,1),transform .15s ease}
@@ -56,7 +56,7 @@ button.b.on{background:linear-gradient(135deg,var(--accent),var(--accent2));colo
 #stage.mode-double .pagewrap{width:var(--sw);justify-content:center}
 #stage.mode-double.fit-width .pageimg{width:calc((var(--sw) - 2px) / 2)}
 #stage.mode-double.fit-height .pageimg{max-width:calc((var(--sw) - 2px) / 2);max-height:var(--sh)}
-#stage.mode-scroll .pageimg{width:var(--sw);height:auto;display:block;margin:0 auto;max-width:none;max-height:none}
+#stage.mode-scroll .pageimg{width:calc(var(--sw) * var(--scroll-scale, 1));height:auto;display:block;margin:0 auto;max-width:none;max-height:none}
 #stage.mode-scroll .pagewrap{display:block;width:100%;max-width:none;max-height:none;margin:0;gap:0}
 .empty{padding:40px;color:#6a7078;text-align:center;width:100%}
 #hint{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:linear-gradient(135deg,#2f6df6,#4a8af8);color:#fff;padding:9px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:99;box-shadow:0 4px 16px rgba(47,109,246,.35)}
@@ -102,7 +102,8 @@ button.b.on{background:linear-gradient(135deg,var(--accent),var(--accent2));colo
 #bar,#sidebar,#thumbs{transition:opacity .3s,transform .3s ease}
 :fullscreen #bar{transform:translateY(-100%);position:fixed;top:0;left:0;right:0;z-index:100}
 :fullscreen #bar.show{transform:translateY(0)}
-body.bar-autohide #bar{transform:translateY(-100%);position:fixed;top:0;left:0;right:0;z-index:100;transition:transform .25s ease}
+/* 自动隐藏时用 absolute 相对 #main 定位：宽度自动等于主区域，不会压到左右侧栏上 */
+body.bar-autohide #bar{transform:translateY(-100%);position:absolute;top:0;left:0;right:0;z-index:100;transition:transform .25s ease}
 body.bar-autohide #bar.show{transform:translateY(0)}
 #sidebar .sidehandle{right:0;border-left:1px solid #26282e}
 #thumbs .sidehandle{left:0;border-right:1px solid #26282e}
@@ -136,3 +137,27 @@ body.bar-autohide #bar.show{transform:translateY(0)}
 #reader[data-theme] .titem{background:var(--r-view)}
 #reader[data-theme] #stage{position:relative;background-color:var(--r-view);background-image:linear-gradient(rgba(0,0,0,var(--r-dim,0)),rgba(0,0,0,var(--r-dim,0))),var(--r-tex);background-size:auto,160px 160px;background-repeat:repeat,repeat}
 #reader[data-theme] #stage::-webkit-scrollbar-track{background:var(--r-panel)}
+
+
+/* 长条模式的整本缩放条：内联在「长条」和「适宽」之间，靠长条按钮二次点击展开 */
+#bar #scrollscale{
+  display:none;align-items:center;gap:2px;
+  background:var(--surface2);border-radius:7px;padding:2px;
+  font-size:12px;color:var(--fg2, #9aa3ad);
+}
+#bar #scrollscale .b{min-width:34px;text-align:center;padding:5px 8px}
+#bar #scrollscale .val{min-width:46px;text-align:center;font-variant-numeric:tabular-nums;color:var(--fg, #e6e9ee);padding:0 2px}
+
+
+/* 页码信息从顶栏挪到右侧栏（「预览」上面）：竖排两行，宽度跟着侧栏走 */
+#thumbs #info{
+  margin:0 0 8px;padding:8px 10px;
+  display:flex;flex-direction:column;align-items:stretch;gap:5px;
+  color:var(--fg2);font-size:12px;white-space:normal;
+  border-bottom:1px solid var(--r-line, var(--border));
+}
+#thumbs #info #chname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.9}
+#thumbs #info .pg{display:flex;align-items:center;gap:6px}
+#thumbs #info #pageinput{width:56px}
+#thumbs #info #pageinfo{opacity:.75}
+#thumbs.collapsed #info{display:none}

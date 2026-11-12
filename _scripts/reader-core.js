@@ -1763,7 +1763,7 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
   function buildJmPane(box) {
       if (!DISK || !DISK.jmStart) { hint("需要桌面版：请用「启动书库.cmd」打开"); return; }
       var s = document.createElement("div"); s.className = "sub";
-      s.textContent = "支持：JM 编号（如 JM1452133）、纯数字（1452133）、专辑链接、单话链接（/photo/<id>），多个用空格或换行分开；换镜像域名也认编号。自动完成：过 CF → 点免等关广告 → 识别验证码 → 逐话下载 → 切页拼合+像素校验 → 入库 → 重建书库，已入库的自动跳过。";
+      s.textContent = "支持：JM 编号（如 JM1452133）、纯数字（1452133）、专辑链接、单话链接（/photo/<id>），多个用空格或换行分开；换镜像域名也认编号。自动完成：逐话取图 → 切页拼合+像素校验 → 入库 → 重建书库，已入库的自动跳过。";
       box.appendChild(s);
       var lb = document.createElement("label"); lb.textContent = "浏览器（用它的登录态）"; box.appendChild(lb);
       var sb = document.createElement("select"); sb.id = "jm-browser";
@@ -4065,7 +4065,7 @@ var elCanvas = null;   // 缩放时的画布层: 用一个 translate 承载"随�
       var t2 = document.createElement("button"); t2.className = "tab"; t2.textContent = "禁漫天堂";
       var t3 = document.createElement("button"); t3.className = "tab"; t3.textContent = "浏览器标签";
       t1.title = "任意适配站点的目录页链接（再漫画 / 戰姬求生記 等）";
-      t2.title = "18comic：自动过验证码、逐话下载、切页校验、入库";
+      t2.title = "18comic：图片直取、逐话下载、切页校验、入库";
       t3.title = "从浏览器（open-chrome.mjs 启动的那个，带 9333 端口）收下正在看的作品页";
       bar.appendChild(t1); bar.appendChild(t2); bar.appendChild(t3);
       box.appendChild(bar); box.appendChild(pane);
@@ -4568,27 +4568,92 @@ mk("列出开着的标签", "把浏览器里开着的作品页一次性收进待
     [S.pi + step, S.pi - step].forEach(function (i) { if (p[i]) { var a = new Image(); a.src = enc(p[i]); } });
   }
 
+  /* ---------- 长条模式: 回到"上次读到的那一页" ----------
+     以前这里只有一句 scrollIntoView, 而那一刻页图还没有尺寸(长条里 .pageimg 是 height:auto,
+     没解码就是 0 高), 所有页都叠在 y=0 -> 落到开头, 等于没恢复; 而且页图逐张解码、逐张长高,
+     上面每长出一张, 目标页就被往下推一截。所以改成"粘住"的对齐:
+       · 每张页图 load/error 对齐一次
+       · 内容总高每变一次(ResizeObserver)再对齐一次
+       · 几档定时器兜前 2.4 秒, 最多粘 8 秒后作废令牌放手(交回 IntersectionObserver 跟踪)
+     用户真的动手(滚轮/手指/键盘/点按)就立刻放手 —— 绝不跟用户抢滚动条。 */
+  var scrollRestorePage = -1, scrollRestoreTok = 0, restoreBound = false, restoreRO = null;
+  function cancelScrollRestore() { scrollRestoreTok++; scrollRestorePage = -1; }
+  function bindRestoreGuards() {
+    if (restoreBound) return;
+    restoreBound = true;
+    var stop = function () { if (scrollRestorePage >= 0) cancelScrollRestore(); };
+    ["wheel", "pointerdown", "touchstart", "keydown"].forEach(function (t) {
+      try { window.addEventListener(t, stop, { passive: true, capture: true }); } catch (e) {}
+    });
+  }
+  function scrollToPage(i) {
+    if (!comic) return;
+    bindRestoreGuards();
+    var tok = ++scrollRestoreTok;
+    scrollRestorePage = i;
+    var aligned = function () {
+      var im = elStage.querySelector('.scrollimg[data-i="' + i + '"]');
+      if (!im) return null;
+      return Math.round(im.getBoundingClientRect().top - elStage.getBoundingClientRect().top);
+    };
+    var align = function () {
+      if (tok !== scrollRestoreTok || scrollRestorePage < 0) return;
+      var d = aligned();
+      if (d === null || Math.abs(d) < 2) return;
+      elStage.scrollTop = Math.round(elStage.scrollTop + d);
+    };
+    var imgs = elCanvas ? elCanvas.querySelectorAll(".scrollimg") : [];
+    for (var k = 0; k <= i && k < imgs.length; k++) {
+      var im2 = imgs[k];
+      if (im2 && im2.tagName === "IMG" && !(im2.complete && im2.naturalHeight)) {
+        try { im2.loading = "eager"; } catch (e) {}
+        im2.addEventListener("load", align, { once: true });
+        im2.addEventListener("error", align, { once: true });
+      }
+    }
+    try {
+      if (!restoreRO && window.ResizeObserver) restoreRO = new ResizeObserver(function () { align(); });
+      if (restoreRO && elCanvas) { restoreRO.disconnect(); restoreRO.observe(elCanvas); }
+    } catch (e) {}
+    align();
+    [40, 120, 300, 700, 1400, 2400].forEach(function (d) { setTimeout(align, d); });
+    // 一直对齐到 8 秒; 到点必须作废令牌再放手, 否则定时器里的 align 还会把用户滚到的地方拽回来
+    var ticks = 0;
+    var settle = function () {
+      if (tok !== scrollRestoreTok) return;
+      ticks++;
+      align();
+      if (ticks > 20) { cancelScrollRestore(); return; }
+      setTimeout(settle, 400);
+    };
+    setTimeout(settle, 500);
+  }
+
   function renderScroll() {
     var p = pages();
+    var target = Math.max(0, Math.min(S.pi, Math.max(0, p.length - 1)));
     for (var i = 0; i < p.length; i++) {
       var im = makeImg(p[i], "pageimg scrollimg");
       im.setAttribute("data-i", String(i));
-      im.loading = i < 3 ? "eager" : "lazy";
+      im.loading = i <= target ? "eager" : "lazy";   // 目标页之前的页图必须有尺寸, 否则目标页的 y 算不准
       var w = document.createElement("div");
       w.className = "pagewrap scwrap";
       w.appendChild(im);
       elCanvas.appendChild(w);
     }
-    var t = elStage.querySelector("[data-i='" + S.pi + "']");
-    if (t && t.scrollIntoView) t.scrollIntoView({ block: "start" });
     if (io) { io.disconnect(); io = null; }
     var imgs = elStage.querySelectorAll(".scrollimg");
     io = new IntersectionObserver(function (es) {
       var best = null;
       for (var k = 0; k < es.length; k++) { if (es[k].isIntersecting && (!best || es[k].intersectionRatio > best.intersectionRatio)) best = es[k]; }
-      if (best) { S.pi = parseInt(best.target.getAttribute("data-i"), 10); updateInfo(); syncThumbsActive(); save(); }
+      if (!best) return;
+      var idx = parseInt(best.target.getAttribute("data-i"), 10);
+      // 恢复位置期间视口里先露出来的永远是第 1 页 —— 那不是用户翻到的页; 照它写进度就等于把进度清零
+      if (scrollRestorePage >= 0 && idx !== scrollRestorePage) return;
+      S.pi = idx; updateInfo(); syncThumbsActive(); save();
     }, { threshold: [0.1, 0.5, 0.9] });
     for (var j = 0; j < imgs.length; j++) io.observe(imgs[j]);
+    scrollToPage(target);
   }
 
   function renderPaged() {
@@ -4727,7 +4792,7 @@ mk("列出开着的标签", "把浏览器里开着的作品页一次性收进待
     elChName.textContent = chLabel(c);
     elPageInfo.textContent = "/ " + pages().length;
     if (document.activeElement !== elPageInput) elPageInput.value = String(S.pi + 1);
-    document.title = (comic.name || comic.dir) + " · " + c.name + " " + (S.pi + 1) + "/" + pages().length;
+    document.title = (comic.name || comic.dir) + " · " + chLabel(c) + " " + (S.pi + 1) + "/" + pages().length;
   }
 
   function syncButtons() {
@@ -4952,6 +5017,7 @@ mk("列出开着的标签", "把浏览器里开着的作品页一次性收进待
     setTimeout(function () { try { fly.remove(); } catch (e) {} }, 460);
   }
   function closeComic() {
+    cancelScrollRestore();
     save();
     if (comic) NAVFWD.push(comic.dir);
     var dir = comic ? comic.dir : null;

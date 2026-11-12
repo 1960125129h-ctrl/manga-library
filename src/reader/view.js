@@ -18,7 +18,12 @@ export function saveReaderDefaults(){ savePrefs(); }
 export function applyReaderTheme() {
   var rd = document.getElementById("reader");
   if (rd) rd.setAttribute("data-theme", S.theme || "dark");
-  document.body.setAttribute("data-shelf-theme", (S.theme || "dark") === "dark" ? "" : S.theme);
+  // 阅读器配色和书架主题是同一套（都作用于 body[data-shelf-theme]），
+  // 所以这里必须同步回 localStorage，否则：阅读器里换了配色 -> 书架当场变，
+  // 但重启后书架又按 localStorage["shelfTheme"] 的老值渲染，看起来就是"没记住"
+  var th = S.theme || "dark";
+  document.body.setAttribute("data-shelf-theme", th === "dark" ? "" : th);
+  try { localStorage.setItem("shelfTheme", th); } catch (err) {}
   var b = (typeof S.bright === "number") ? S.bright : 1;
   var dim = Math.max(0, Math.min(0.85, (1 - b) * 0.9));
   document.documentElement.style.setProperty("--r-dim", String(Math.round(dim * 1000) / 1000));

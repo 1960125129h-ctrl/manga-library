@@ -7,23 +7,35 @@
     "start": "electron .",
     "dist": "electron-builder --win"
   },
-  "author": "",
+  "author": "漫画书库",
   "license": "MIT",
+  "dependencies": {
+    "sharp": "^0.35.4"
+  },
   "devDependencies": {
     "electron": "^44.3.0",
     "electron-builder": "^26.15.3"
   },
   "build": {
     "appId": "com.manga.library.v0",
-    "productName": "漫画书库重构v0",
+    "productName": "书库",
     "directories": {
       "output": "../_dist"
     },
     "files": [
       "**/*",
+      "!package-lock.json",
+      "!smoke-result.json",
+      "!icon-d2.svg",
+      "!make-icon.js",
       "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,README,readme,*.md,*.markdown}",
       "!**/node_modules/.bin",
+      "!**/node_modules/@img/sharp-wasm32/**",
       "!**/{.git,.github,.vscode,.idea,test,tests,__tests__,coverage,docs,examples,demos}"
+    ],
+    "asarUnpack": [
+      "**/node_modules/sharp/**",
+      "**/node_modules/@img/**"
     ],
     "extraResources": [
       {
@@ -38,22 +50,61 @@
           "!**/*.log",
           "!**/tools/ffmpeg/**/bin/ffplay.exe",
           "!**/tools/**/doc/**",
-          "!**/_历史验收脚本/**"
+          "!**/_历史验收脚本/**",
+          "!**/sites/cookies/**",
+          "!**/sites/*cookies*",
+          "!**/sites/*.txt",
+          "!**/sites/download-prefs.json",
+          "!**/sites/cache-pixiv*.json",
+          "!**/jm/.port",
+          "!**/jm/.app-pid",
+          "!**/jm/pending.json",
+          "!**/jm/queue.json",
+          "!**/jm/_zm*.html",
+          "!**/jm/*.txt",
+          "!**/cmp70504.mjs",
+          "!**/preset-check.mjs",
+          "!**/jm/p013052.mjs",
+          "!**/jm/probe623756.mjs",
+          "!**/jm/v733851.mjs",
+          "!**/jm/x7242143.mjs",
+          "!**/jm/smoke-ref.mjs",
+          "!**/jm/make-fixture.mjs",
+          "!**/jm/verify-import.mjs",
+          "!**/jm/ocr_server.py",
+          "!**/jm/run-album.mjs",
+          "!**/jm/jmcomic_dl.py",
+          "!**/jm/README.md",
+          "!**/*.md"
         ]
       },
       {
         "from": "../src",
         "to": "src",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/legacy-jm.js",
+          "!**/*.md"
         ]
       },
       {
-        "from": "../书库.html",
-        "to": "书库.html"
+        "from": "../icons",
+        "to": "icons",
+        "filter": [
+          "**/*",
+          "!**/*.html"
+        ]
       },
       {
-        "from": "../library.json",
+        "from": "../manifest.webmanifest",
+        "to": "manifest.webmanifest"
+      },
+      {
+        "from": "../service-worker.js",
+        "to": "service-worker.js"
+      },
+      {
+        "from": "../_pkg-template/library.json",
         "to": "library.json"
       },
       {
@@ -66,7 +117,10 @@
       }
     ],
     "win": {
-      "target": ["portable", "nsis"],
+      "target": [
+        "portable",
+        "nsis"
+      ],
       "icon": "icon.ico"
     },
     "fileAssociations": [
@@ -83,11 +137,12 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "漫画书库重构v0",
-      "artifactName": "漫画书库重构v0-${version}-setup.exe"
+      "shortcutName": "书库",
+      "artifactName": "书库-${version}-setup.exe",
+      "include": "installer.nsh"
     },
     "portable": {
-      "artifactName": "漫画书库重构v0-${version}-portable.exe"
+      "artifactName": "书库-${version}-portable.exe"
     },
     "compression": "maximum"
   }

@@ -1,12 +1,20 @@
 // 通用抓书: node fetch-book.mjs --url <来源链接> --dir <书名> [--from N] [--to M] [--author X] [--desc Y]
 import fs from 'node:fs';
+import https from 'node:https';
 import path from 'node:path';
-import { spawnSync, spawn } from 'node:child_process';
+import { spawnSync, spawn, execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkMeta, checkChapters, checkGalleries, checkImages } from './contract.mjs';
 const SELF = fileURLToPath(import.meta.url);
 if (process.env.JM_PROXY_READY !== '1') {   // 保证代理环境在进程启动时就位(NODE_USE_ENV_PROXY 必须启动时存在)
-  const r0 = spawnSync(process.execPath, [SELF, ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost', HTTPS_PROXY: 'http://127.0.0.1:7890', HTTP_PROXY: 'http://127.0.0.1:7890', NODE_USE_ENV_PROXY: '1', JM_PROXY_READY: '1', HTTPS_PROXY: 'http://127.0.0.1:7890', HTTP_PROXY: 'http://127.0.0.1:7890' } });
+  // 代理地址由主进程通过 MANGA_PROXY 传下来(设置里可改); 独立跑 CLI 时没这个变量, 沿用旧的 7890
+  const rawPx = Object.prototype.hasOwnProperty.call(process.env, 'MANGA_PROXY') ? String(process.env.MANGA_PROXY || '') : 'http://127.0.0.1:7890';
+  const direct = !rawPx || rawPx === 'off' || rawPx === 'none' || rawPx === 'direct';
+  const px = direct ? '' : (/^https?:\/\//i.test(rawPx) ? rawPx : 'http://' + rawPx);
+  const env2 = { ...process.env, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost', JM_PROXY_READY: '1' };
+  if (px) { env2.HTTP_PROXY = px; env2.HTTPS_PROXY = px; env2.NODE_USE_ENV_PROXY = '1'; }
+  else { delete env2.HTTP_PROXY; delete env2.HTTPS_PROXY; delete env2.NODE_USE_ENV_PROXY; }
+  const r0 = spawnSync(process.execPath, [SELF, ...process.argv.slice(2)], { stdio: 'inherit', env: env2 });
   process.exit(r0.status || 0);
 }
 const LIB = path.resolve(SELF, '..', '..', '..');
@@ -15,7 +23,39 @@ const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : (d === undefined ? null : d); };
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36';
 const say = (s) => console.log(s);
+
+/* 直连抓一张图（绕开代理）。
+   起因：node 24 的 NODE_USE_ENV_PROXY 连 https.request 一起接管了，同一个进程里没法「只让这张图直连」。
+   EH 的 H@H 图床有一批节点在 22334 / 45123 / 62000 这类高端口，代理不放行（ECONNRESET），直连是通的。
+   系统 curl.exe 不认那个环境变量，--noproxy '*' 就是干净直连。实测 62000 端口 200 / 137KB / 0.79s。 */
+function curlDirectImg(url, headers, timeoutMs) {
+  return new Promise((resolve) => {
+    const secs = Math.max(15, Math.floor((timeoutMs || 30000) / 1000));
+    // 【关键】--connect-timeout 单独限死"连不上"的等待。
+    // 原来只有一个 --max-time 30，连不上的死节点要干等 30 秒；实测 EH 里约 10% 的图是死节点，
+    // 88 页就是 9 张 × 30 秒 = 270 秒纯空等，这才是"改了还是慢"的真凶。
+    // 现在：连不上 6 秒放弃，已经在传的图仍然给足 30 秒，正常大图不受影响。
+    const args = ['-sS', '--noproxy', '*', '--connect-timeout', '6', '--max-time', String(secs)];
+    for (const k of Object.keys(headers || {})) {
+      if (!/^[A-Za-z0-9-]+$/.test(k)) continue;
+      args.push('-H', k + ': ' + headers[k]);
+    }
+    args.push(url);   // 默认写 stdout
+    execFile('curl.exe', args, { encoding: 'buffer', maxBuffer: 96 * 1024 * 1024, timeout: (secs + 5) * 1000 }, (err, stdout) => {
+      if (err || !stdout || stdout.length < 100) return resolve(null);   // 和 looksValidImage 的阈值对齐，别把正常小图当失败
+      resolve(stdout);
+    });
+  });
+}
 let url = arg('url');
+// 规范化：剥掉 ?p=N / ?next= 这类查询参数。
+// EH 画廊地址形如 /g/<gid>/<token>/，带 ?p=6 会让缓存 key 对不上，
+// 虽然 galleryOf 的正则还能提出 gid/token，但没必要留这个尾巴。
+if (url) {
+  const u0 = String(url).trim();
+  const uq = u0.indexOf('?');
+  if (uq > 0) url = u0.slice(0, uq).replace(/\/+$/, '/');
+}
 const PROBE = argv.includes('--probe');   // 只解析不出下载: 给 App 的「通用链接」页签用
 // --pick-details: 给一批 pixiv ID, 逐个查标题+缩略图, 逐行输出(在 adapter 检查之前)
 if (argv.includes('--pick-details')) {
@@ -206,7 +246,13 @@ if (!adapter) { say('暂不支持该站点: ' + url); if (PROBE) say('@@RESULT@@
 // EH Tag 批量下载: 识别 tag 页 URL, 走批量分支
 const isTagBatch = !!(adapter.matchTag && adapter.matchTag(url));
 const skipResolve = PROBE && adapter.id === 'pixiv' && /\/users\//i.test(url);   // probe 模式下 pixiv 用户链接跳过 resolve(省一次 API)
-const meta = (isTagBatch || skipResolve) ? {} : checkMeta(await adapter.resolve(url).catch(() => ({})), adapter.id);
+// resolve 失败原来被 .catch(() => ({})) 静静吞掉，结果书名变成「未命名」、目录建错。
+// 现在把原因打出来，界面和日志都能看见。
+const meta = (isTagBatch || skipResolve) ? {} : checkMeta(
+  await adapter.resolve(url).catch((err) => { say('  [警告] 解析书名失败: ' + String((err && err.message) || err).slice(0, 120)); return {}; }),
+  adapter.id
+);
+if (!isTagBatch && !skipResolve && !(meta && meta.title)) say('  [警告] 没拿到书名，将用「未命名」建目录（建议在下载面板手动填书名）');
 const safe = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '_').replace(/[\s.]+$/, '').slice(0, 120);
 const book = arg('dir') || safe(meta.title) || '未命名';
 if (PROBE) {   // 只报元数据 + 话数
@@ -406,8 +452,15 @@ async function downloadImagesToDir(dir, urls, ctx) {
   const merge = !!ctx.merge;
   const seqRef = ctx.seqRef || { n: 0 };
   const label = ctx.label || '';
-  const JOBS = Math.max(1, Math.min(12, parseInt(arg('jobs', '4'), 10) || 4));
+  // 并发按站点定：适配器可以 export const jobs = N 声明自己的限流脾气
+  // （nhentai 12 / ehentai 4 / pixiv 2 / 其余 8），命令行 --jobs 可临时覆盖
+  const DEF_JOBS = Math.max(1, parseInt((adapter && adapter.jobs) || 8, 10) || 8);
+  const JOBS = Math.max(1, Math.min(20, parseInt(arg('jobs', String(DEF_JOBS)), 10) || DEF_JOBS));
   let n = 0, bi = 0, failed = 0, done = 0, lastProg = 0;
+  const failures = [];   // 记录没下来的页 -> 结束时写 .fetch-errors.json 到书目录
+  const recordFail = (seq, ext, why, url) => {
+    failures.push({ seq: seq, ext: ext, why: String(why || '').slice(0, 120), url: String(url || '').slice(0, 300), at: Date.now() });
+  };
   let consecQuota = 0;   // 连续 509/403 计数(跨 worker 共享, JS 单线程 await 间安全)
   const queue = urls.map((u, i) => ({ u: u, i: i }));
   const emitProg = () => {
@@ -430,29 +483,78 @@ async function downloadImagesToDir(dir, urls, ctx) {
       const seq = u2.pageNum ? String(u2.pageNum).padStart(5, '0')
         : (merge ? String(++seqRef.n).padStart(4, '0') : String(q2.i + 1).padStart(3, '0'));
       const extGuess = (String(mainUrl).split('?')[0].match(/\.(jpg|jpeg|png|webp|gif)$/i) || ['.jpg'])[0].toLowerCase();
-      // merge / 页级勾选 续跑: 目标文件已存在且大小>0 就跳过, 不重复下载
-      if (merge || u2.pageNum) {
-        const existP = path.join(dir, seq + extGuess);
-        if (fs.existsSync(existP) && fs.statSync(existP).size > 0) {
-          done++; bi += fs.statSync(existP).size; n++; emitProg(); continue;
+      // 断点续传：目标文件已存在且大小>0 就跳过，不再从头下一遍。
+      // 两种编号都要认：普通下载用 3 位（003），页级勾选用 5 位（00003）。
+      // 只认当前模式那一种的后果：同一张图两种模式各下一次，88 页的目录里堆了 165 个文件。
+      if (!ctx.forceRedl) {
+        const num = parseInt(seq, 10);
+        const cands = [seq + extGuess];
+        if (!isNaN(num)) {
+          cands.push(String(num).padStart(3, '0') + extGuess);
+          cands.push(String(num).padStart(5, '0') + extGuess);
+        }
+        let hit = false;
+        for (const nm of cands) {
+          try {
+            const st = fs.statSync(path.join(dir, nm));
+            if (st.size > 0) { done++; bi += st.size; n++; emitProg(); hit = true; break; }
+          } catch (e2) {}
+        }
+        if (hit) continue;
+      }
+      let r = null, buf = null, why = '';
+      if (u2.direct) {
+        // 适配器声明这路图必须直连（EH 的 H@H 高端口代理一律不放行）。
+        // 直接走 curl，不再先浪费 3 次代理重试 —— 日志里 2405 次「代理不通」全是白等。
+        const d = await curlDirectImg(mainUrl, hd);
+        if (d) { buf = d; r = { status: 200 }; }
+        else why = '直连失败';
+      } else {
+        for (let attempt = 0; attempt < 2 && !r; attempt++) {   // 代理只试 2 次（原来是 3 次）
+          try {
+            const rr = await fetch(mainUrl, { headers: hd });
+            if (rr.status === 509 || rr.status === 403) {          // 配额/封禁: 连续 5 张才 fatal
+              consecQuota++;
+              if (consecQuota >= 5) throw quotaErr();
+              await new Promise((res) => setTimeout(res, 800 * (attempt + 1)));
+              continue;
+            }
+            consecQuota = 0;
+            const ctype = String((rr.headers && rr.headers.get && rr.headers.get('content-type')) || '');
+            if (rr.ok && /^image\//i.test(ctype)) {
+              buf = Buffer.from(await rr.arrayBuffer()); r = rr;
+            } else if (rr.ok) {
+              // 200 但不是图片：CF 挑战页 / 错误页 / 配额提示，当场换路，别等到最后校验才丢图
+              why = '代理返回非图片(' + (ctype || '无 Content-Type') + ')';
+              await new Promise((res) => setTimeout(res, 300));
+            }
+          } catch (e) { if (e && e.fatal) throw e; why = '代理异常:' + String((e && e.message) || e).slice(0, 60); await new Promise((res2) => setTimeout(res2, 500)); }
+        }
+        // 代理下不来 → 同一条地址直连再试一次
+        if (!r) {
+          const d = await curlDirectImg(mainUrl, hd);
+          if (d) { buf = d; r = { status: 200 }; say('  [直连] 第 ' + (q2.i + 1) + " 页代理不通，已改用直连"); }
+          else why = why || '代理与直连均失败';
         }
       }
-      let r = null, buf = null;
-      for (let attempt = 0; attempt < 3 && !r; attempt++) {   // 网络抖动自己重试, 别直接丢图
-        try {
-          const rr = await fetch(mainUrl, { headers: hd });
-          if (rr.status === 509 || rr.status === 403) {          // 配额/封禁: 连续 5 张才 fatal
-            consecQuota++;
-            if (consecQuota >= 5) throw quotaErr();
-            await new Promise((res) => setTimeout(res, 800 * (attempt + 1)));
-            continue;
-          }
-          consecQuota = 0;
-          if (rr.ok) { buf = Buffer.from(await rr.arrayBuffer()); r = rr; }
-          
-        } catch (e) { if (e && e.fatal) throw e;  await new Promise((res2) => setTimeout(res2, 700 * (attempt + 1))); }
+      // 还是不行，再试适配器给的备用档（例如 EH 原图 <-> 降级档互换），别整页丢掉
+      if (!r && u2.alts && u2.alts.length) {
+        for (const a3 of u2.alts) {
+          const au = typeof a3 === 'string' ? a3 : a3.url;
+          const ah = typeof a3 === 'string' ? hd : Object.assign({}, hd, a3.headers || {});
+          try {
+            if (a3 && a3.direct) {
+              const ad = await curlDirectImg(au, ah);
+              if (ad) { buf = ad; r = { status: 200 }; say('  [回退] 备用档(直连)兜住第 ' + (q2.i + 1) + ' 页'); break; }
+              continue;
+            }
+            const rr3 = await fetch(au, { headers: ah });
+            const ct3 = String((rr3.headers && rr3.headers.get && rr3.headers.get('content-type')) || '');
+            if (rr3.ok && /^image\//i.test(ct3)) { buf = Buffer.from(await rr3.arrayBuffer()); r = rr3; say('  [回退] 备用档兜住第 ' + (q2.i + 1) + ' 页'); break; }
+          } catch (e3) {}
+        }
       }
-      if (!r) { failed++; done++; emitProg(); continue; }
+      if (!r) { recordFail(seq, extGuess, why || '下载失败', mainUrl); failed++; done++; emitProg(); continue; }
       if (u2.gif) {   // 动图: 下 mp4 -> ffmpeg 转 GIF(写 .part, 校验后 rename)
         const tmp = path.join(dir, '__dy_' + q2.i + '.mp4');
         const out = path.join(dir, seq + '_1.gif');   // _1 让 GIF 在文件排序里排第一, 静态图 _2~_5 跟后
@@ -480,7 +582,11 @@ async function downloadImagesToDir(dir, urls, ctx) {
         const partP = finalP + '.part';
         if (!looksValidImage(buf)) {   // 太小或魔数不符: 丢弃, 不写正式文件
           try { fs.rmSync(partP, { force: true }); } catch (e3) {}
-          say('    图片校验失败(太小或魔数不符), 已丢弃: ' + seq + ext);
+          // 把头部字节打出来：是 HTML（CF 挑战页）还是真图（魔数不认识）一目了然
+          const hexHead = buf.slice(0, 32).toString('hex');
+          const txtHead = buf.slice(0, 80).toString('utf8').replace(/[^\x20-\x7e]/g, '.');
+          say('    图片校验失败(太小或魔数不符), 已丢弃: ' + seq + ext + ' size=' + buf.length + ' hex=' + hexHead + ' txt=' + txtHead);
+          recordFail(seq, ext, '校验失败 size=' + buf.length + ' head=' + txtHead.slice(0, 60), mainUrl);
           failed++; done++; emitProg(); continue;
         }
         fs.writeFileSync(partP, buf);
@@ -491,6 +597,20 @@ async function downloadImagesToDir(dir, urls, ctx) {
     }
   };
   await Promise.all(Array.from({ length: JOBS }, () => worker()));
+  // 把没下来的页写到书目录的 .fetch-errors.json（不动 .fetch-meta.json —— 那是记账文件）
+  try {
+    const ef = path.join(dir, '.fetch-errors.json');
+    if (failures.length) {
+      failures.sort((a, b) => String(a.seq).localeCompare(String(b.seq)));
+      fs.writeFileSync(ef, JSON.stringify({ site: adapter.id, at: Date.now(), total: urls.length, ok: n, failed: failures }, null, 1), 'utf8');
+      say('  未完成的页已记录: .fetch-errors.json (' + failures.length + ' 页)');
+    } else if (n > 0 && fs.existsSync(ef)) {
+      // 只有"真的下了并且全成功"才清掉残留。
+      // 原来不管有没有下载都会删——一轮 todo 为空的重跑就把上次的失败记录抹了，
+      // 下次连"这本书还没下完"都不知道，缺页永远补不上。
+      fs.rmSync(ef, { force: true });
+    }
+  } catch (e9) { say('写 .fetch-errors.json 失败: ' + (e9 && e9.message)); }
   return { n: n, bi: bi, failed: failed, nextSeq: seqRef.n };
 }
 
@@ -712,7 +832,23 @@ for (const g of groups) {
   let maxSeq = 0;
   try { for (const de of fs.readdirSync(bdir, { withFileTypes: true })) { if (!de.isDirectory()) continue; const m = de.name.match(/^(\d{1,4})(\s|$)/); if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10)); } } catch (e) {}
   inGroup.forEach((c, i) => {
-    let name = chDirName(c, maxSeq + i + 1);
+    let name;
+    if (PAGESEL) {
+      // 页级勾选是"给已经下过的章节补页"，不该新建一个章节。
+      // 原来这里走 maxSeq+1，补第 2 页就多出一个「02 全本」，图散在两处。
+      // 现在先找已有的同名章节（忽略前面的序号）复用。
+      const bare = chDirName(c, 1).replace(/^\d+\s*/, '');
+      let reuse = null;
+      try {
+        for (const de of fs.readdirSync(bdir, { withFileTypes: true })) {
+          if (!de.isDirectory()) continue;
+          if (de.name.replace(/^\d+\s*/, '') === bare) { reuse = de.name; break; }
+        }
+      } catch (e0) {}
+      name = reuse || chDirName(c, maxSeq + i + 1);
+    } else {
+      name = chDirName(c, maxSeq + i + 1);
+    }
     if (usedName[bookOf(g) + '/' + name]) { let k = 2; while (usedName[bookOf(g) + '/' + name + ' (' + k + ')']) k++; name += ' (' + k + ')'; }
     usedName[bookOf(g) + '/' + name] = 1;
     plan.push({ c: c, book: bookOf(g), dir: path.join(bdir, name), label: name });
@@ -753,8 +889,22 @@ function existingPages(dir, nums) {
 }
 for (const it of plan) {
   if (it.c.index < from || it.c.index > to) continue;
-  if (pageSet.size) {   // 页级勾选: 无条件进 todo(目录里已有的话由后面的逐页过滤处理)
-    try { fs.rmSync(it.dir, { recursive: true, force: true }); } catch (e) {}   // 勾选的页重下(覆盖), 没勾的不管
+  // 【修复】plan 里的目录名是按 maxSeq+1 新编的，但 .fetch-meta.json 里记着这本上次用的名字。
+  // 不认那个名字的后果：每跑一次就多出一个「02 全本」「03 全本」，图散在好几个目录里，
+  // 而且 hasDir 判定全部落空 —— 等于每次都在"新"章节上重下。
+  {
+    const cid0 = it.c.id ? String(it.c.id) : '';
+    const kN = (cid0 && ids[cid0]) ? ids[cid0] : '';
+    const kP = kN ? path.join(path.dirname(it.dir), kN) : '';
+    if (kP && fs.existsSync(kP) && path.basename(kP) !== path.basename(it.dir)) {
+      it.dir = kP;
+      it.label = kN;
+    }
+  }
+  if (pageSet.size) {   // 页级勾选: 给已下过的章节"补页/覆盖这几页"
+    // 【严重 bug 修复】原来这里直接 rmSync 整个目录，注释写的是"勾选的页重下、没勾的不管"，
+    // 实际却是先删光整章再只下勾选的那几页 —— 补 3 页能把 40 多张已下好的图全删掉（踩过）。
+    // 现在不删目录：由 worker 里的断点续传跳过已存在的，勾选页想覆盖就加 --force。
     pageTargets.set(it, pageSet);
     todo.push(it);
     continue;
@@ -772,11 +922,26 @@ for (const it of plan) {
     todo.push(it); continue;
   }
   if (known && hasDir(known)) {
-    if (path.basename(known) !== path.basename(it.dir)) renames.push({ from: known, to: it.dir });
-    skippedAll++; skippedFull++;
-    continue;
+    // 同一条规矩：目录里有 .fetch-errors.json 说明上次没下完，得继续补，不能当"已入库"跳过
+    let incomplete2 = false;
+    try { incomplete2 = fs.existsSync(path.join(known, '.fetch-errors.json')); } catch (e) {}
+    if (!incomplete2) {
+      if (path.basename(known) !== path.basename(it.dir)) renames.push({ from: known, to: it.dir });
+      skippedAll++; skippedFull++;
+      continue;
+    }
+    it.dir = known;
+    it.label = path.basename(known);
+    say('  续下: ' + it.label + ' 上次还有没下完的页');
   }
-  if (hasDir(it.dir)) { skippedAll++; skippedFull++; continue; }
+  if (hasDir(it.dir)) {
+    // 上次没下完的话（还留着 .fetch-errors.json）不能当成"已入库"直接跳过，
+    // 否则缺页永远补不上，只能靠手动 --pages 一张张点。
+    let incomplete = false;
+    try { incomplete = fs.existsSync(path.join(it.dir, '.fetch-errors.json')); } catch (e) {}
+    if (!incomplete) { skippedAll++; skippedFull++; continue; }
+    say('  续下: ' + it.label + ' 上次还有没下完的页');
+  }
   todo.push(it);
 }
 if (renames.length) {   // 两阶段改名, 避免互相覆盖

@@ -9,7 +9,7 @@ import { isBigPlat } from '../library/store.js';
 import { chStep, renderChapters } from '../reader/panel.js';
 import { render } from '../reader/render.js';
 import { comic } from '../reader/state.js';
-import { applyReaderTheme, spreads, spreadIndex } from '../reader/view.js';
+import { applyReaderTheme, spreads, spreadIndex, saveReaderDefaults } from '../reader/view.js';
 import { pageList, chLabel, nOf } from '../shared/chapter.js';
 import { showModal, closeModal, hint } from '../shared/ui.js';
 
@@ -41,7 +41,7 @@ export function openThemeDialog() {
       b2.style.background = t[2]; b2.style.color = t[3];
       b2.className = (S.theme === t[0]) ? "on" : "";
       b2.onclick = function () {
-        S.theme = t[0]; applyReaderTheme();
+        S.theme = t[0]; applyReaderTheme(); saveReaderDefaults();   // 配色也要落盘，否则下次进来又是默认
         Array.prototype.forEach.call(sw.children, function (x) { x.className = (x === b2) ? "on" : ""; });
       };
       sw.appendChild(b2);
@@ -50,7 +50,12 @@ export function openThemeDialog() {
     var rg = document.createElement("input"); rg.type = "range"; rg.min = "10"; rg.max = "100"; rg.step = "5";
     rg.value = String(Math.round(((typeof S.bright === "number") ? S.bright : 1) * 100));
     var val = document.createElement("div"); val.className = "stat"; val.textContent = rg.value + "%";
-    rg.oninput = function () { S.bright = Number(rg.value) / 100; val.textContent = rg.value + "%"; applyReaderTheme(); };
+    var brightTimer = 0;
+    rg.oninput = function () {
+      S.bright = Number(rg.value) / 100; val.textContent = rg.value + "%"; applyReaderTheme();
+      if (brightTimer) clearTimeout(brightTimer);
+      brightTimer = setTimeout(function () { brightTimer = 0; saveReaderDefaults(); }, 400);   // 拖动时防抖，别每像素写一次盘
+    };
     box.appendChild(rg); box.appendChild(val);
     var foot = document.createElement("div"); foot.id = "mfoot"; box.appendChild(foot);
     var done = document.createElement("button"); done.className = "btn"; done.textContent = "完成";

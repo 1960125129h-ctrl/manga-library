@@ -12,6 +12,8 @@ export const id = 'pixiv';
 export const label = 'Pixiv';
 export const home = 'https://www.pixiv.net/';
 export function match(url) { return /pixiv\.net/i.test(String(url || '')); }
+// pixiv 的 i.pximg.net 会 429 限流，图片并发保持低位
+export const jobs = 2;
 let LAST_CALL = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function throttle() {   // pixiv 对接口调用有频率限制, 每次调用之间留 400ms(作者页批量补封面时用稳定性换速度)
