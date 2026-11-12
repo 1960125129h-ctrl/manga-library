@@ -719,8 +719,20 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
 
   var searchTimer = 0;
   // ─── ⑤ 书架: 搜索 / 筛选 / 主题 / 滚动 / 侧键 ───────────────────────────────────────
+  // 搜索框右侧的 ✕: 有内容才显示, 点一下清空并回到完整书架
+  var elQClear = document.getElementById("btn-qclear");
+  function syncQClear() { if (elQClear) elQClear.style.display = (elSearch && elSearch.value) ? "" : "none"; }
+  window.__qclearSync = syncQClear;   // 卡片上的标签/作者点击也会改搜索框, 由那边回调
+  if (elQClear) {
+    elQClear.onclick = function () {
+      elSearch.value = ""; S.q = ""; syncQClear();
+      renderShelf(); saveShelfView(); elSearch.focus();
+    };
+  }
+  syncQClear();
   elSearch.oninput = function () {
     S.q = elSearch.value;
+    syncQClear();
     if (searchTimer) clearTimeout(searchTimer);
     searchTimer = setTimeout(function () { searchTimer = 0; renderShelf(); saveShelfView(); }, 80);
   };

@@ -381,6 +381,14 @@ export function card(c, m) {
     var au = document.createElement("div"); au.className = "cauthor"; au.textContent = ak;
     var rawA = normName(ent && ent.author);
     if (rawA && rawA !== ak) au.title = "原始写法: " + rawA;   // 合并过的话悬停能看到原文
+    // 点作者 = 只看这个作者的书(和筛选面板里的作者 chips 同一套状态)
+    au.style.cursor = "pointer";
+    au.title = (au.title ? au.title + " · " : "") + "点一下：只看「" + ak + "」的书";
+    au.onclick = function (ev) {
+      ev.stopPropagation();
+      S.authors = [ak];
+      renderShelf(); saveShelfView(true);
+    };
     mt.appendChild(au);
   } else if (c.ai) {
     // AI 角标已在角标区显示, 作者位置不再重复"AI 生成"
@@ -417,7 +425,7 @@ export function card(c, m) {
       seenTag[_cats[ci]] = 1;
       var s1 = document.createElement("span"); s1.className = "ctag cat"; s1.textContent = _cats[ci];
       s1.title = "点一下：按分类「" + _cats[ci] + "」筛选";
-      s1.onclick = function (ev) { ev.stopPropagation(); S.filter = this.textContent; S.q = ""; if (elSearch) elSearch.value = ""; renderShelf(); saveShelfView(true); };
+      s1.onclick = function (ev) { ev.stopPropagation(); S.filter = this.textContent; S.q = ""; if (elSearch) elSearch.value = ""; if (window.__qclearSync) window.__qclearSync(); renderShelf(); saveShelfView(true); };
       tw.appendChild(s1);
     }
     for (ci = 0; ci < _tags.length; ci++) {
@@ -425,7 +433,7 @@ export function card(c, m) {
       seenTag[_tags[ci]] = 1;
       var s2 = document.createElement("span"); s2.className = "ctag tag"; s2.textContent = "#" + _tags[ci];
       s2.title = "点一下：搜索标签「" + _tags[ci] + "」";
-      s2.onclick = function (ev) { ev.stopPropagation(); S.q = this.textContent.slice(1); if (elSearch) elSearch.value = S.q; renderShelf(); saveShelfView(true); };
+      s2.onclick = function (ev) { ev.stopPropagation(); S.q = this.textContent.slice(1); if (elSearch) elSearch.value = S.q; if (window.__qclearSync) window.__qclearSync(); renderShelf(); saveShelfView(true); };
       tw.appendChild(s2);
     }
     mt.appendChild(tw);
