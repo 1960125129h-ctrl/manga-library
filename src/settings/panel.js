@@ -211,13 +211,37 @@ export function openSettings() {
       } catch (e) {}
     }
     hotChk.onchange = function () { try { DISK.hotSetEnabled(hotChk.checked); } catch (e) {} };
+    // 界面文件同步完要 reload 才生效; 起不来会自动回滚(main 里的 hot:reload)
+    var hotReloadBtn = document.createElement('button');
+    hotReloadBtn.className = 'btn'; hotReloadBtn.textContent = '界面已更新，点此刷新';
+    hotReloadBtn.style.cssText = 'display:none;margin:6px 0 4px';
+    pUpdate.appendChild(hotReloadBtn);
+    hotReloadBtn.onclick = async function () {
+      hotReloadBtn.disabled = true; hotReloadBtn.textContent = '刷新中…';
+      var rr = null;
+      try { rr = await DISK.hotReload(); } catch (e) {}
+      hotReloadBtn.disabled = false; hotReloadBtn.textContent = '界面已更新，点此刷新';
+      if (rr && rr.ok === false) hint((rr && rr.msg) || '刷新失败');
+      else hotReloadBtn.style.display = 'none';
+      refreshHot();
+    };
     hotBtn.onclick = async function () {
       hotBtn.disabled = true; hotBtn.textContent = '同步中…';
       var r = null;
       try { r = await DISK.hotSync(); } catch (e) {}
       hotBtn.disabled = false; hotBtn.textContent = '立即同步';
       if (!r || !r.ok) { hint('同步失败：' + ((r && r.msg) || '网络不可用')); refreshHot(); return; }
-      hint(r.changed.length ? ('已更新 ' + r.changed.length + ' 个脚本') : '已是最新，无需更新');
+      var nS = (r.changed || []).length, nU = (r.changedSrc || []).length;
+      if (r.blocked && r.blocked.length) {
+        hint('这版界面需要更新应用（依赖了新接口：' + r.blocked.slice(0, 3).join(', ') + '）');
+      } else if (nU > 0) {
+        hint('已更新 ' + nU + ' 个界面文件，点「刷新」生效');
+        hotReloadBtn.style.display = 'inline-block';
+      } else if (nS > 0) {
+        hint('已更新 ' + nS + ' 个站点脚本（下次下载生效）');
+      } else {
+        hint('已是最新，无需更新');
+      }
       refreshHot();
     };
     refreshHot();

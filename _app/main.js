@@ -1557,6 +1557,21 @@ ipcMain.handle('update:skip', () => updater.getSkip());
 const hotupdate = require('./hotupdate.js');
 ipcMain.handle('hot:status', () => hotupdate.status());
 ipcMain.handle('hot:sync', () => hotupdate.sync(LIB, { force: true }));
+ipcMain.handle('hot:reload', async () => {
+  try {
+    if (win && !win.isDestroyed()) win.webContents.reload();
+    await new Promise(function (r) { setTimeout(r, 4500); });
+    let booted = true;
+    try { booted = await win.webContents.executeJavaScript('!!window.mlBooted'); } catch (e) { booted = false; }
+    if (!booted) {
+      const n = hotupdate.rollbackSrc(LIB);
+      logLine('启动', '[热更新] 新界面起不来, 已回滚 ' + n + ' 个文件');
+      try { win.webContents.reload(); } catch (e) {}
+      return { ok: false, rolledBack: n, msg: '新界面加载失败, 已自动回滚' };
+    }
+    return { ok: true };
+  } catch (e) { return { ok: false, msg: String((e && e.message) || e) }; }
+});
 ipcMain.handle('hot:setEnabled', (e, v) => hotupdate.setEnabled(v));
 ipcMain.handle('update:clearSkip', () => updater.setSkip(''));
 ipcMain.handle('update:openPage', () => { try { shell.openExternal(updater.PAGE_RELEASES); return { ok: true }; } catch (e) { return { ok: false, msg: String(e && e.message || e) }; } });

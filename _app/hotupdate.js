@@ -1,14 +1,15 @@
 'use strict';
-// 站点脚本热更新: 只拉 _scripts/sites/*.mjs, 不重装应用、不用重启
+// 站点脚本 + 界面源码 热更新(不重装应用)
 //
-// 为什么可行: 每次下载都是 spawn 一个新的 node 进程跑 _scripts/sites/fetch-book.mjs,
-// 所以覆盖文件后, 下一次下载用的就是新脚本。改个站点适配器只要几百 KB, 不必发 170MB 安装包。
+// 两条通道:
+//   A) _scripts/sites/*.mjs   每次下载 spawn 新 node 进程 -> 覆盖即生效, 连重启都不用
+//   B) src/**                 渲染层静态文件 -> 写完要 reload 窗口才生效, 所以带"契约检查 + 失败回滚"
 //
 // 安全与稳妥:
-//   · 只同步 .mjs, 且只写 <书库根>/_scripts/sites/, 不碰别的目录
-//   · 覆盖前把旧文件备份到 <书库根>/_scripts/sites/.hotprev/
-//   · 逐字节比对, 内容一样就不写(不产生无谓改动)
-//   · 只信任本仓库 master 的 raw 内容; 失败静默重试(不打扰用户)
+//   · 逐字节比对, 一样就不写; 覆盖前备份到 <目录>/.hotprev/
+//   · 先写 .tmp 再 rename, 不留半截文件
+//   · src 通道额外做契约检查: 新界面用到 mangaLib.xxx, 而 preload 没暴露 -> 整个 src 通道放弃(避免白屏)
+//   · reload 后如果没起来(window.mlBooted 为假) -> 自动用 .hotprev 回滚再 reload
 
 const { app, net } = require('electron');
 const fs = require('node:fs');
@@ -18,14 +19,15 @@ const https = require('node:https');
 const OWNER = '1960125129h-ctrl';
 const REPO = 'manga-library';
 const BRANCH = 'master';
-const DIR = '_scripts/sites';
-const LIST_API = 'https://api.github.com/repos/' + OWNER + '/' + REPO + '/contents/' + DIR + '?ref=' + BRANCH;
-const raw = function (name) { return 'https://raw.githubusercontent.com/' + OWNER + '/' + REPO + '/' + BRANCH + '/' + DIR + '/' + name; };
+const API = 'https://api.github.com/repos/' + OWNER + '/' + REPO;
+const rawUrl = function (p) { return 'https://raw.githubusercontent.com/' + OWNER + '/' + REPO + '/' + BRANCH + '/' + p.split(path.sep).join('/'); };
 
+// ---- 配置(和主进程同一个 userData) ----
 function cfgPath() { return path.join(app.getPath('userData'), 'config.json'); }
 function readCfg() { try { return JSON.parse(fs.readFileSync(cfgPath(), 'utf8').replace(/^\uFEFF/, '')); } catch (e) { return {}; } }
 function writeCfg(c) { try { fs.mkdirSync(path.dirname(cfgPath()), { recursive: true }); fs.writeFileSync(cfgPath(), JSON.stringify(c, null, 2), 'utf8'); } catch (e) {} }
 
+// ---- 网络: 先 net.fetch(带系统代理), 失败退回 Node https 直连 ----
 function httpsGetBuf(url, redirects) {
   const n = redirects === undefined ? 3 : redirects;
   return new Promise(function (resolve, reject) {
@@ -40,72 +42,161 @@ function httpsGetBuf(url, redirects) {
     req.setTimeout(20000, function () { req.destroy(new Error('timeout')); });
   });
 }
-
 async function fetchBuf(url) {
   try {
     const r = await net.fetch(url, { headers: { 'User-Agent': 'shuku-hot' } });
     if (r.ok) return Buffer.from(await r.arrayBuffer());
   } catch (e) {}
-  return await httpsGetBuf(url);   // 代理环境下 net.fetch 可能被拦, 退回直连
+  return await httpsGetBuf(url);
 }
 
-async function listRemote() {
-  const buf = await fetchBuf(LIST_API);
-  const arr = JSON.parse(buf.toString('utf8'));
-  if (!Array.isArray(arr)) throw new Error('列表格式不对');
-  return arr.filter(function (x) { return x && x.type === 'file' && /\.mjs$/i.test(x.name); });
+// ---- 远端文件清单: 一次 tree 递归拿到, 省 API 配额 ----
+async function listTree() {
+  const buf = await fetchBuf(API + '/git/trees/' + BRANCH + '?recursive=1');
+  const j = JSON.parse(buf.toString('utf8'));
+  const tree = Array.isArray(j.tree) ? j.tree : [];
+  const want = function (p) {
+    if (p.indexOf('_scripts/sites/') === 0) return /\.mjs$/i.test(p);
+    if (p.indexOf('src/') === 0) return /\.(js|mjs|css|html|json)$/i.test(p);
+    return false;
+  };
+  return tree.filter(function (x) { return x.type === 'blob' && want(x.path); }).map(function (x) { return x.path; });
 }
 
-// libRoot: 书库根(用户目录); 返回 {ok, checked, changed:[], msg}
+// ---- 契约检查: 新 src 里用到的 mangaLib.xxx 必须都在 preload 里暴露 ----
+function preloadApiNames() {
+  try {
+    const src = fs.readFileSync(path.join(__dirname, 'preload.js'), 'utf8');
+    const m = src.match(/exposeInMainWorld\(\s*['"]mangaLib['"]\s*,\s*\{([\s\S]*?)\n\}\);/);
+    const body = m ? m[1] : src;
+    const names = [];
+    body.replace(/^\s{2}([A-Za-z_$][\w$]*)\s*:/gm, function (_, n) { if (names.indexOf(n) < 0) names.push(n); return _; });
+    return names;
+  } catch (e) { return []; }
+}
+function usedApiNames(buffers) {
+  const used = {};
+  buffers.forEach(function (b) {
+    const s = b.toString('utf8');
+    s.replace(/mangaLib\.([A-Za-z_$][\w$]*)/g, function (_, n) { used[n] = 1; return _; });
+  });
+  return Object.keys(used);
+}
+function contractCheck(files) {
+  const have = preloadApiNames();
+  if (!have.length) return { ok: true, missing: [] };   // 读不到 preload 就不拦, 免得误伤
+  const used = usedApiNames(files.map(function (f) { return f.buf; }));
+  const missing = used.filter(function (n) { return have.indexOf(n) < 0; });
+  return { ok: missing.length === 0, missing: missing };
+}
+
+// ---- 写入一个文件(带备份 + 原子替换) ----
+function writeFile(libRoot, rel, buf) {
+  const dst = path.join(libRoot, rel);
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  let old = null;
+  try { old = fs.readFileSync(dst); } catch (e) {}
+  if (old && old.length === buf.length && old.equals(buf)) return false;   // 一样
+  if (old) {
+    const bak = path.join(path.dirname(dst), '.hotprev', path.basename(dst));
+    try { fs.mkdirSync(path.dirname(bak), { recursive: true }); fs.writeFileSync(bak, old); } catch (e) {}
+  }
+  const tmp = dst + '.hot-tmp';
+  fs.writeFileSync(tmp, buf);
+  fs.renameSync(tmp, dst);
+  return true;
+}
+
+// ---- 主入口 ----
+// opts.only: 'scripts' | 'src' | undefined(两个都做)
 async function sync(libRoot, opts) {
   const o = opts || {};
   if (!libRoot || !fs.existsSync(libRoot)) return { ok: false, msg: '书库目录不存在' };
-  const dstDir = path.join(libRoot, DIR);
-  if (!fs.existsSync(dstDir)) return { ok: false, msg: '书库里没有 ' + DIR };
-  let files = [];
-  try { files = await listRemote(); } catch (e) { return { ok: false, msg: '拉列表失败: ' + String((e && e.message) || e) }; }
-  if (!files.length) return { ok: false, msg: '远端没有可同步的脚本' };
+  let list = [];
+  try { list = await listTree(); } catch (e) { return { ok: false, msg: '拉清单失败: ' + String((e && e.message) || e) }; }
+  if (o.only === 'scripts') list = list.filter(function (p) { return p.indexOf('_scripts/sites/') === 0; });
+  if (o.only === 'src') list = list.filter(function (p) { return p.indexOf('src/') === 0; });
+  if (!list.length) return { ok: false, msg: '远端没有可同步的文件' };
 
-  const prevDir = path.join(dstDir, '.hotprev');
-  const changed = [], failed = [];
-  for (const f of files) {
-    const dst = path.join(dstDir, f.name);
-    let remote;
-    try { remote = await fetchBuf(raw(f.name)); } catch (e) { failed.push(f.name); continue; }
-    let local = null;
-    try { local = fs.readFileSync(dst); } catch (e) {}
-    if (local && local.length === remote.length && local.equals(remote)) continue;   // 一样, 跳过
-    try {
-      if (local) { try { fs.mkdirSync(prevDir, { recursive: true }); fs.writeFileSync(path.join(prevDir, f.name), local); } catch (e) {} }
-      const tmp = dst + '.hot-tmp';
-      fs.writeFileSync(tmp, remote);
-      fs.renameSync(tmp, dst);
-      changed.push(f.name);
-    } catch (e) { failed.push(f.name); }
+  // 先全部拉下来(小文件, 通常只变几个)
+  const fetched = [], failed = [];
+  for (const p of list) {
+    try { fetched.push({ rel: p, buf: await fetchBuf(rawUrl(p)) }); } catch (e) { failed.push(p); }
+  }
+
+  const srcFiles = fetched.filter(function (f) { return f.rel.indexOf('src/') === 0; });
+  const scriptFiles = fetched.filter(function (f) { return f.rel.indexOf('_scripts/sites/') === 0; });
+
+  // 契约检查(仅对 src, 且确实有变化时才做, 省得每次启动都读=读)
+  let contractBlocked = [];
+  const changedScripts = [], changedSrc = [];
+  for (const f of scriptFiles) {
+    try { if (writeFile(libRoot, f.rel, f.buf)) changedScripts.push(f.rel); } catch (e) { failed.push(f.rel); }
+  }
+  if (srcFiles.length) {
+    const chk = contractCheck(srcFiles);
+    if (!chk.ok) {
+      contractBlocked = chk.missing;
+    } else {
+      for (const f of srcFiles) {
+        try { if (writeFile(libRoot, f.rel, f.buf)) changedSrc.push(f.rel); } catch (e) { failed.push(f.rel); }
+      }
+    }
   }
 
   const c = readCfg();
   c.lastScriptSync = Date.now();
-  c.lastScriptSyncResult = changed.length + ' 个更新' + (failed.length ? (', ' + failed.length + ' 个失败') : '');
+  c.lastScriptSyncResult = changedScripts.length + ' 个脚本 / ' + changedSrc.length + ' 个界面文件' + (failed.length ? (', ' + failed.length + ' 失败') : '');
   writeCfg(c);
-  return { ok: failed.length === 0, checked: files.length, changed: changed, failed: failed, msg: failed.length ? ('部分失败: ' + failed.join(',')) : '' };
+
+  return {
+    ok: failed.length === 0,
+    checked: list.length,
+    changed: changedScripts,
+    changedSrc: changedSrc,
+    needsReload: changedSrc.length > 0,
+    blocked: contractBlocked,          // 非空 -> 说明这版界面依赖了新的主进程接口, 只能发版
+    failed: failed,
+    msg: failed.length ? ('部分失败: ' + failed.join(', ')) : ''
+  };
 }
 
-// 启动后按需自动同步(打包版, 12 小时一次)
-function maybeAutoSync(libRoot) {
-  if (!app.isPackaged) return false;
-  const c = readCfg();
-  if (c.hotSync === false) return false;
-  const last = Number(c.lastScriptSync) || 0;
-  if (Date.now() - last < 12 * 3600 * 1000) return false;
-  sync(libRoot).catch(function () {});
-  return true;
+// ---- reload 后的自愈: 起不来就用 .hotprev 回滚 ----
+// 备份位置约定: <dir>/.hotprev/<文件> 对应 <dir>/<文件>
+function rollbackSrc(libRoot) {
+  const root = path.join(libRoot, 'src');
+  let n = 0;
+  (function walk(dir) {
+    let items = [];
+    try { items = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+    const prev = path.join(dir, '.hotprev');
+    if (fs.existsSync(prev)) {
+      let olds = [];
+      try { olds = fs.readdirSync(prev, { withFileTypes: true }); } catch (e) {}
+      for (const f of olds) {
+        if (!f.isFile()) continue;
+        try { fs.copyFileSync(path.join(prev, f.name), path.join(dir, f.name)); n++; } catch (e) {}
+      }
+    }
+    for (const it of items) {
+      if (it.isDirectory() && it.name !== '.hotprev') walk(path.join(dir, it.name));
+    }
+  })(root);
+  return n;
 }
-
 function status() {
   const c = readCfg();
   return { enabled: c.hotSync !== false, last: Number(c.lastScriptSync) || 0, lastResult: String(c.lastScriptSyncResult || '') };
 }
 function setEnabled(v) { const c = readCfg(); c.hotSync = !!v; writeCfg(c); return status(); }
 
-module.exports = { sync, status, setEnabled, maybeAutoSync, DIR };
+function maybeAutoSync(libRoot) {
+  if (!app.isPackaged) return false;
+  const c = readCfg();
+  if (c.hotSync === false) return false;
+  if (Date.now() - (Number(c.lastScriptSync) || 0) < 12 * 3600 * 1000) return false;
+  sync(libRoot).catch(function () {});
+  return true;
+}
+
+module.exports = { sync, status, setEnabled, maybeAutoSync, rollbackSrc, preloadApiNames, DIR: '_scripts/sites' };

@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('mangaLib', {
   /* 站点脚本热更新 */
   hotStatus: () => ipcRenderer.invoke('hot:status'),
   hotSync: () => ipcRenderer.invoke('hot:sync'),
+  hotReload: () => ipcRenderer.invoke('hot:reload'),
   hotSetEnabled: (v) => ipcRenderer.invoke('hot:setEnabled', v),
   openReleases: () => ipcRenderer.invoke('update:openPage'),
   downloadPrefs: {
