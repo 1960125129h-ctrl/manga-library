@@ -90,3 +90,13 @@ node _scripts\jm\verify-packaged.mjs
 - 应用不向任何服务器上传数据；书架、进度、标签全在本地文件里
 - 各站登录 cookie 只存在本机 `_scripts/sites/cookies/`，**不进版本库**
 - 打包版不含验证码识别组件与测试数据，`library.json` 是空模板
+
+
+---
+
+## 许可证
+
+MIT —— 可以自由使用、修改、二次分发（包括商用），保留版权声明即可。
+详见 [LICENSE](LICENSE)。
+
+下载包在 [Releases](https://github.com/1960125129h-ctrl/manga-library/releases) 里。
