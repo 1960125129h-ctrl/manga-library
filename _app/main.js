@@ -488,6 +488,7 @@ function buildAppMenu() {
       { label: '放大界面', role: 'zoomIn' }, { label: '缩小界面', role: 'zoomOut' }, { label: '实际大小', role: 'resetZoom' }
     ]},
     { label: '帮助', submenu: [
+      { label: '检查更新…', click: () => { try { require('./updater.js').promptIfUpdate(win); } catch (e) {} } },
       { label: '打开书库文件夹', click: () => { try { shell.openPath(LIB); } catch (e) {} } },
       { label: '打开日志文件夹', click: () => { try { fs.mkdirSync(logsDir(), { recursive: true }); shell.openPath(logsDir()); } catch (e) {} } }
     ]}
@@ -530,8 +531,27 @@ function createTray() {
 }
 
 const SMOKE = process.argv.includes('--smoke');
+// 开发/发版前自检: electron _app --update-selftest [--download]
+// 只打印检查结果(带 --download 时真下安装包到临时目录, 不安装), 然后退出
+const UPD_SELFTEST = process.argv.includes('--update-selftest');
 
 app.whenReady().then(async () => {
+  if (UPD_SELFTEST) {
+    try {
+      const u = require('./updater.js');
+      const r = await u.check();
+      console.log('[selftest] check: ' + JSON.stringify({ ok: r.ok, current: r.current, latest: r.latest, hasUpdate: r.hasUpdate, setup: r.setup && r.setup.name }));
+      if (r.ok && r.setup && process.argv.includes('--download')) {
+        const t0 = Date.now();
+        const d = await u.download(r.setup, function (got, total) { if (total && got % (20 * 1024 * 1024) < 1024 * 1024) console.log('[selftest] ' + Math.round(got / total * 100) + '%'); });
+        console.log('[selftest] download: ' + JSON.stringify({ ok: d.ok, path: d.path, msg: d.msg || '', secs: Math.round((Date.now() - t0) / 1000) }));
+      }
+    } catch (e) {
+      console.log('[selftest] ERR ' + String((e && e.message) || e));
+    }
+    app.exit(0);
+    return;
+  }
   try { setTimeout(() => { try { sweepPreviewCache(); } catch (e) {} }, 4000); } catch (e) {}   // 启动 4 秒后兜底清理预览缓存
   // 打包版首次启动(或书库目录丢了): 弹窗选书库根目录, 再把随包资源同步进去
   const cfg0 = readCfg();
@@ -584,6 +604,10 @@ app.whenReady().then(async () => {
   } catch (e) {}
   createWindow();
   watchLibrary();
+  // 联网更新: 启动 8 秒后静默查一次 GitHub Releases, 有新版本才弹(静默失败不打扰)
+  try {
+    setTimeout(function () { try { require('./updater.js').promptIfUpdate(win); } catch (e) {} }, 8000);
+  } catch (e) {}
   // 双击关联文件启动: 等窗口先出来, 再导(导入要解压+重建, 会占用一会儿)
   try {
     const f0 = pickArchiveArg(process.argv);
@@ -1509,6 +1533,13 @@ function jmCaps() {
   return { legacy: legacy, packaged: !!app.isPackaged };
 }
 ipcMain.handle('jm:caps', () => jmCaps());
+
+/* ---------- 联网更新 ---------- */
+const updater = require('./updater.js');
+ipcMain.handle('app:version', () => app.getVersion());
+ipcMain.handle('update:check', () => updater.check());
+ipcMain.handle('update:prompt', () => updater.promptIfUpdate(win));
+ipcMain.handle('update:openPage', () => { try { shell.openExternal(updater.PAGE_RELEASES); return { ok: true }; } catch (e) { return { ok: false, msg: String(e && e.message || e) }; } });
 ipcMain.handle('jm:start', (e, urls, browser, imgMode) => {
   if (jmProc) return { ok: false, msg: '已有下载任务在跑' };
   // 这里不做格式过滤: JM1452133 / 纯数字 / 链接 都交给 _scripts\jm\target.mjs 归一化

@@ -124,7 +124,27 @@ export function openSettings() {
     guideBtn.textContent = '使用引导（怎么加书 / 怎么操作）';
     guideBtn.onclick = function () { closeModal(); setTimeout(function () { showGuide(true); }, 200); };
     guideRow.appendChild(guideBtn);
+    // 版本 + 检查更新
+    var verRow = document.createElement('div');
+    verRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin:-6px 0 10px;font-size:12px;color:var(--fg2)'
+    var verTxt = document.createElement('span'); verTxt.textContent = '版本 …';
+    var updBtn = document.createElement('button'); updBtn.className = 'btn ghost'; updBtn.textContent = '检查更新';
+    updBtn.onclick = async function () {
+      updBtn.disabled = true; updBtn.textContent = '检查中…';
+      var r = null;
+      try { r = await DISK.checkUpdate(); } catch (e) {}
+      updBtn.disabled = false; updBtn.textContent = '检查更新';
+      if (!r || !r.ok) { hint('检查更新失败：' + ((r && r.msg) || '网络不可用')); return; }
+      if (!r.hasUpdate) { hint('已是最新版本 ' + r.current); return; }
+      hint('发现新版本 ' + r.latest);
+      try { await DISK.promptUpdate(); } catch (e) {}
+    };
+    verRow.appendChild(verTxt); verRow.appendChild(updBtn);
+    if (DISK && DISK.appVersion) {
+      try { DISK.appVersion().then(function (v) { verTxt.textContent = '版本 ' + v; }).catch(function () {}); } catch (e) {}
+    }
     box.appendChild(guideRow);
+    box.appendChild(verRow);
     var pAppearance = makeTab('外观');
     var pDisplay = makeTab('显示');
     var pAdvanced = makeTab('高级');

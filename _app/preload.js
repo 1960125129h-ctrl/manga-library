@@ -43,6 +43,11 @@ contextBridge.exposeInMainWorld('mangaLib', {
   jmStart: (urls, browser, imgMode) => ipcRenderer.invoke('jm:start', urls, browser, imgMode),
   jmSetMode: (img) => ipcRenderer.invoke('jm:setMode', img),
   jmCaps: () => ipcRenderer.invoke('jm:caps'),
+  /* 联网更新 */
+  appVersion: () => ipcRenderer.invoke('app:version'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  promptUpdate: () => ipcRenderer.invoke('update:prompt'),
+  openReleases: () => ipcRenderer.invoke('update:openPage'),
   downloadPrefs: {
     get: () => ipcRenderer.invoke('prefs:getDownload'),
     set: (j) => ipcRenderer.invoke('prefs:setDownload', j),

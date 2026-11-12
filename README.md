@@ -100,3 +100,36 @@ MIT —— 可以自由使用、修改、二次分发（包括商用），保留
 详见 [LICENSE](LICENSE)。
 
 下载包在 [Releases](https://github.com/1960125129h-ctrl/manga-library/releases) 里。
+
+
+---
+
+## 更新
+
+应用会**自己检查更新**：启动 8 秒后静默查一次 GitHub Releases，有新版本就弹窗（含更新说明），
+点「下载并安装」后台下载安装包（任务栏显示进度）→ 拉起安装程序 → 关闭自己。
+
+手动入口有两个：设置面板顶部的「版本 1.0.x · 检查更新」、菜单「帮助 → 检查更新…」。
+
+> 便携版（portable）没法覆盖自己，检测到新版本只会提示并打开发布页，手动换 exe 即可。
+
+### 发版流程（维护者）
+
+```powershell
+# 1) 改版本号（打包和更新检查都以它为准）
+#    _app/package.json 的 "version": "1.0.2"
+
+# 2) 打包
+cd _app; .\node_modules\.bin\electron-builder.cmd --win
+
+# 3) 发布（Release 的 tag 必须比用户当前版本大）
+#    在 GitHub 上 New release -> tag v1.0.2 -> 上传 _dist\书库-1.0.2-setup.exe（可选 portable）
+#    资产名建议用 ASCII（如 shuku-1.0.2-setup.exe），中文名在下载/上传环节容易乱码
+```
+
+自检命令（发版前跑一次，确认 API 通、能解析出安装包地址）：
+
+```powershell
+._app\node_modules\electron\dist\electron.exe _app --update-selftest
+# 加 --download 会真下安装包到临时目录（不安装），用来验网速与文件大小校验
+```
