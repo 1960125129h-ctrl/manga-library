@@ -43,7 +43,7 @@ const DEFAULT_LIB = (function () {
 })();
 
 function cfgFile() { return path.join(app.getPath('userData'), 'config.json'); }
-function readCfg() { try { return JSON.parse(fs.readFileSync(cfgFile(), 'utf8')); } catch (e) { return {}; } }
+function readCfg() { try { return JSON.parse(fs.readFileSync(cfgFile(), 'utf8').replace(/^\uFEFF/, '')); } catch (e) { return {}; } }   // 容忍被记事本改成带 BOM 的文件
 function writeCfg(c) { try { fs.mkdirSync(path.dirname(cfgFile()), { recursive: true }); fs.writeFileSync(cfgFile(), JSON.stringify(c, null, 2), 'utf8'); } catch (e) {} }
 
 let LIB = readCfg().libraryRoot || DEFAULT_LIB;
@@ -488,7 +488,7 @@ function buildAppMenu() {
       { label: '放大界面', role: 'zoomIn' }, { label: '缩小界面', role: 'zoomOut' }, { label: '实际大小', role: 'resetZoom' }
     ]},
     { label: '帮助', submenu: [
-      { label: '检查更新…', click: () => { try { require('./updater.js').promptIfUpdate(win); } catch (e) {} } },
+      { label: '检查更新…', click: () => { try { require('./updater.js').promptIfUpdate(win, true); } catch (e) {} } },
       { label: '打开书库文件夹', click: () => { try { shell.openPath(LIB); } catch (e) {} } },
       { label: '打开日志文件夹', click: () => { try { fs.mkdirSync(logsDir(), { recursive: true }); shell.openPath(logsDir()); } catch (e) {} } }
     ]}
@@ -540,7 +540,8 @@ app.whenReady().then(async () => {
     try {
       const u = require('./updater.js');
       const r = await u.check();
-      console.log('[selftest] check: ' + JSON.stringify({ ok: r.ok, current: r.current, latest: r.latest, hasUpdate: r.hasUpdate, setup: r.setup && r.setup.name }));
+      const suppressed = !!(r.ok && r.hasUpdate && r.skip && r.skip === r.latest);
+      console.log('[selftest] check: ' + JSON.stringify({ ok: r.ok, current: r.current, latest: r.latest, hasUpdate: r.hasUpdate, skip: r.skip || '', wouldPrompt: r.hasUpdate && !suppressed, setup: r.setup && r.setup.name }));
       if (r.ok && r.setup && process.argv.includes('--download')) {
         const t0 = Date.now();
         const d = await u.download(r.setup, function (got, total) { if (total && got % (20 * 1024 * 1024) < 1024 * 1024) console.log('[selftest] ' + Math.round(got / total * 100) + '%'); });
@@ -1538,7 +1539,9 @@ ipcMain.handle('jm:caps', () => jmCaps());
 const updater = require('./updater.js');
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('update:check', () => updater.check());
-ipcMain.handle('update:prompt', () => updater.promptIfUpdate(win));
+ipcMain.handle('update:prompt', () => updater.promptIfUpdate(win, true));   // 手动点「检查更新」: 不受"跳过"影响
+ipcMain.handle('update:skip', () => updater.getSkip());
+ipcMain.handle('update:clearSkip', () => updater.setSkip(''));
 ipcMain.handle('update:openPage', () => { try { shell.openExternal(updater.PAGE_RELEASES); return { ok: true }; } catch (e) { return { ok: false, msg: String(e && e.message || e) }; } });
 ipcMain.handle('jm:start', (e, urls, browser, imgMode) => {
   if (jmProc) return { ok: false, msg: '已有下载任务在跑' };

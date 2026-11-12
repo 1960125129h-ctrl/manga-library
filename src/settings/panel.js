@@ -143,11 +143,40 @@ export function openSettings() {
     if (DISK && DISK.appVersion) {
       try { DISK.appVersion().then(function (v) { verTxt.textContent = '版本 ' + v; }).catch(function () {}); } catch (e) {}
     }
-    box.appendChild(guideRow);
-    box.appendChild(verRow);
     var pAppearance = makeTab('外观');
     var pDisplay = makeTab('显示');
     var pAdvanced = makeTab('高级');
+    var pUpdate = makeTab('更新');
+    // 引导 + 版本/检查更新 单独一个页签
+    pUpdate.appendChild(guideRow);
+    pUpdate.appendChild(verRow);
+    var updHint = document.createElement('div');
+    updHint.className = 'sub';
+    updHint.textContent = '启动时会自动检查一次；发现新版本会弹窗，你也可以随时点上面的「检查更新」。';
+    pUpdate.appendChild(updHint);
+    // 已跳过的版本(点过弹窗里的「跳过这个版本」) + 一键恢复提示
+    var skipRow = document.createElement('div');
+    skipRow.className = 'sub';
+    skipRow.style.cssText = 'display:none;align-items:center;gap:8px;margin:6px 0 0';
+    var skipTxt = document.createElement('span');
+    var skipBtn = document.createElement('button'); skipBtn.className = 'btn ghost'; skipBtn.textContent = '恢复提示';
+    skipRow.appendChild(skipTxt); skipRow.appendChild(skipBtn);
+    pUpdate.appendChild(skipRow);
+    function refreshSkip() {
+      if (!DISK || !DISK.skipVersion) return;
+      try {
+        DISK.skipVersion().then(function (v) {
+          if (v) { skipTxt.textContent = '已跳过版本 ' + v + '（该版本不再提示）'; skipRow.style.display = 'flex'; }
+          else { skipRow.style.display = 'none'; }
+        }).catch(function () {});
+      } catch (e) {}
+    }
+    skipBtn.onclick = async function () {
+      try { await DISK.clearSkipVersion(); } catch (e) {}
+      hint('已恢复更新提示');
+      refreshSkip();
+    };
+    refreshSkip();
     tabBtns[0].click();
 
     function num(parent, k, label, min, max, step, unit) {
@@ -498,6 +527,10 @@ export function openSettings() {
       if (st.running) setRunningUI(st);
       else { webPortInput.value = st.port || 9580; webPwInput.value = st.password || ''; }
     });
+    // 这一段排到「高级」的第一项: 先把刚挂上去的几块摘下来, 再倒序插到最前面
+    var lanNodes = [webSep, webPwRow, webPortRow, webPortHint, webBtnRow, webInfo];
+    lanNodes.forEach(function (n) { try { if (n && n.parentNode) n.parentNode.removeChild(n); } catch (e) {} });
+    for (var li = lanNodes.length - 1; li >= 0; li--) { try { pAdvanced.insertBefore(lanNodes[li], pAdvanced.firstChild); } catch (e) {} }
     }
 
 

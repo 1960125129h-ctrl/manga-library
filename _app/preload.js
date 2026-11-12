@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld('mangaLib', {
   appVersion: () => ipcRenderer.invoke('app:version'),
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   promptUpdate: () => ipcRenderer.invoke('update:prompt'),
+  skipVersion: () => ipcRenderer.invoke('update:skip'),
+  clearSkipVersion: () => ipcRenderer.invoke('update:clearSkip'),
   openReleases: () => ipcRenderer.invoke('update:openPage'),
   downloadPrefs: {
     get: () => ipcRenderer.invoke('prefs:getDownload'),

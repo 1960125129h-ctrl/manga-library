@@ -54,6 +54,23 @@ function cmpVer(a, b) {
   return 0;
 }
 
+
+/* ---------- 「跳过这个版本」记忆 ----------
+   存在 config.json(和主进程同一个 userData), 键名 skipVersion。
+   只要最新版还等于它就不弹; 发了更新版本自动重新提示。 */
+function cfgPath() { return path.join(app.getPath('userData'), 'config.json'); }
+function readCfg() { try { return JSON.parse(fs.readFileSync(cfgPath(), 'utf8').replace(/^\uFEFF/, '')); } catch (e) { return {}; } }
+function writeCfg(c) {
+  try { fs.mkdirSync(path.dirname(cfgPath()), { recursive: true }); fs.writeFileSync(cfgPath(), JSON.stringify(c, null, 2), 'utf8'); } catch (e) {}
+}
+function getSkip() { return String(readCfg().skipVersion || ''); }
+function setSkip(v) {
+  const c = readCfg();
+  if (v) c.skipVersion = String(v); else delete c.skipVersion;
+  writeCfg(c);
+  return getSkip();
+}
+
 // 便携版: electron-builder 会注入 PORTABLE_EXECUTABLE_DIR
 function isPortable() {
   return !!process.env.PORTABLE_EXECUTABLE_DIR;
@@ -109,7 +126,7 @@ async function check() {
   const info = await fetchLatest();
   if (!info.ok) return { ok: false, current: cur, msg: info.msg };
   const newer = cmpVer(info.version, cur) > 0;
-  return { ok: true, current: cur, latest: info.version, hasUpdate: newer, page: info.page, notes: info.notes, setup: info.setup, portable: info.portable };
+  return { ok: true, current: cur, latest: info.version, hasUpdate: newer, page: info.page, notes: info.notes, setup: info.setup, portable: info.portable, skip: getSkip() };
 }
 
 function progressWin() {
@@ -196,10 +213,12 @@ function runInstaller(file) {
 }
 
 // 启动后静默检查一次: 有新版本就弹窗(可稍后)
-async function promptIfUpdate(win) {
+async function promptIfUpdate(win, force) {
   const r = await check();
   if (!r.ok || !r.hasUpdate) return r;
-  const btn = isPortable() ? ['前往下载', '稍后'] : ['下载并安装', '稍后'];
+  // 用户点过「跳过这个版本」: 只要最新版还是它就不再打扰(手动点检查更新时仍然弹, force=1)
+  if (!force && r.skip && r.skip === r.latest) return r;
+  const btn = isPortable() ? ['前往下载', '稍后', '跳过这个版本'] : ['下载并安装', '稍后', '跳过这个版本'];
   const { response } = await dialog.showMessageBox(win || undefined, {
     type: 'info',
     buttons: btn,
@@ -209,6 +228,7 @@ async function promptIfUpdate(win) {
     message: '书库 ' + r.latest + '（当前 ' + r.current + '）',
     detail: String(r.notes || '').split('\n').slice(0, 12).join('\n') || '有新版本可用。'
   });
+  if (response === 2) { setSkip(r.latest); return { ok: true, skipped: r.latest, current: r.current, latest: r.latest, hasUpdate: true }; }
   if (response !== 0) return r;
   if (isPortable()) { try { shell.openExternal(r.page); } catch (e) {} return r; }
   const asset = r.setup;
@@ -223,4 +243,4 @@ async function promptIfUpdate(win) {
   return r;
 }
 
-module.exports = { check, download, install: runInstaller, promptIfUpdate, cmpVer, isPortable, PAGE_RELEASES };
+module.exports = { check, download, install: runInstaller, promptIfUpdate, cmpVer, isPortable, PAGE_RELEASES, getSkip, setSkip };
