@@ -615,6 +615,8 @@ app.whenReady().then(async () => {
   } catch (e) {}
   createWindow();
   watchLibrary();
+  // 站点脚本热更新: 启动 20 秒后(打包版)按需同步一次, 12 小时内不重复
+  try { setTimeout(function () { try { require('./hotupdate.js').maybeAutoSync(LIB); } catch (e) {} }, 20000); } catch (e) {}
   // 联网更新: 启动 8 秒后静默查一次 GitHub Releases, 有新版本才弹(静默失败不打扰)
   try {
     setTimeout(function () { try { require('./updater.js').promptIfUpdate(win); } catch (e) {} }, 8000);
@@ -1551,6 +1553,11 @@ ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('update:check', () => updater.check());
 ipcMain.handle('update:prompt', () => updater.promptIfUpdate(win, true));   // 手动点「检查更新」: 不受"跳过"影响
 ipcMain.handle('update:skip', () => updater.getSkip());
+/* ---------- 站点脚本热更新(不重装应用) ---------- */
+const hotupdate = require('./hotupdate.js');
+ipcMain.handle('hot:status', () => hotupdate.status());
+ipcMain.handle('hot:sync', () => hotupdate.sync(LIB, { force: true }));
+ipcMain.handle('hot:setEnabled', (e, v) => hotupdate.setEnabled(v));
 ipcMain.handle('update:clearSkip', () => updater.setSkip(''));
 ipcMain.handle('update:openPage', () => { try { shell.openExternal(updater.PAGE_RELEASES); return { ok: true }; } catch (e) { return { ok: false, msg: String(e && e.message || e) }; } });
 ipcMain.handle('jm:start', (e, urls, browser, imgMode) => {

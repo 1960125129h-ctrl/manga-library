@@ -177,6 +177,50 @@ export function openSettings() {
       refreshSkip();
     };
     refreshSkip();
+
+    // ---- 站点脚本热更新(不重装应用, 只换 _scripts/sites/*.mjs) ----
+    var hotSep = document.createElement('div');
+    hotSep.style.cssText = 'border-top:1px solid var(--border);margin:14px 0 8px;padding-top:10px;font-weight:600;font-size:13px';
+    hotSep.textContent = '站点脚本（热更新）';
+    pUpdate.appendChild(hotSep);
+    var hotHint = document.createElement('div'); hotHint.className = 'sub';
+    hotHint.textContent = '只同步各站点适配器（几百 KB），不用重装应用、不用重启；改完下一次下载就生效。';
+    pUpdate.appendChild(hotHint);
+    var hotRow = document.createElement('div'); hotRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin:8px 0 4px';
+    var hotBtn = document.createElement('button'); hotBtn.className = 'btn ghost'; hotBtn.textContent = '立即同步';
+    var hotTxt = document.createElement('span'); hotTxt.style.cssText = 'font-size:12px;color:var(--fg2)';
+    hotRow.appendChild(hotBtn); hotRow.appendChild(hotTxt);
+    pUpdate.appendChild(hotRow);
+    var hotBox = document.createElement('div'); pUpdate.appendChild(hotBox);
+    var hotLab = document.createElement('label'); hotLab.className = 'chk';
+    var hotChk = document.createElement('input'); hotChk.type = 'checkbox'; hotChk.checked = true;
+    hotLab.appendChild(hotChk); hotLab.appendChild(document.createTextNode('启动时自动同步站点脚本（12 小时一次）'));
+    hotBox.appendChild(hotLab);
+    function fmtTime(ts) {
+      if (!ts) return '还没同步过';
+      var d = new Date(ts); function p2(n) { return (n < 10 ? '0' : '') + n; }
+      return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+    }
+    function refreshHot() {
+      if (!DISK || !DISK.hotStatus) return;
+      try {
+        DISK.hotStatus().then(function (st) {
+          hotChk.checked = !!st.enabled;
+          hotTxt.textContent = '上次同步：' + fmtTime(st.last) + (st.lastResult ? '（' + st.lastResult + '）' : '');
+        }).catch(function () {});
+      } catch (e) {}
+    }
+    hotChk.onchange = function () { try { DISK.hotSetEnabled(hotChk.checked); } catch (e) {} };
+    hotBtn.onclick = async function () {
+      hotBtn.disabled = true; hotBtn.textContent = '同步中…';
+      var r = null;
+      try { r = await DISK.hotSync(); } catch (e) {}
+      hotBtn.disabled = false; hotBtn.textContent = '立即同步';
+      if (!r || !r.ok) { hint('同步失败：' + ((r && r.msg) || '网络不可用')); refreshHot(); return; }
+      hint(r.changed.length ? ('已更新 ' + r.changed.length + ' 个脚本') : '已是最新，无需更新');
+      refreshHot();
+    };
+    refreshHot();
     tabBtns[0].click();
 
     function num(parent, k, label, min, max, step, unit) {
