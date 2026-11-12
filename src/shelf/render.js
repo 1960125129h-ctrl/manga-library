@@ -378,15 +378,16 @@ export function card(c, m) {
   var t = document.createElement("div"); t.className = "ctitle"; t.textContent = (c.name || c.dir); t.title = (c.name || c.dir); mt.appendChild(t);
   var ak = authorKey(ent && ent.author);
   if (ak) {
-    var au = document.createElement("div"); au.className = "cauthor"; au.textContent = ak;
+    // 外观和卡片上的 18+ / #标签 一致(chip 样式), 点一下 = 按作者搜索(和标签同一条路径,
+    // 不往筛选状态里塞东西 —— 否则清掉筛选要多点几次)
+    var au = document.createElement("div"); au.className = "cauthor ctag"; au.textContent = ak;
     var rawA = normName(ent && ent.author);
-    if (rawA && rawA !== ak) au.title = "原始写法: " + rawA;   // 合并过的话悬停能看到原文
-    // 点作者 = 只看这个作者的书(和筛选面板里的作者 chips 同一套状态)
-    au.style.cursor = "pointer";
-    au.title = (au.title ? au.title + " · " : "") + "点一下：只看「" + ak + "」的书";
+    au.title = (rawA && rawA !== ak ? "原始写法: " + rawA + " · " : "") + "点一下：搜索这个作者的书";
     au.onclick = function (ev) {
       ev.stopPropagation();
-      S.authors = [ak];
+      S.q = ak; S.authors = [];
+      if (elSearch) elSearch.value = ak;
+      if (window.__qclearSync) window.__qclearSync();
       renderShelf(); saveShelfView(true);
     };
     mt.appendChild(au);
