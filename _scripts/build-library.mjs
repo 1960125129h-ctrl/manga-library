@@ -227,9 +227,32 @@ function scanLibrary(lib) {
     if (m.source) c.source = m.source;
     if (Number.isFinite(Number(m.addedAt))) c.addedAt = Number(m.addedAt);
     if (m.desc) c.desc = m.desc;
+    // 禁漫这类下载器把条目写在简介里("标签：蘿莉、時間停止、中文"), 之前只有 desc 没有 tags,
+    // 于是书架上这些书的卡片连标签都看不见。这里把简介里的标签抽出来并进 tags, 卡片和搜索都能用。
+    {
+      const dt = tagsFromDesc(c.desc);
+      if (dt.length) {
+        const t = (c.tags || []).slice();
+        for (const x of dt) if (t.indexOf(x) < 0) t.push(x);
+        c.tags = t;
+      }
+    }
     if (m.favorite) c.favorite = true;
   }
   return comics;
+}
+
+// 从简介里抽标签: 兼容 "标签：蘿莉、時間停止、中文" 这类下载器写的格式(标籤/Tags 也认)
+function tagsFromDesc(desc) {
+  if (!desc) return [];
+  const m = String(desc).match(/(?:标签|標籤|tags?)\s*[:：]\s*([^\n]+)/i);
+  if (!m) return [];
+  const out = [];
+  for (const s of m[1].split(/[、,，;；/|]+/)) {
+    const t = s.trim();
+    if (t && t.length <= 20 && out.indexOf(t) < 0) out.push(t);
+  }
+  return out.slice(0, 12);
 }
 
 const CSS = [
@@ -1008,6 +1031,9 @@ for (const c of comics) {
   c.categories = cats;          // manifest 用的是 c.categories, 必须同步(原来只改了 m4 -> 产物里的分类是旧的)
   if (cats.join('|') !== cats0.join('|')) catFixed++;
   const tags0 = (m4.tags || []).slice();
+  // 简介里的标签(禁漫下载器写的"标签：蘿莉、時間停止、中文")也并进来 —— 否则这一块会把上面
+  // 从 desc 抽出来的标签整个覆盖掉, 书架上那些书就没有标签可显示。
+  for (const dt of tagsFromDesc(m4.desc || c.desc)) if (tags0.indexOf(dt) < 0) tags0.push(dt);
   if (is18 && tags0.indexOf('18+') < 0) tags0.push('18+');
   if (EH_SITE_RE.test(s4)) {
     const iEH = tags0.indexOf('漫画站');
