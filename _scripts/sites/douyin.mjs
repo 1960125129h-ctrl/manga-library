@@ -342,7 +342,7 @@ export async function chapters(url) {
   else if (sec) list = list.filter((x) => x.sec === sec);
   if (!list.length) throw new Error('这个号里没找到图文作品（抖音图文才有图片，纯视频作品不下）');
   list.sort((a, b) => (b.t || 0) - (a.t || 0));
-  return list.map((x, i) => ({
+  const chaps = list.map((x, i) => ({
     id: x.id,
     title: clean(x.desc, 24) || ('t' + x.id),
     cover: (x.imgs && x.imgs[0] && (x.imgs[0].u[x.imgs[0].u.length - 1] || x.imgs[0].u[0])) || "",
@@ -350,6 +350,32 @@ export async function chapters(url) {
     extra: (x.imgs && x.imgs.length) + ' 图',
     index: i + 1, order: i + 1, _dy: x
   }));
+  // 主页链接额外给一个「全部」章节：预览只显示第一项，而抖音每个作品是一章，
+  // 不给这个的话点解析只会看到最新那一条的图（用户反馈"只有第一条的图文"）。
+  if (!one && chaps.length > 1) {
+    const allImgs = [];
+    const seenU = {};
+    for (const x of list) {
+      for (const im of (x.imgs || [])) {
+        const u = im.u[im.u.length - 1] || im.u[0];
+        if (!u || seenU[u]) continue;
+        seenU[u] = 1;
+        allImgs.push(im);
+      }
+    }
+    if (allImgs.length) {
+      chaps.unshift({
+        id: 'ALL',
+        title: '【全部】' + allImgs.length + ' 图',
+        cover: (allImgs[0] && (allImgs[0].u[allImgs[0].u.length - 1] || allImgs[0].u[0])) || '',
+        url: url,
+        extra: allImgs.length + ' 图',
+        index: 0, order: 0,
+        _dy: { imgs: allImgs, id: 'ALL', desc: '', nick: '', sec: '' }
+      });
+    }
+  }
+  return chaps;
 }
 export async function images(chapter) {
   const x = chapter._dy;
