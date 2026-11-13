@@ -216,6 +216,9 @@ function origUrl(u0) {   // X 的裸地址给的是缩略图(small), 必须显�
 }
 // X 的 syndication 接口要一个 partner token，形如 ((id/1e15)*PI).toString(36) 去掉 0 和小数点。
 // 以前写死 token=a —— 那是个无效 token，接口会返回降级数据甚至错误页(HTML)，结果就是"只拿到第一张图"。
+// 直接打"媒体"标签页，并且只看图片（filter=photo）——
+// 这样时间线里全是带图推文，不用先抓一堆文字帖再过滤，页数也少很多。
+function mediaUrl(handle) { return 'https://x.com/' + handle + '/media?filter=photo'; }
 function tweetToken(id) {
   try { return ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, ''); } catch (e) { return 'a'; }
 }
@@ -287,7 +290,7 @@ export async function resolve(url) {
       return { title: clean(j.user.name, 40) || ('@' + j.user.screen_name), author: j.user.name + ' (@' + j.user.screen_name + ')', desc: clean(j.text, 120), cover: ph[0] || null, status: 'X / @' + j.user.screen_name };
     }
   }
-  const got = await grab('https://x.com/' + h, wantRounds(url));
+  const got = await grab(mediaUrl(h), wantRounds(url));
   const it = got.items[0] || {};
   const name = clean(it.disp || '', 40) || clean(String(got.title || '').replace(/\s*\(@.*$/, '').replace(/\s*\/\s*X.*$/, ''), 40) || ('@' + h);
   return { title: name, author: name + ' (@' + h + ')', desc: '', cover: null, status: 'X / @' + h };
@@ -300,7 +303,7 @@ export async function chapters(url) {
     const j = await tweet(st);
     return [{ id: st, title: clean(j && j.text, 24) || ('t' + st), index: 1, order: 1, handle: h }];
   }
-  const got = await grab('https://x.com/' + h, wantRounds(url));
+  const got = await grab(mediaUrl(h), wantRounds(url));
   const list = got.items.filter((x) => x.pics && x.pics.length);
   if (!list.length) throw new Error('@' + h + ' 主页里没有带图片的原创推文');
   const chaps = list.map((x, i) => ({ id: x.id, title: clean(x.text, 24) || ('t' + x.id), index: i + 1, order: i + 1, handle: h, _pics: x.pics, _bulk: true }));
