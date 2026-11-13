@@ -82,8 +82,8 @@ export function applyEdgeFx() {
     if (!el) return;
     el.setAttribute("data-off", (dead || !on) ? "1" : "0");
   };
-  apply("#stage .edgeblur-l", f.left !== 0);
-  apply("#stage .edgeblur-r", f.right !== 0);
+  apply("#stagewrap > .edgeblur-l", f.left !== 0);
+  apply("#stagewrap > .edgeblur-r", f.right !== 0);
 }
 
 export function applyImgFilter() {

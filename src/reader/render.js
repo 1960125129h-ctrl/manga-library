@@ -463,13 +463,6 @@ export function render() {
   readerEl.dataset.dir = S.dir;
   refit();   // 换了模式/适配方式就按真实可用尺寸重算一遍
   elStage.innerHTML = "";
-  // 横排防剧透的两块毛玻璃层在 stage 里，会被上面这行清掉 —— 重建后补回去
-  ["edgeblur-l", "edgeblur-r"].forEach(function (cls) {
-    var d = document.createElement("div");
-    d.className = "edgeblur " + cls;
-    d.setAttribute("aria-hidden", "true");
-    elStage.appendChild(d);
-  });
   setElCanvas(document.createElement("div")); elCanvas.id = "canvas";
   elStage.appendChild(elCanvas);
   if (S.mode === "scroll") renderScroll();
