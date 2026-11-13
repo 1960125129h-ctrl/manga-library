@@ -78,7 +78,7 @@ cd _app; .\node_modules\.bin\electron.cmd .
 cd _app; .\node_modules\.bin\electron-builder.cmd --win
 
 # 打包产物验收（33 项：凭据 / 私人数据 / 首启同步 / 升级）
-node _scripts\jm\verify-packaged.mjs
+node _scripts\jm\verify\verify-packaged.mjs
 ```
 
 打包前置物（都在 `.gitignore` 里，换机器要自己补）：`_scripts\tools\ffmpeg`、`_scripts\tools\node\node.exe`、`_app\node_modules`。

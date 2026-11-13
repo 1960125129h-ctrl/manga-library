@@ -89,7 +89,7 @@ src/
 
 1. **列出所有跨文件冲突**（同一选择器 + 同一属性出现在 2 个以上文件）—— 实测只有 **14 处**；
    逐条确认重排后相对顺序不变。
-2. **证明等价**，而不是"看起来一样"：`_scripts\jm\css-snapshot.mjs` 在 10 个界面态下
+2. **证明等价**，而不是"看起来一样"：`_scripts\jm\probe\css-snapshot.mjs` 在 10 个界面态下
    抓取 **每个元素的每个计算样式属性**，改前改后逐字段比对。
 
 > 结果是 **313,774 个 (元素,属性) 对，0 差异**。这些属性只取 CSS 里真正出现过的那些 ——
@@ -152,7 +152,7 @@ node _scripts\build-library.mjs --lib "<仓库根>"
 
 ```powershell
 cd '<仓库根>'
-node _scripts\jm\verify-all.mjs
+node _scripts\jm\verify\verify-all.mjs
 ```
 
 它自己造/删测试书，不需要手工准备。11 个工具 / 167 项检查：
@@ -184,31 +184,31 @@ node _scripts\jm\verify-all.mjs
 
 ```powershell
 # 造一本极小的测试书(2 话 5 页), 借正式库的图
-node _scripts\jm\make-fixture.mjs
+node _scripts\jm\probe\make-fixture.mjs
 
 # 功能级回归(书架->阅读器->章节->图片解码)
-node _scripts\jm\verify-functional.mjs
+node _scripts\jm\verify\verify-functional.mjs
 
 # 外壳层回归(标题栏行为 + 桌面化规则; 不需要书)
-node _scripts\jm\verify-shell.mjs
+node _scripts\jm\verify\verify-shell.mjs
 
 # 契约层单元测试(故意喂错数据, 确认拦得住)
-node _scripts\jm\verify-contract.mjs
+node _scripts\jm\verify\verify-contract.mjs
 
 # 界面结构(挨个打开书架/下载弹窗/设置/历史, 扫重复 id)
-node _scripts\jm\verify-dom.mjs
+node _scripts\jm\verify\verify-dom.mjs
 
 # 文件关联导入(造个带子目录的 .cbz, 带参数启动, 看是否导入并写进书库数据)
-node _scripts\jm\verify-import.mjs
+node _scripts\jm\verify\verify-import.mjs
 
 # 打包产物(需先打包; 验"从用户选的书库目录加载界面")
-node _scripts\jm\verify-packaged.mjs
+node _scripts\jm\verify\verify-packaged.mjs
 
 # 下载链路端到端(通过 App 真下 2 页, 完后自动清掉)
-node _scripts\jm\verify-download.mjs
+node _scripts\jm\verify\verify-download.mjs
 
 # 测完删掉
-node _scripts\jm\make-fixture.mjs --remove
+node _scripts\jm\probe\make-fixture.mjs --remove
 ```
 
 `verify-functional.mjs` 检查 8 项：核心启动 / 书架有书 / 进入阅读器 / 章节列表 /
@@ -310,7 +310,7 @@ cd '<仓库根>\_app'
 - 开发期垃圾：浏览器 profile、日志、历史验收脚本、抓取缓存 `cache-pixiv*.json`、调试脚本（`p013052` / `probe*` / `v733851` / `x7242143` / `smoke-ref` / `make-fixture`）
 - **登录凭据**：`_scripts/sites/cookies/` 与 `*cookies*.txt` 一律不进包（否则装到别人机器上就是现成登录态）
 
-打包后必须跑一次：`node _scripts\jm\verify-packaged.mjs`（守上面 1、2 两条 + 凭据不漏 + 界面真能起来）。
+打包后必须跑一次：`node _scripts\jm\verify\verify-packaged.mjs`（守上面 1、2 两条 + 凭据不漏 + 界面真能起来）。
 注意它要连 CDP，跑的时候先清掉 `ELECTRON_RUN_AS_NODE` 环境变量（在 DSH 里跑会带这个变量，Electron 会退化成 node）。
 
 ## 从 core.js 抽模块的方法
@@ -349,11 +349,11 @@ cd '<仓库根>\_app'
 
 ```powershell
 # 1) 量: 列出剩余函数按"注入数"升序; 或分析一个候选集合能不能作为一个批次搬
-node _scripts\jm\batch-plan.mjs
-node _scripts\jm\batch-plan.mjs render applyThumbs syncButtons ...
+node _scripts\jm\probe\batch-plan.mjs
+node _scripts\jm\probe\batch-plan.mjs render applyThumbs syncButtons ...
 
 # 2) 切: 按 spec 把一批函数从 core 搬到新模块(带全套自检)
-node --experimental-vm-modules _scripts\jm\extract-batch.mjs _batch.json
+node --experimental-vm-modules _scripts\jm\probe\extract-batch.mjs _batch.json
 ```
 
 `extract-batch.mjs` 把这一路踩过的坑都固化进去了：

@@ -7,5 +7,5 @@ echo.
 echo   监视下载目录, 你手动下的包会自动入库并重建书库...
 echo   关掉这个窗口就停止。
 echo.
-node "_scripts\jm\watch-downloads.mjs" 5
+node "_scripts\jm\probe\watch-downloads.mjs" 5
 pause

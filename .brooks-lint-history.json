@@ -1,0 +1,13 @@
+[
+  {
+    "date": "2026-11-13",
+    "mode": "Health Dashboard",
+    "score": 77,
+    "findings": {
+      "critical": 3,
+      "warning": 3,
+      "suggestion": 2
+    },
+    "scope": "D:\\gong zuo qu\\漫画书库重构v0 (全项目静态分析)"
+  }
+]
