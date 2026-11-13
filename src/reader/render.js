@@ -402,8 +402,8 @@ export function stripSeek(idx) {
   var el = elStage.querySelector('.hstripimg[data-i="' + next + '"]');
   if (!el) return false;
   var st = elStage.getBoundingClientRect(), a = el.getBoundingClientRect();
-  if (next === 0) animateScrollX(0);                        // 首页贴左（无法居中）
-  else if (next === p.length - 1) animateScrollX(elStage.scrollWidth);   // 末页贴右
+  if (next === 0) elStage.scrollLeft = 0;                                    // 首页贴左（瞬时，平滑途中会被判成第 2 页）
+  else if (next === p.length - 1) elStage.scrollLeft = elStage.scrollWidth;  // 末页贴右
   else animateScrollX(elStage.scrollLeft + Math.round((a.left + a.width / 2) - (st.left + st.width / 2)));
   S.pi = next;
   pickLockUntil = Date.now() + 600;

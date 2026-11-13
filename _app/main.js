@@ -407,12 +407,15 @@ function saveWinBounds() {
     const b = (typeof win.getNormalBounds === "function") ? win.getNormalBounds() : win.getBounds();
     const c = readCfg();
     c.winBounds = { x: b.x, y: b.y, width: b.width, height: b.height };
+    // 只存尺寸不够：最大化时 getNormalBounds() 给的是"还原后"的尺寸，
+    // 下次启动就会变成窗口化。这里把"最大化"这个状态也记下来。
+    c.winMaximized = !!win.isMaximized();
     writeCfg(c);
   } catch (e) {}
 }
 function createWindow() {
-  let cfgB = null;
-  try { cfgB = readCfg().winBounds || null; } catch (e) {}
+  let cfgB = null, cfgMax = false;
+  try { const cc = readCfg(); cfgB = cc.winBounds || null; cfgMax = !!cc.winMaximized; } catch (e) {}
   const lastB = usableWinBounds(cfgB);   // 上次的窗口位置(不可用就是 null → 居中)
   logLine("启动", "[窗口] 读到的 winBounds=" + JSON.stringify(cfgB) + " 判定=" + (lastB ? JSON.stringify(lastB) : "不可用(居中)"));
   appMenu = buildAppMenu();
@@ -432,10 +435,13 @@ function createWindow() {
       spellcheck: false
     }
   }, lastB || {}));
+  if (cfgMax) { try { win.maximize(); logLine("启动", "[窗口] 恢复上次的最大化状态"); } catch (e) {} }
   let winSaveT = null;
   const saveLater = () => { clearTimeout(winSaveT); winSaveT = setTimeout(saveWinBounds, 500); };
   win.on('move', saveLater);
   win.on('resize', saveLater);
+  win.on('maximize', saveLater);
+  win.on('unmaximize', saveLater);
   win.on('close', () => { try { clearTimeout(winSaveT); saveWinBounds(); } catch (e) {} });   // 关窗前再兜一次
   // 最大化状态变化要通知渲染层(切换"最大化/还原"图标)
   const pushWinState = () => { try { if (win && !win.isDestroyed()) win.webContents.send('win:state', { maximized: win.isMaximized() }); } catch (e) {} };

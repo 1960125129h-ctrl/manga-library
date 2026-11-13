@@ -137,6 +137,9 @@ try {
   chk('横排: 滚到末尾继续滚进下一话', ch0 !== ch1 && !!ch1, (ch0 || '?') + ' -> ' + (ch1 || '?'));
   const reused = String(await ev('(function(){var e=window.__probeEl; return !!(e && document.contains(e) && !e.classList.contains("extra"));})()'));
   chk('横排: 转正复用预渲染页（没重建画布）', reused === 'true', '预接页元素 ' + (reused === 'true' ? '仍在且已转正' : '被销毁'));
+  // 预览面板收起时列表本来就是空的 —— 先展开再查
+  await p.ev('(function(){var t=document.getElementById("thumbs"); if(t && t.classList.contains("collapsed")){ var b=document.getElementById("thumbtoggle"); if(b) b.click(); }})()', 2);
+  await sleep(700);
   const thumbSig = String(await ev('(function(){var l=document.getElementById("thumblist"); if(!l) return "no-list"; return (l.getAttribute("data-sig")||"") + "|" + l.children.length;})()'));
   chk('横排: 转正后右侧缩略图跟着换话', thumbSig !== 'no-list' && thumbSig.split('|')[1] !== '0', '缩略图 sig|数量 = ' + thumbSig);
 
@@ -160,42 +163,53 @@ try {
   const sl = Number(await ev('document.getElementById("stage").scrollLeft'));
   chk('横排: scrollLeft 可滚动', sl > 0, 'scrollLeft=' + Math.round(sl));
   await click('m-single'); await sleep(500);
-  // ---------- A：画质增强 ----------
+  // ---------- A：调色面板（14 条滑杆 + 一键风格 + 恢复默认） ----------
   await click('m-single'); await sleep(600);
-  await click('btheme'); await sleep(700);
-  await p.ev('(function(){var sw=document.getElementById("enhswatch"); if(!sw) return; var b=Array.prototype.slice.call(sw.children).find(function(x){return x.textContent==="关";}); if(b) b.click();})()', 2);
-  await sleep(300);
-  await p.ev('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#modal button")).find(function(x){return x.textContent==="完成";}); if(b) b.click();})()', 2);
-  await sleep(400);
-  const f0 = await imgFilter();
-  chk('增强归位到关后无滤镜', /none/i.test(f0) || f0 === '', f0);
 
+  // 归位：面板里点「恢复默认」
   await click('btheme'); await sleep(700);
-  chk('配色对话框里有锐化三档', (await ev('!!document.getElementById("enhswatch") && document.getElementById("enhswatch").children.length >= 4')) === 'true');
-  const pick = async (label) => String(await ev('(function(){var sw=document.getElementById("enhswatch"); if(!sw) return "no-sw"; var b=Array.prototype.slice.call(sw.children).find(function(x){return x.textContent===' + JSON.stringify(label) + ';}); if(!b) return "no-btn"; b.click(); return "ok";})()'));
-  chk('点"中"档', (await pick('中')) === 'ok');
+  const hasPanel = String(await ev('!!document.getElementById("modal")'));
+  chk('配色对话框能打开', hasPanel === 'true');
+  const sliderCount = Number(await ev('document.querySelectorAll("#modal input[type=range]").length'));
+  chk('面板里有 14 条调色滑杆（含背景亮度共 15+）', sliderCount >= 15, '滑杆数=' + sliderCount);
+  const hasStyles = String(await ev('(function(){var bs=document.querySelectorAll("#modal button"); var n=0; for(var i=0;i<bs.length;i++){ if(["原图","高清","柔和","浓烈","线稿"].indexOf(bs[i].textContent)>=0) n++; } return String(n);})()'));
+  chk('有 5 个一键风格', hasStyles === '5', '风格按钮=' + hasStyles);
+  await p.ev('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#modal button")).find(function(x){return x.textContent==="恢复默认";}); if(b) b.click();})()', 2);
   await sleep(500);
-  const v1 = await cssVar('--r-img-filter');
-  chk('CSS 变量写入 medium', v1.indexOf('enh-medium') >= 0, v1);
-  const f1 = await imgFilter();
-  chk('页图真的吃到了滤镜', /enh-medium/.test(f1), f1);
-  chk('点"强"档', (await pick('强')) === 'ok'); await sleep(400);
-  const v2 = await cssVar('--r-img-filter');
-  chk('切到 strong', v2.indexOf('enh-strong') >= 0, v2);
-  chk('点"关"', (await pick('关')) === 'ok'); await sleep(400);
-  const v3 = await cssVar('--r-img-filter');
-  chk('关掉后变量回到 none', v3.trim() === 'none', JSON.stringify(v3));
+  const f0 = await imgFilter();
+  chk('恢复默认后无滤镜', /none/i.test(f0) || f0 === '', f0);
 
-  const ctr = await ev('(function(){var m=document.getElementById("modal"); var rs=m?m.querySelectorAll("input[type=range]"):[]; if(rs.length<2) return "no"; var r=rs[rs.length-1]; r.value="120"; r.dispatchEvent(new Event("input",{bubbles:true})); return "ok";})()');
+  // 拖锐化滑杆 -> 滤镜链里出现 fx-sharpen
+  const dragByKey = async (label, val) => String(await ev('(function(){var m=document.getElementById("modal"); if(!m) return "no-modal"; var cells=m.querySelectorAll("span"); var target=null; for(var i=0;i<cells.length;i++){ if(cells[i].textContent===' + JSON.stringify(label) + '){ target=cells[i].parentElement; break; } } if(!target) return "no-cell"; var r=target.querySelector("input[type=range]"); if(!r) return "no-range"; r.value=' + JSON.stringify(String(val)) + '; r.dispatchEvent(new Event("input",{bubbles:true})); return "ok";})()'));
+  chk('能拖动"锐化"滑杆', (await dragByKey('锐化', 60)) === 'ok');
   await sleep(400);
-  if (String(ctr) === 'ok') {
-    const v4 = await cssVar('--r-img-filter');
-    chk('对比度滑杆写进滤镜链', v4.indexOf('contrast(1.2)') >= 0, v4);
-    await ev('(function(){var m=document.getElementById("modal"); var rs=m?m.querySelectorAll("input[type=range]"):[]; var r=rs[rs.length-1]; r.value="100"; r.dispatchEvent(new Event("input",{bubbles:true}));})()');
-    await sleep(300);
-  } else skip('对比度滑杆', '对话框里没找到第二个 range');
+  const v1 = await cssVar('--r-img-filter');
+  chk('锐化写进滤镜链', v1.indexOf('fx-sharpen') >= 0, v1);
+  chk('页图真的吃到了滤镜', /sharpen/.test(await imgFilter()), await imgFilter());
 
-  await ev('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#modal button")).find(function(x){return x.textContent==="完成";}); if(b) b.click();})()');
+  chk('能拖动"对比度"滑杆', (await dragByKey('对比度', 130)) === 'ok');
+  await sleep(300);
+  chk('对比度写进滤镜链', (await cssVar('--r-img-filter')).indexOf('contrast(1.3') >= 0, await cssVar('--r-img-filter'));
+
+  chk('能拖动"饱和度"滑杆', (await dragByKey('饱和度', 140)) === 'ok');
+  await sleep(300);
+  chk('饱和度写进滤镜链', (await cssVar('--r-img-filter')).indexOf('saturate(1.4') >= 0, await cssVar('--r-img-filter'));
+
+  chk('能拖动"色温"滑杆', (await dragByKey('色温', 60)) === 'ok');
+  await sleep(300);
+  chk('色温触发 fx-tone', (await cssVar('--r-img-filter')).indexOf('fx-tone') >= 0, await cssVar('--r-img-filter'));
+
+  chk('能拖动"杂色"滑杆', (await dragByKey('杂色', 50)) === 'ok');
+  await sleep(300);
+  chk('杂色写进 CSS 变量', Number(await cssVar('--fx-noise')) > 0.2, '--fx-noise=' + await cssVar('--fx-noise'));
+
+  // 一键风格「高清」应把参数成套改掉
+  await p.ev('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#modal button")).find(function(x){return x.textContent==="高清";}); if(b) b.click();})()', 2);
+  await sleep(500);
+  const vh = await cssVar('--r-img-filter');
+  chk('一键风格「高清」套用了成套参数', vh.indexOf('fx-sharpen') >= 0 && vh.indexOf('contrast(') >= 0, vh);
+
+  await p.ev('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#modal button")).find(function(x){return x.textContent==="完成";}); if(b) b.click();})()', 2);
   await sleep(400);
 
   // ---------- C：预加载 ----------
