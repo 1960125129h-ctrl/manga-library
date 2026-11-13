@@ -1380,7 +1380,22 @@ ipcMain.handle('dl:preview-keep', (e, works) => {
   return { ok: true, kept: keptWorks.size };
 });
 // ── 浏览器标签（读那个带 --remote-debugging-port=9333 的 Chrome，主进程直接 HTTP，不用起子进程）──
-const BROWSER_PORT = 9333;
+const BROWSER_PORT = 9333;          // 兼容旧调用（默认 Chrome）
+const BROWSER_PORTS = [9333, 9334]; // Chrome / Edge 各一个调试端口
+// 谁在监听就用谁：用户在"站点总览"里选 Edge 启动，调试端口是 9334，
+// 以前这里写死 9333 就会报"连不上浏览器调试端口 9333"。
+async function resolveBrowserPort() {
+  for (const p of BROWSER_PORTS) {
+    try {
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), 1200);
+      const r = await fetch('http://127.0.0.1:' + p + '/json/version', { signal: ac.signal });
+      clearTimeout(t);
+      if (r.ok) return p;
+    } catch (e) {}
+  }
+  return 0;
+}
 function isWorkTabUrl(u) {
   return /e-hentai\.org\/g\/\d+\/[0-9a-f]+/i.test(u) ||
          /nhentai\.net\/g\/\d+/i.test(u) ||
@@ -1399,18 +1414,20 @@ function isJmWorkTabUrl(u) {
   } catch (e) { return false; }
 }
 async function browserTabs() {
+  const bp = await resolveBrowserPort();
+  if (!bp) return { ok: false, msg: '连不上浏览器调试端口 9333/9334（先用「站点总览」里的按钮启动一次 Chrome 或 Edge）' };
   try {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 3000);
-    const r = await fetch('http://127.0.0.1:' + BROWSER_PORT + '/json/list', { signal: ac.signal });
+    const r = await fetch('http://127.0.0.1:' + bp + '/json/list', { signal: ac.signal });
     clearTimeout(timer);
     if (!r.ok) return { ok: false, msg: '浏览器调试端口没响应(HTTP ' + r.status + ')' };
     const list = await r.json();
     const tabs = (list || []).filter((x) => x.type === 'page' && x.url && !/^(devtools:|chrome:|about:)/i.test(x.url))
       .map((x) => ({ id: x.id, url: x.url, title: x.title || '', active: !!x.active, work: isWorkTabUrl(x.url) }));
-    return { ok: true, port: BROWSER_PORT, tabs: tabs, 作品页: tabs.filter((t) => t.work).length };
+    return { ok: true, port: bp, tabs: tabs, 作品页: tabs.filter((t) => t.work).length };
   } catch (e) {
-    return { ok: false, msg: '连不上浏览器调试端口 ' + BROWSER_PORT + '（浏览器没开，或者不是用 open-chrome.mjs 启动的）' };
+    return { ok: false, msg: '连不上浏览器调试端口 ' + bp + '（浏览器没开，或者不是用 open-chrome.mjs 启动的）' };
   }
 }
 ipcMain.handle('tabs:list', async () => browserTabs());
@@ -1477,12 +1494,12 @@ async function browserCurrentTab() {
   try {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 3000);
-    const r = await fetch('http://127.0.0.1:' + BROWSER_PORT + '/json/list', { signal: ac.signal });
+    const r = await fetch('http://127.0.0.1:' + (await resolveBrowserPort() || BROWSER_PORT) + '/json/list', { signal: ac.signal });
     clearTimeout(timer);
     if (!r.ok) return { ok: false, msg: '浏览器调试端口没响应(HTTP ' + r.status + ')' };
     list = await r.json();
   } catch (e) {
-    return { ok: false, msg: '连不上浏览器调试端口 ' + BROWSER_PORT + '（浏览器没开，或者不是用 open-chrome.mjs 启动的）' };
+    return { ok: false, msg: '连不上浏览器调试端口 9333/9334（先用「站点总览」里的按钮启动一次 Chrome 或 Edge）' };
   }
   const pages = (list || []).filter((x) => x.type === 'page' && x.url && !/^(devtools:|chrome:|about:)/i.test(x.url));
   const probe = await Promise.all(pages.map((x) => probeTabVisible(x).then((v) => ({ x: x, v: v }))));
@@ -1501,7 +1518,7 @@ ipcMain.handle('tabs:close', async (e, id) => {
   try {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 3000);
-    const r = await fetch('http://127.0.0.1:' + BROWSER_PORT + '/json/close/' + encodeURIComponent(tid), { signal: ac.signal });
+    const r = await fetch('http://127.0.0.1:' + (await resolveBrowserPort() || BROWSER_PORT) + '/json/close/' + encodeURIComponent(tid), { signal: ac.signal });
     clearTimeout(timer);
     return { ok: r.ok, msg: r.ok ? '' : '关标签失败(HTTP ' + r.status + ')' };
   } catch (e2) { return { ok: false, msg: '关标签失败: ' + String(e2 && e2.message || e2) }; }
@@ -1521,7 +1538,9 @@ function normalizeJmUrl(u) {
 // 用在渲染层「禁漫天堂」页签的「收集开着的禁漫标签」按钮。读写都走 CDP 的 HTTP 端点, 不起子进程。
 // 识别规则和 EH 那边一个口径: 只认作品页; 首页/搜索页/标签列表页这种容器页不收也不关。
 async function jmTabsCollect(port) {
-  const p = Number(port) > 0 ? Number(port) : BROWSER_PORT;
+  // 渲染层有时不传 port（比如「识别当前页」按钮）—— 那就自动探一下谁开着，
+  // 以前默认 9333 会让"用 Edge 启动的浏览器"永远报连不上。
+  const p = Number(port) > 0 ? Number(port) : (await resolveBrowserPort() || BROWSER_PORT);
   let list = null;
   try {
     const ac = new AbortController();
@@ -1531,7 +1550,7 @@ async function jmTabsCollect(port) {
     if (!r.ok) return { ok: false, msg: '浏览器调试端口没响应(HTTP ' + r.status + ')' };
     list = await r.json();
   } catch (e) {
-    return { ok: false, msg: '连不上浏览器调试端口 ' + p + '（浏览器没开，或者不是用 open-chrome.mjs 启动的）' };
+    return { ok: false, msg: '连不上浏览器调试端口 9333/9334（先用「站点总览」里的按钮启动一次 Chrome 或 Edge）' };
   }
   const pages = (list || []).filter((x) => x.type === 'page' && x.url && !/^(devtools:|chrome:|about:|edge:)/i.test(x.url));
   const hits = pages.filter((x) => isJmWorkTabUrl(x.url));
