@@ -55,17 +55,9 @@ async function listTree() {
   const buf = await fetchBuf(API + '/git/trees/' + BRANCH + '?recursive=1');
   const j = JSON.parse(buf.toString('utf8'));
   const tree = Array.isArray(j.tree) ? j.tree : [];
-  // 浏览器启动脚本也走热更新：它每次点站名都由主进程重新 spawn，覆盖即生效，
-  // 但它在 _scripts/jm/ 下（原来只有 sites/ 和 src/ 会同步），所以单列出来。
-  const HOT_EXTRA = [
-    '_scripts/jm/open-chrome.mjs',
-    '_scripts/jm/open-edge.mjs',
-    '_scripts/jm/profile-cache.mjs'
-  ];
   const want = function (p) {
     if (p.indexOf('_scripts/sites/') === 0) return /\.mjs$/i.test(p);
     if (p.indexOf('src/') === 0) return /\.(js|mjs|css|html|json)$/i.test(p);
-    if (HOT_EXTRA.indexOf(p) >= 0) return true;
     return false;
   };
   return tree.filter(function (x) { return x.type === 'blob' && want(x.path); }).map(function (x) { return x.path; });
