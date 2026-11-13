@@ -312,7 +312,9 @@ export async function resolve(url) {
     if (d && d.length >= 5 && d !== nick) title = d;
     else { const tg = tags.filter((t) => t !== nick).slice(0, 4).join(' '); if (tg) title = clean(tg, 40); }
   }
-  return { title: title, author: nick + (it && it.sec ? ' (@' + it.sec.slice(0, 14) + '…)' : ''), desc: String((it && it.desc) || ''), cover: null, status: '抖音', tags: tags };
+  // 作者栏只放昵称：抖音没有 X 那种可读的 @handle，sec_uid 是 MS4wLjABAAAA… 这种一百多位的内部
+  // ID，截一段贴在作者后面纯属噪音（以前是 "韦伯机长 (@MS4wLjABAAAAt4…)"）。
+  return { title: title, author: nick, desc: String((it && it.desc) || ''), cover: null, status: '抖音', tags: tags };
 }
 export async function chapters(url) {
   const got = await grab(url, wantRounds(url));   // App 点「解析」时只快速采样, 别让它等超时
