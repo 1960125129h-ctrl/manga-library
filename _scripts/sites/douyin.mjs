@@ -293,11 +293,28 @@ async function grab(url, rounds) {
   return got;
 }
 function clean(s, n) { return String(s || '').replace(/https?:\/\/\S+/g, ' ').replace(/[\\/:*?"<>|#]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n || 24); }
+/* 主页主人是谁：
+   不能只看第一条作品的作者 —— 抖音的"共创/合拍"作品 author 是合作方，
+   实测某个主页第一条是共创，作者叫"韦伯机长"，而主页主人是"热茶"（78 条里 78 条都是他）。
+   所以按"作品作者出现次数最多的那个"来定，再用页面标题（"热茶的抖音 - 抖音"）兜底。 */
+function pickOwner(got) {
+  const counts = {};
+  for (const it of ((got && got.items) || [])) {
+    const n = clean(it.nick || '', 40);
+    if (n) counts[n] = (counts[n] || 0) + 1;
+  }
+  const top = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || '';
+  const fromTitle = clean(String((got && got.title) || '')
+    .replace(/\s*[-–—]\s*抖音.*$/, '')
+    .replace(/的抖音$/, '')
+    .replace(/\s*\(@[^)]*\)/, ''), 40);
+  return top || fromTitle;
+}
 export async function resolve(url) {
   const got = await grab(url, wantRounds(url));   // 和 chapters 用同样的深度: 命中缓存, 只加载一次页面
   const one = itemOf(url) || itemOf(got.url || '');
   const it = got.items.filter((x) => x.imgs && x.imgs.length).find((x) => one ? x.id === one : true) || got.items[0];
-  const nick = clean((it && it.nick) || String(got.title || '').replace(/\s*-\s*抖音.*$/, ''), 40);
+  const nick = pickOwner(got);
   if (!nick) throw new Error('没读出抖音昵称，可能是页面没加载出来或需要登录');
   // 提取作品文案里的 #话题 -> tags
   const tags = [];
