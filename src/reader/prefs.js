@@ -23,7 +23,8 @@ const FX_KEYS = { bright: [0, 200, 100], contrast: [0, 200, 100], saturate: [0, 
 export function sanitizeEdgeFx(src) {
   const s = (src && typeof src === 'object') ? src : {};
   const num = (v, lo, hi, dv) => { const n = Number(v); return (isFinite(n) && n >= lo && n <= hi) ? Math.round(n) : dv; };
-  return { left: s.left === false ? 0 : 1, right: s.right === false ? 0 : 1,
+  const off = (v) => (v === false || v === 0 || v === '0' || v === 'false');   // 存的是数字 0，别只认 false
+  return { left: off(s.left) ? 0 : 1, right: off(s.right) ? 0 : 1,
            clear: num(s.clear, 30, 90, 50), blur: num(s.blur, 0, 30, 12), dim: num(s.dim, 0, 80, 28) };
 }
 export function sanitizeImgFx(src) {
