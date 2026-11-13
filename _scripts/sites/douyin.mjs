@@ -161,6 +161,9 @@ async function readPage(p) {
    这里把页面抓到的结果落到 _scripts/sites/cache-douyin.json，两个进程共用。 */
 const DISK = path.join(HERE, 'cache-douyin.json');
 const DISK_TTL = 30 * 60 * 1000;   // 30 分钟；抖音主页/作品基本不会在这个窗口里变
+// 体积上限：一个博主动辄上千条作品，单条记录就有 11MB 左右（每张图 4 个签名 URL）。
+// 只按"条数"限会撑到几百 MB，所以再压一道总字节数，超了按时间删最旧的。
+const DISK_MAX = 60 * 1024 * 1024;
 function diskLoad(url) {
   try {
     const all = JSON.parse(fs.readFileSync(DISK, 'utf8'));
@@ -175,8 +178,13 @@ function diskSave(url, data) {
     try { all = JSON.parse(fs.readFileSync(DISK, 'utf8')); } catch (e) { all = {}; }
     all[url] = { at: Date.now(), rounds: 0, data: data };
     const ks = Object.keys(all);
-    if (ks.length > 60) for (const k of ks.slice(0, ks.length - 60)) delete all[k];   // 只留最近 60 条
-    fs.writeFileSync(DISK, JSON.stringify(all), 'utf8');
+    if (ks.length > 60) for (const k of ks.slice(0, ks.length - 60)) delete all[k];   // 条数上限
+    let json = JSON.stringify(all);
+    if (json.length > DISK_MAX) {                       // 体积上限：从最旧的开始删
+      const byAge = Object.keys(all).sort((a, b) => (all[a].at || 0) - (all[b].at || 0));
+      while (json.length > DISK_MAX && byAge.length > 1) { delete all[byAge.shift()]; json = JSON.stringify(all); }
+    }
+    fs.writeFileSync(DISK, json, 'utf8');
   } catch (e) {}
 }
 async function grab(url, rounds) {
