@@ -9,6 +9,7 @@
 // SET 用 export let: 重置按钮会整体替换它, core 那边靠实时绑定始终看到最新对象。
 
 import { hint, showModal, closeModal, modalFoot } from '../shared/ui.js';
+import { CHANGELOG } from '../data/changelog.js';
 import { getBgHist, setBgHist } from '../shared/storage.js';
 import { normName } from '../shared/text.js';
 import { showGuide } from '../shell/guide.js';
@@ -145,6 +146,7 @@ export function openSettings() {
     if (DISK && DISK.appVersion) {
       try { DISK.appVersion().then(function (v) { verTxt.textContent = '版本 ' + v; }).catch(function () {}); } catch (e) {}
     }
+    // ---- 仓库直链 + 更新日志（折叠栏）----
     var pAppearance = makeTab('外观');
     var pDisplay = makeTab('显示');
     var pAdvanced = makeTab('高级');
@@ -152,6 +154,64 @@ export function openSettings() {
     // 引导 + 版本/检查更新 单独一个页签
     pUpdate.appendChild(guideRow);
     pUpdate.appendChild(verRow);
+    var repoUrl = 'https://github.com/1960125129h-ctrl/manga-library';
+    var repoRow = document.createElement('div');
+    repoRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin:2px 0 8px;font-size:12px;color:var(--fg2)';
+    var repoLab = document.createElement('span'); repoLab.textContent = '仓库';
+    var repoLink = document.createElement('a');
+    repoLink.href = repoUrl;
+    repoLink.textContent = repoUrl;
+    repoLink.style.cssText = 'color:var(--accent, #2f6df6);text-decoration:none;word-break:break-all';
+    repoLink.onclick = function (ev) {
+      ev.preventDefault();
+      try { window.open(repoUrl, '_blank'); } catch (e) {}
+    };
+    repoRow.appendChild(repoLab); repoRow.appendChild(repoLink);
+    pUpdate.appendChild(repoRow);
+
+    // 折叠栏：点标题展开/收起，内容来自 src/data/changelog.js（热更新会同步这个文件）
+    var logHead = document.createElement('div');
+    logHead.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;padding:6px 0;font-size:13px;font-weight:600;opacity:.9';
+    var logArrow = document.createElement('span');
+    logArrow.textContent = '▸';
+    logArrow.style.cssText = 'display:inline-block;transition:transform .15s';
+    var logTitle = document.createElement('span'); logTitle.textContent = '更新日志';
+    logHead.appendChild(logArrow); logHead.appendChild(logTitle);
+    pUpdate.appendChild(logHead);
+    var logBody = document.createElement('div');
+    logBody.style.cssText = 'display:none;max-height:340px;overflow:auto;padding:2px 2px 6px 16px;border-left:2px solid var(--border2)';
+    pUpdate.appendChild(logBody);
+    var logBuilt = false;
+    function buildLog() {
+      if (logBuilt) return;
+      logBuilt = true;
+      var TYPE_COLOR = { '修复': '#e2574c', '新增': '#2f9e6e', '改进': '#2f6df6', '其他': '#8a8f98' };
+      CHANGELOG.forEach(function (rel) {
+        var h = document.createElement('div');
+        h.style.cssText = 'margin:10px 0 4px;font-size:12.5px;font-weight:600';
+        h.textContent = 'v' + rel.v + '　' + rel.d + (rel.tag ? '　·　' + rel.tag : '');
+        logBody.appendChild(h);
+        (rel.items || []).forEach(function (it) {
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;gap:6px;font-size:12px;line-height:1.55;margin:3px 0;opacity:.92';
+          var tag = document.createElement('span');
+          tag.textContent = it.t;
+          tag.style.cssText = 'flex:0 0 auto;font-size:11px;padding:0 5px;border-radius:3px;color:#fff;background:' + (TYPE_COLOR[it.t] || '#8a8f98') + ';height:17px;line-height:17px';
+          var txt = document.createElement('span');
+          txt.textContent = it.x;
+          txt.style.cssText = 'flex:1 1 auto;word-break:break-word';
+          row.appendChild(tag); row.appendChild(txt);
+          logBody.appendChild(row);
+        });
+      });
+    }
+    logHead.onclick = function () {
+      var open = logBody.style.display !== 'none';
+      if (!open) buildLog();
+      logBody.style.display = open ? 'none' : 'block';
+      logArrow.style.transform = open ? '' : 'rotate(90deg)';
+    };
+
     var updHint = document.createElement('div');
     updHint.className = 'sub';
     updHint.textContent = '启动时会自动检查一次；发现新版本会弹窗，你也可以随时点上面的「检查更新」。';
