@@ -772,8 +772,9 @@ ipcMain.handle('state:all', async () => ({
 // 工作台整体读写。渲染进程是唯一写入方, 所以这里不做合并; 但写前会做一次结构性校验,
 // 防止半成品(比如 images 变成数组)被落盘 —— 那个文件丢了就等于参考图全丢。
 /* ================= 阅读器显示偏好(全局) ================= */
-const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright', 'scale'];
-const PREF_MODES = ['single', 'double', 'scroll'];
+const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright', 'scale',
+                   'enhance', 'contrast', 'preload', 'spreadWide', 'gap'];
+const PREF_MODES = ['single', 'double', 'scroll', 'hscroll'];
 const PREF_FITS = ['width', 'height', 'page', 'original'];
 const PREF_THEMES = ['dark', 'light', 'eye', 'paper'];
 function sanitizePrefs(src) {
@@ -793,6 +794,16 @@ function sanitizePrefs(src) {
   // 长条模式的整本缩放比例：40%~160%
   const sc = Number(s.scale);
   o.scale = (isFinite(sc) && sc >= 0.1 && sc <= 1.6) ? Math.round(sc * 100) / 100 : 1;
+  // 2.0：画质增强 / 预加载 / 横向条带。渲染进程与主进程各有一份白名单，必须同步，
+  // 否则主进程会把新字段剥掉 -> 改了偏好重启就丢（这一条踩过）。
+  o.enhance = ['off', 'soft', 'medium', 'strong'].indexOf(s.enhance) >= 0 ? s.enhance : 'off';
+  const ct = Number(s.contrast);
+  o.contrast = (isFinite(ct) && ct >= 0.8 && ct <= 1.4) ? Math.round(ct * 100) / 100 : 1;
+  const pl = Number(s.preload);
+  o.preload = (isFinite(pl) && pl >= 1 && pl <= 8) ? Math.round(pl) : 4;
+  o.spreadWide = ['auto', 'on', 'off'].indexOf(s.spreadWide) >= 0 ? s.spreadWide : 'auto';
+  const gp = Number(s.gap);
+  o.gap = (isFinite(gp) && gp >= 0 && gp <= 48) ? Math.round(gp) : 8;
   return o;
 }
 /* 首次迁移: 文件还不存在时, 以"最近读的那本书"里存的偏好作为全局初值
@@ -809,6 +820,7 @@ function deriveInitialPrefs() {
   if (!src) { for (const d of Object.keys(prog)) { const v = prog[d]; if (v && typeof v === 'object') { src = v; break; } } }
   return sanitizePrefs(src || {});
 }
+
 ipcMain.handle('reader:prefsGet', async () => {
   try {
     if (fs.existsSync(prefsJson())) return sanitizePrefs(readJSON(prefsJson(), {}));

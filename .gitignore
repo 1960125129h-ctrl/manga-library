@@ -30,6 +30,7 @@ _cache/
 _scripts/jm/logs/
 
 # ---- 备份与临时 ----
+_logs/            # 横向滚动排查日志（一次性工具产物，不进版本库）
 _backup/
 _backup_*/
 _archive/

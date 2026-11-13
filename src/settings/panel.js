@@ -12,6 +12,8 @@ import { hint, showModal, closeModal, modalFoot } from '../shared/ui.js';
 import { getBgHist, setBgHist } from '../shared/storage.js';
 import { normName } from '../shared/text.js';
 import { showGuide } from '../shell/guide.js';
+import { S } from '../app/state.js';
+import { savePrefs } from '../reader/prefs.js';
 
 // ---- 由 core 注入的同名依赖(别改名字, 改了搬来的代码就找不到) ----
 let DISK = null, renderShelf, renderCatTabs, invalidateAllCards, authorGroups,
@@ -328,6 +330,21 @@ export function openSettings() {
     rdSep.textContent = '阅读页';
     pDisplay.appendChild(rdSep);
     chk(pDisplay, 'barAutohide', '顶栏自动隐藏（鼠标移到顶部才显示）');
+
+    // 2.0 施工项 C：预加载页数（原来写死 4 页）
+    var plRow = document.createElement('div');
+    plRow.style.cssText = 'margin:8px 0;display:flex;gap:8px;align-items:center';
+    var plLb = document.createElement('span'); plLb.textContent = '预加载后 N 页';
+    var plRg = document.createElement('input'); plRg.type = 'range'; plRg.min = '1'; plRg.max = '8'; plRg.step = '1';
+    plRg.value = String((typeof S.preload === 'number') ? S.preload : 4);
+    var plVal = document.createElement('span'); plVal.textContent = plRg.value + ' 页';
+    plRg.oninput = function () {
+      S.preload = Number(plRg.value);
+      plVal.textContent = plRg.value + ' 页';
+      savePrefs();
+    };
+    plRow.appendChild(plLb); plRow.appendChild(plRg); plRow.appendChild(plVal);
+    pDisplay.appendChild(plRow);
 
     // 背景图
     var bgSep = document.createElement('div'); bgSep.style.cssText = 'border-top:1px solid var(--border);margin:12px 0;padding-top:10px;font-weight:600;font-size:14px';

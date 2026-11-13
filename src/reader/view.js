@@ -28,6 +28,31 @@ export function applyReaderTheme() {
   var dim = Math.max(0, Math.min(0.85, (1 - b) * 0.9));
   document.documentElement.style.setProperty("--r-dim", String(Math.round(dim * 1000) / 1000));
   try { localStorage.setItem("readerTheme", JSON.stringify({ theme: S.theme || "dark", bright: b })); } catch (e) {}
+  applyImgFilter();
+}
+
+/* ---------- 画质增强（2.0 施工项 A） ----------
+   把三档锐化(url(#enh-*)) + 亮度 + 对比拼成一条 CSS 变量 --r-img-filter，
+   由 03-reader.css 的 #stage .pageimg / .scrollimg 吃进去。
+   注意：**不动 --r-dim**。那层遮罩管的是"画面环境暗度"（背景一起暗），
+   删掉会回归旧观感；这里的 filter 只管图片本身。
+   顺序固定：先锐化，再亮度，最后对比 —— 反过来会把锐化出来的高光一起压掉。 */
+export function applyImgFilter() {
+  var parts = [];
+  var en = S.enhance || "off";
+  if (en === "soft" || en === "medium" || en === "strong") parts.push("url(#enh-" + en + ")");
+  var b = (typeof S.bright === "number") ? S.bright : 1;
+  if (b < 1) parts.push("brightness(" + Math.max(0.2, Math.round(b * 100) / 100) + ")");
+  var c = (typeof S.contrast === "number") ? S.contrast : 1;
+  if (c !== 1) parts.push("contrast(" + c + ")");
+  try { document.documentElement.style.setProperty("--r-img-filter", parts.length ? parts.join(" ") : "none"); } catch (e) {}
+}
+
+/* 大图守门：单张超过 12MP 时 SVG 卷积在部分 Chromium 构建上会回落 CPU 算，
+   直接摘掉滤镜比掉帧好。返回 true = 可以挂滤镜。 */
+export function enhGuard(im) {
+  if (!im || !im.naturalWidth) return true;
+  return (im.naturalWidth * im.naturalHeight) <= 12e6;
 }
 export function spreads() {
   var n = pages().length, out = [], i = 0;
@@ -48,10 +73,12 @@ export function makeImg(src, cls) {
   im.src = enc(src);
   // 渐进显现: 先淡入(页数不多的书再叠一点模糊), 动画完就把类摘掉 —— 全程不碰 transform, 免得和缩放/拖动打架
   var anim = true;
-  try { anim = S.mode !== "scroll"; } catch (e) {}   // 长条模式不做淡入, 免得滚动时一路闪
+  try { anim = S.mode !== "scroll" && S.mode !== "hscroll" && S.mode !== "hspread"; } catch (e) {}   // 长条/横排不做淡入, 免得滚动时一路闪
   im.className = cls + (anim ? " pgin" : "");
   im.decoding = "async";
   var reveal = function () {
+    // 大图守门：单张超过 12MP 时 SVG 卷积可能回落 CPU，摘掉滤镜比掉帧好
+    try { if (!enhGuard(im) && im.style.filter !== "none") im.style.filter = "none"; } catch (e) {}
     im.classList.add("pgin-on");
     setTimeout(function () {
       try { im.classList.remove("pgin"); im.classList.remove("pgin-on"); } catch (e) {}
@@ -68,7 +95,8 @@ export function preload() {
 }
 export function preloadAround() {
   var pl = pages();
-  for (var k = S.pi + 1; k <= Math.min(pl.length - 1, S.pi + 4); k++) {   // 后 4 页提前解码
+  var span = (typeof S.preload === "number" && S.preload >= 1 && S.preload <= 8) ? S.preload : 4;   // 2.0 施工项 C：可配
+  for (var k = S.pi + 1; k <= Math.min(pl.length - 1, S.pi + span); k++) {   // 后 N 页提前解码
     if (preloaded[pl[k]]) continue;
     preloaded[pl[k]] = 1;
     var im = new Image(); im.decoding = "async"; im.src = pl[k];

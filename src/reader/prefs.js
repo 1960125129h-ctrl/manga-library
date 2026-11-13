@@ -12,8 +12,9 @@ import { S } from '../app/state.js';
 
 const API = '/api/reader-prefs';
 const LKEY = 'readerPrefs';          // 本机镜像: 启动瞬间先按它渲染, 再异步跟文件对齐
-export const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright', 'scale'];
-const MODES = ['single', 'double', 'scroll'];
+export const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright', 'scale',
+                        'enhance', 'contrast', 'preload', 'spreadWide', 'gap'];
+const MODES = ['single', 'double', 'scroll', 'hscroll'];
 const FITS = ['width', 'height', 'page', 'original'];
 const THEMES = ['dark', 'light', 'eye', 'paper'];
 
@@ -27,7 +28,8 @@ function coarse() { try { return !!(window.matchMedia && window.matchMedia('(poi
 export function defaults() {
   return { mode: 'single', fit: 'height', dir: 'ltr', cover: false,
            sidebar: !coarse(), thumbs: false, wheel: true, rev: false, prevRev: false,
-           theme: 'dark', bright: 1, scale: 1 };
+           theme: 'dark', bright: 1, scale: 1,
+           enhance: 'off', contrast: 1, preload: 4, spreadWide: 'auto', gap: 8 };
 }
 
 // 只认列出来的键, 并且逐个校验类型/取值 —— 文件坏了或手改错了也不会把界面搞崩
@@ -48,6 +50,16 @@ export function sanitize(src) {
   // 长条模式的整本缩放比例：40%~160%，越界夹住
   var sc = Number(s.scale);
   o.scale = (isFinite(sc) && sc >= 0.1 && sc <= 1.6) ? Math.round(sc * 100) / 100 : d.scale;
+  // 2.0 施工项 A：画质增强（三档锐化 + 对比）与预加载页数
+  o.enhance = ['off', 'soft', 'medium', 'strong'].indexOf(s.enhance) >= 0 ? s.enhance : d.enhance;
+  var ct = Number(s.contrast);
+  o.contrast = (isFinite(ct) && ct >= 0.8 && ct <= 1.4) ? Math.round(ct * 100) / 100 : d.contrast;
+  var pl = Number(s.preload);
+  o.preload = (isFinite(pl) && pl >= 1 && pl <= 8) ? Math.round(pl) : d.preload;
+  // 2.0 施工项 B：横向条带的跨页判定与页间距
+  o.spreadWide = ['auto', 'on', 'off'].indexOf(s.spreadWide) >= 0 ? s.spreadWide : d.spreadWide;
+  var gp = Number(s.gap);
+  o.gap = (isFinite(gp) && gp >= 0 && gp <= 48) ? Math.round(gp) : d.gap;
   return o;
 }
 
@@ -67,6 +79,9 @@ export function applyToState(p) {
   S.rev = v.rev; S.prevRev = v.prevRev;
   S.theme = v.theme; S.bright = v.bright;
   S.scale = v.scale;
+  S.enhance = v.enhance; S.contrast = v.contrast; S.preload = v.preload;
+  S.spreadWide = v.spreadWide; S.gap = v.gap;
+  try { document.documentElement.style.setProperty('--hgap', String(v.gap) + 'px'); } catch (err) {}
   // 立刻把比例写到 CSS 变量和工具栏文字上：
   // 打开书时 render() 可能早于 prefs 异步回来，只靠 render 会显示成 100%
   try {

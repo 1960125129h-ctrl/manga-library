@@ -161,3 +161,35 @@ body.bar-autohide #bar.show{transform:translateY(0)}
 #thumbs #info #pageinput{width:56px}
 #thumbs #info #pageinfo{opacity:.75}
 #thumbs.collapsed #info{display:none}
+
+/* ===== 2.0 施工项 A：画质增强（只作用于页图，不影响布局） ===== */
+#stage .pageimg,
+#stage .scrollimg{filter:var(--r-img-filter, none)}
+
+/* ===== 2.0 施工项 B：横向条带 hscroll / hspread ===== */
+/* 横排 = 连续横向滚动：页与页首尾相接，可以一路拖过去，不吸附、不按页切断 */
+#stage.mode-hscroll,
+#stage.mode-hspread{display:block;padding:0;overflow-x:auto;overflow-y:hidden;scroll-snap-type:none;overscroll-behavior-x:contain;scroll-behavior:auto}
+#stage.mode-hscroll #canvas,
+#stage.mode-hspread #canvas{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;height:100%;width:max-content;min-width:0;margin:0;padding:0;gap:0}   /* 和长条一致：页页首尾相接 */
+/* rtl：整条反转，组内保持正向（抵消上面 :41 的 .pagewrap 反向） */
+#stage.dir-rtl.mode-hscroll #canvas,
+#stage.dir-rtl.mode-hspread #canvas{flex-direction:row-reverse}
+#stage.dir-rtl.mode-hscroll .pagewrap,
+#stage.dir-rtl.mode-hspread .pagewrap{flex-direction:row}
+#stage.mode-hscroll .pagewrap,
+#stage.mode-hspread .pagewrap{display:flex;height:100%;width:auto;max-width:none;max-height:none;margin:0;gap:0;flex:0 0 auto;justify-content:center;min-width:calc(var(--sh, 700px) * 0.70)}   /* 占位：图未解码时也有宽，切模式能立刻定位 */
+#stage.mode-hscroll .pageimg,
+#stage.mode-hspread .pageimg{height:100%;width:auto;max-height:none;max-width:var(--sw);object-fit:contain}
+#stage.mode-hspread .pagewrap.dual .pageimg{max-width:calc(var(--sw) / 2 - 1px)}
+/* 章节中割：一话末尾接下一话，中间插一条带章节号的竖条 */
+#stage.mode-hscroll .chbreak,
+#stage.mode-hspread .chbreak{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 0 auto;height:100%;width:150px;gap:12px;color:var(--fg2, #9aa4b2);background:linear-gradient(90deg,transparent 0%,rgba(127,127,127,.10) 18%,rgba(127,127,127,.22) 50%,rgba(127,127,127,.10) 82%,transparent 100%);border-left:1px solid rgba(127,127,127,.35);border-right:1px solid rgba(127,127,127,.35)}
+#stage.mode-hscroll .chbreak .cbn,
+#stage.mode-hspread .chbreak .cbn{writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:3px;font-size:13px;font-weight:600;opacity:.9;max-height:70%;overflow:hidden}
+#stage.mode-hscroll .chbreak .cbt,
+#stage.mode-hspread .chbreak .cbt{font-size:15px;opacity:.55}
+
+/* zoom 与横排互斥：放大后交还原生的绝对定位 + transform 布局 */
+#stage.zoom.mode-hscroll #canvas,
+#stage.zoom.mode-hspread #canvas{height:auto;width:max-content;padding:0;gap:0}

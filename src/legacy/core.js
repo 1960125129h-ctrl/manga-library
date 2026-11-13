@@ -577,6 +577,9 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
       toggleScaleBar();                // 已在长条 -> 展开/收起比例
     }
   };
+  // 横排 / 对开（2.0 施工项 B）：和长条一样，切进来时把长条专用缩放条收起来
+  var mHs = document.getElementById("m-hscroll");
+  if (mHs) mHs.onclick = function () { S.mode = "hscroll"; toggleScaleBar(false); render(); saveReaderDefaults(); };
   // 四个适配按钮都要落盘：原来只 render 不 save，退出后下次进来又回到旧档
   document.getElementById("f-width").onclick = function () { S.fit = "width"; render(); saveReaderDefaults(); };
   document.getElementById("f-height").onclick = function () { S.fit = "height"; render(); saveReaderDefaults(); };

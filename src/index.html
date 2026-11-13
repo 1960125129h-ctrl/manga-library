@@ -79,6 +79,7 @@
         <button class="b" id="m-single" title="单页 (1)">单页</button>
         <button class="b" id="m-double" title="双页 (2)">双页</button>
         <button class="b" id="m-scroll" title="长条 (3)">长条</button>
+        <button class="b" id="m-hscroll" title="横排：所有页横向连排，滚轮/拖动一路划过去 (4)">横排</button>
       </div>
       <div class="grp" id="scrollscale" style="display:none" title="长条模式专用：调整整本的显示宽度（不影响单页/双页）">
         <button class="b" id="bscaleout" title="缩小（每次 -10%）">－</button>
@@ -136,6 +137,21 @@
 <div id="ctx"></div>
 <div id="modal"></div>
 <div id="hint"></div>
+<!-- 画质增强滤镜定义（2.0 施工项 A）：挂在页图 img 上，改属性即实时，不改原图 -->
+<svg id="enhdefs" width="0" height="0" style="position:absolute;pointer-events:none" aria-hidden="true">
+  <defs>
+    <filter id="enh-soft" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="0 -0.5 0 -0.5 3 -0.5 0 -0.5 0"/>
+    </filter>
+    <filter id="enh-medium" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="0 -1 0 -1 5 -1 0 -1 0"/>
+    </filter>
+    <filter id="enh-strong" x="-2%" y="-2%" width="104%" height="104%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.1" result="b"/>
+      <feComposite in="SourceGraphic" in2="b" operator="arithmetic" k1="0" k2="1.8" k3="-0.8" k4="0"/>
+    </filter>
+  </defs>
+</svg>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

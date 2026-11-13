@@ -54,9 +54,24 @@ export function applyZoom(z) {
   if (need.length) {
     elStage.className = cls;
     for (i = 0; i < need.length; i++) {
-      var w0 = Math.round(need[i].getBoundingClientRect().width);
-      if (w0 < 3 && need[i].naturalWidth) w0 = need[i].naturalWidth;
-      if (w0 >= 3) need[i].setAttribute("data-basew", String(w0));
+      var el0 = need[i];
+      var box = el0.getBoundingClientRect();
+      var w0 = Math.round(box.width);
+      var nw = el0.naturalWidth, nh = el0.naturalHeight;
+      // 整页模式是 width:100%/height:100% + object-fit:contain —— 元素框被撑满容器，
+      // rect 量到的是**容器宽**，而图片实际只显示其中一小块（比如 45%）。
+      // 直接拿它当 100% 基准，一放大就跳到原图大小。这里用 contain 公式还原真实显示宽。
+      // 判据：框的宽高比和图片自然宽高比差 >2%，就认定被容器化了。
+      if (nw && nh && box.width > 2 && box.height > 2) {
+        var boxRatio = box.width / box.height, natRatio = nw / nh;
+        if (Math.abs(boxRatio / natRatio - 1) > 0.02) {
+          var sc = Math.min(box.width / nw, box.height / nh);
+          var shown = Math.round(nw * sc);
+          if (shown > 3) w0 = shown;
+        }
+      }
+      if (w0 < 3 && nw) w0 = nw;
+      if (w0 >= 3) el0.setAttribute("data-basew", String(w0));
     }
     elStage.className = cls + " zoom";
   }
@@ -125,6 +140,9 @@ export function onWheel(e) {
     }
     return;
   }
+  // 横向条带的滚轮交给 reader/nav.js 的映射（那边要分辨触控板横滑、还要按页吸附）。
+  // 这里必须早退，否则一次滚轮会被两套逻辑各翻一页 —— 表现就是"滚一格跳两页"。
+  if (S.mode === "hscroll" || S.mode === "hspread") return;
   if (!S.wheel || S.mode === "scroll" || e.ctrlKey) return;
   if (rightDown || (e.buttons & 2)) return;   // 右键按下时滚轮是缩放, 不翻页
   // 若当前页比视口高(适宽/原始模式), 先把这一页滚完再翻页
