@@ -10,7 +10,7 @@ import { S } from '../app/state.js';
 import { isBigPlat } from '../library/store.js';
 import { bmSync, showImgCtx } from '../reader/panel.js';
 import { elCanvas, io, setIo, comic, setElCanvas } from '../reader/state.js';
-import { makeImg, syncThumbsActive, spreads, spreadIndex, preload, preloadAround, syncSideHandles, scrollThumbToCenter, applyImgFilter } from '../reader/view.js';
+import { makeImg, applyEdgeFx, syncThumbsActive, spreads, spreadIndex, preload, preloadAround, syncSideHandles, scrollThumbToCenter, applyImgFilter } from '../reader/view.js';
 import { chLabel } from '../shared/chapter.js';
 import { enc } from '../shared/text.js';
 
@@ -463,6 +463,13 @@ export function render() {
   readerEl.dataset.dir = S.dir;
   refit();   // 换了模式/适配方式就按真实可用尺寸重算一遍
   elStage.innerHTML = "";
+  // 横排防剧透的两块毛玻璃层在 stage 里，会被上面这行清掉 —— 重建后补回去
+  ["edgeblur-l", "edgeblur-r"].forEach(function (cls) {
+    var d = document.createElement("div");
+    d.className = "edgeblur " + cls;
+    d.setAttribute("aria-hidden", "true");
+    elStage.appendChild(d);
+  });
   setElCanvas(document.createElement("div")); elCanvas.id = "canvas";
   elStage.appendChild(elCanvas);
   if (S.mode === "scroll") renderScroll();
@@ -473,6 +480,7 @@ export function render() {
   if (S.zoom) { applyZoom(S.zscale || 1); centerCanvas(); }   // 同步执行: 后台标签页里 rAF 会被节流, 不能依赖
   bmSync();
   applyImgFilter();   // 偏好/主题变了要重算 --r-img-filter
+  applyEdgeFx();      // 横排两侧的毛玻璃开关也跟着刷新
   updateInfo(); syncButtons(); save();
 }
 export function applyThumbs() {

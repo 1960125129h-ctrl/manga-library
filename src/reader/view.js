@@ -29,6 +29,7 @@ export function applyReaderTheme() {
   document.documentElement.style.setProperty("--r-dim", String(Math.round(dim * 1000) / 1000));
   try { localStorage.setItem("readerTheme", JSON.stringify({ theme: S.theme || "dark", bright: b })); } catch (e) {}
   applyImgFilter();
+  try { applyEdgeFx(); } catch (e) {}
 }
 
 /* ---------- 画质增强（2.0 施工项 A） ----------
@@ -62,6 +63,29 @@ function toneTable(hi, sh, cv) {
   }
   return out.join(" ");
 }
+/* 横排防剧透：把设置写进 CSS 变量 + 控制左右两层开关 */
+export function applyEdgeFx() {
+  const f = S.edgefx || {};
+  const clear = (typeof f.clear === "number") ? f.clear : 50;
+  const blur = (typeof f.blur === "number") ? f.blur : 12;
+  const dim = (typeof f.dim === "number") ? f.dim : 28;
+  const root = document.documentElement;
+  try {
+    root.style.setProperty("--eb-clear", clear + "%");
+    root.style.setProperty("--eb-blur", blur + "px");
+    root.style.setProperty("--eb-dim", String(Math.round(dim) / 100));
+  } catch (e) {}
+  // 模糊 0 且压暗 0 就整层关掉，省掉 backdrop-filter 的开销
+  const dead = (blur <= 0 && dim <= 0);
+  const apply = (sel, on) => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.setAttribute("data-off", (dead || !on) ? "1" : "0");
+  };
+  apply("#stage .edgeblur-l", f.left !== 0);
+  apply("#stage .edgeblur-r", f.right !== 0);
+}
+
 export function applyImgFilter() {
   var parts = [];
   var br = fxNum("bright", 100), ct = fxNum("contrast", 100), sa = fxNum("saturate", 100);

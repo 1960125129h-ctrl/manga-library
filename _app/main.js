@@ -779,7 +779,13 @@ ipcMain.handle('state:all', async () => ({
 // 防止半成品(比如 images 变成数组)被落盘 —— 那个文件丢了就等于参考图全丢。
 /* ================= 阅读器显示偏好(全局) ================= */
 const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright', 'scale',
-                   'enhance', 'contrast', 'saturate', 'preload', 'spreadWide', 'gap', 'imgfx'];
+                   'enhance', 'contrast', 'saturate', 'preload', 'spreadWide', 'gap', 'imgfx', 'edgefx'];
+const sanitizeEdgeFx = (src) => {
+  const s = (src && typeof src === 'object') ? src : {};
+  const num = (v, lo, hi, dv) => { const n = Number(v); return (isFinite(n) && n >= lo && n <= hi) ? Math.round(n) : dv; };
+  return { left: s.left === false ? 0 : 1, right: s.right === false ? 0 : 1,
+           clear: num(s.clear, 30, 90, 50), blur: num(s.blur, 0, 30, 12), dim: num(s.dim, 0, 80, 28) };
+};
 const FX_KEYS = { bright: [0, 200, 100], contrast: [0, 200, 100], saturate: [0, 200, 100],
                   warmth: [-100, 100, 0], tint: [-100, 100, 0],
                   highlights: [-100, 100, 0], shadows: [-100, 100, 0], curve: [-100, 100, 0],
@@ -825,6 +831,7 @@ function sanitizePrefs(src) {
   const pl = Number(s.preload);
   o.preload = (isFinite(pl) && pl >= 1 && pl <= 8) ? Math.round(pl) : 4;
   o.imgfx = sanitizeImgFx(s.imgfx);
+  o.edgefx = sanitizeEdgeFx(s.edgefx);
   o.spreadWide = ['auto', 'on', 'off'].indexOf(s.spreadWide) >= 0 ? s.spreadWide : 'auto';
   const gp = Number(s.gap);
   o.gap = (isFinite(gp) && gp >= 0 && gp <= 48) ? Math.round(gp) : 8;

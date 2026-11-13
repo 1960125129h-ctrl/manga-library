@@ -9,7 +9,7 @@ import { isBigPlat } from '../library/store.js';
 import { chStep, renderChapters } from '../reader/panel.js';
 import { render, stripJump, animateScrollX, maybePromoteNext } from '../reader/render.js';
 import { comic } from '../reader/state.js';
-import { applyReaderTheme, spreads, spreadIndex, saveReaderDefaults, applyImgFilter, fxDef } from '../reader/view.js';
+import { applyReaderTheme, spreads, spreadIndex, saveReaderDefaults, applyImgFilter, applyEdgeFx, fxDef } from '../reader/view.js';
 import { pageList, chLabel, nOf } from '../shared/chapter.js';
 import { enc } from '../shared/text.js';
 import { showModal, closeModal, hint } from '../shared/ui.js';
@@ -35,7 +35,7 @@ export function pages() {
 }
 export function openThemeDialog() {
   showModal(function (box) {
-    var h = document.createElement("h3"); h.textContent = "阅读配色与亮度"; box.appendChild(h);
+    var h = document.createElement("h3"); h.textContent = "阅读设置"; box.appendChild(h);
     var sub = document.createElement("div"); sub.className = "sub";
     sub.textContent = "预设是整套换肤（画面 + 侧栏 + 工具栏 + 按钮，每种都带纹理）；亮度调的是画面背景（图片本身亮度不变），工具栏和侧栏始终清晰。";
     box.appendChild(sub);
@@ -149,6 +149,67 @@ export function openThemeDialog() {
       swSty2.appendChild(b);
     });
 
+    // ---- 防剧透：横排两侧渐变毛玻璃 ----
+    var ef = S.edgefx || {};
+    var sepEf = document.createElement("div");
+    sepEf.style.cssText = "margin:14px 0 6px;font-size:12px;font-weight:600;opacity:.75;letter-spacing:.5px";
+    sepEf.textContent = "防剧透（仅横排）";
+    box.appendChild(sepEf);
+    var efNote = document.createElement("div");
+    efNote.className = "sub";
+    efNote.style.cssText = "margin-bottom:6px";
+    efNote.textContent = "横排两侧会渐变模糊变暗，只看清中间那一页，防止一眼扫到旁边的剧透。";
+    box.appendChild(efNote);
+    var efSliders = {};
+    var efSaveT = 0;
+    var efSave = function () {
+      if (efSaveT) clearTimeout(efSaveT);
+      efSaveT = setTimeout(function () { efSaveT = 0; saveReaderDefaults(); }, 350);
+    };
+    var setEf = function (k, v) { S.edgefx = S.edgefx || {}; S.edgefx[k] = v; applyEdgeFx(); efSave(); };
+    // 左右开关
+    var swRow = document.createElement("div");
+    swRow.style.cssText = "display:flex;gap:14px;align-items:center;margin:6px 0 8px";
+    box.appendChild(swRow);
+    [["left", "左侧模糊"], ["right", "右侧模糊"]].forEach(function (it) {
+      var lab = document.createElement("label");
+      lab.className = "chk";
+      lab.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12.5px";
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = (ef[it[0]] !== 0);
+      cb.onchange = function () { setEf(it[0], cb.checked ? 1 : 0); };
+      lab.appendChild(cb);
+      lab.appendChild(document.createTextNode(it[1]));
+      swRow.appendChild(lab);
+      efSliders[it[0]] = cb;
+    });
+    // 三条滑杆
+    var efWrap = document.createElement("div");
+    efWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px 14px";
+    box.appendChild(efWrap);
+    [["clear", "清晰区", 30, 90, 50, "%"], ["blur", "模糊强度", 0, 30, 12, "px"], ["dim", "边缘压暗", 0, 80, 28, "%"]].forEach(function (it) {
+      var k = it[0], name = it[1], lo = it[2], hi = it[3], dv = it[4], unit = it[5];
+      var cell = document.createElement("div");
+      cell.style.cssText = "flex:1 1 calc(50% - 14px);min-width:150px;display:flex;align-items:center;gap:6px";
+      var lb = document.createElement("span");
+      lb.textContent = name;
+      lb.style.cssText = "font-size:12px;opacity:.85;white-space:nowrap;width:52px";
+      var rg = document.createElement("input");
+      rg.type = "range"; rg.min = String(lo); rg.max = String(hi); rg.step = "1";
+      rg.value = String((typeof ef[k] === "number") ? ef[k] : dv);
+      rg.style.cssText = "flex:1 1 auto;min-width:50px";
+      rg.title = name + "：双击恢复默认 " + dv + unit;
+      var vv = document.createElement("span");
+      vv.className = "stat";
+      vv.style.cssText = "font-size:12px;min-width:42px;text-align:right";
+      vv.textContent = rg.value + unit;
+      rg.oninput = function () { vv.textContent = rg.value + unit; setEf(k, Number(rg.value)); };
+      rg.ondblclick = function () { rg.value = String(dv); vv.textContent = dv + unit; setEf(k, dv); };
+      cell.appendChild(lb); cell.appendChild(rg); cell.appendChild(vv);
+      efWrap.appendChild(cell);
+    });
+
     var fxFootRow = document.createElement("div");
     fxFootRow.style.cssText = "display:flex;align-items:center;gap:10px;margin:10px 0 2px";
     var resetFx = document.createElement("button");
@@ -158,6 +219,20 @@ export function openThemeDialog() {
     resetFx.onclick = function () {
       S.imgfx = fxDef();
       applyImgFilter();
+      S.edgefx = { left: 1, right: 1, clear: 50, blur: 12, dim: 28 };
+      applyEdgeFx();
+      Object.keys(efSliders).forEach(function (k) {
+        var el = efSliders[k];
+        if (el && el.type === "checkbox") el.checked = true;
+      });
+      if (efWrap) {
+        Array.prototype.forEach.call(efWrap.querySelectorAll("input[type=range]"), function (r) {
+          var d = { clear: 50, blur: 12, dim: 28 };
+          var lb = r.parentElement.querySelector("span");
+          var key = { "清晰区": "clear", "模糊强度": "blur", "边缘压暗": "dim" }[lb ? lb.textContent : ""];
+          if (key) { r.value = String(d[key]); var vv = r.parentElement.querySelector(".stat"); if (vv) vv.textContent = String(d[key]) + (key === "blur" ? "px" : "%"); }
+        });
+      }
       Object.keys(fxSliders).forEach(function (k) {
         var s = fxSliders[k];
         s.rg.value = String(s.dv);

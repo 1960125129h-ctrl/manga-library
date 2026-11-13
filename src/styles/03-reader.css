@@ -222,3 +222,27 @@ body.bar-autohide #bar.show{transform:translateY(0)}
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80'><filter id='nz'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='1' seed='7'/><feColorMatrix type='saturate' values='0'/></filter><rect width='80' height='80' filter='url(%23nz)'/></svg>");
   background-repeat:repeat;background-size:80px 80px;
 }
+/* ---------- 横排防剧透：两侧渐变毛玻璃 ----------
+   两块固定在视口上的层，中间透明、往外逐渐变糊并压暗。
+   清晰区宽度/模糊强度/压暗程度都由 CSS 变量控制（设置面板里的滑杆写这三个变量）。 */
+#stage .edgeblur{
+  position:absolute; inset:0; pointer-events:none; z-index:6;
+  display:none;
+  backdrop-filter: blur(var(--eb-blur, 12px)) saturate(1.05);
+  -webkit-backdrop-filter: blur(var(--eb-blur, 12px)) saturate(1.05);
+}
+#stage.mode-hscroll .edgeblur, #stage.mode-hspread .edgeblur{ display:block; }
+#stage .edgeblur[data-off="1"]{ display:none; }
+
+/* 左侧：从最左 100% 糊 → 到清晰区左边界 0% */
+#stage .edgeblur-l{
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(50% - var(--eb-clear, 50%) / 2 - 10%), transparent calc(50% - var(--eb-clear, 50%) / 2));
+  mask-image: linear-gradient(90deg, #000 0%, #000 calc(50% - var(--eb-clear, 50%) / 2 - 10%), transparent calc(50% - var(--eb-clear, 50%) / 2));
+  background: linear-gradient(90deg, rgba(0,0,0,var(--eb-dim, 0.28)) 0%, rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.35)) calc(50% - var(--eb-clear, 50%) / 2 - 6%), transparent calc(50% - var(--eb-clear, 50%) / 2));
+}
+/* 右侧：镜像 */
+#stage .edgeblur-r{
+  -webkit-mask-image: linear-gradient(270deg, #000 0%, #000 calc(50% - var(--eb-clear, 50%) / 2 - 10%), transparent calc(50% - var(--eb-clear, 50%) / 2));
+  mask-image: linear-gradient(270deg, #000 0%, #000 calc(50% - var(--eb-clear, 50%) / 2 - 10%), transparent calc(50% - var(--eb-clear, 50%) / 2));
+  background: linear-gradient(270deg, rgba(0,0,0,var(--eb-dim, 0.28)) 0%, rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.35)) calc(50% - var(--eb-clear, 50%) / 2 - 6%), transparent calc(50% - var(--eb-clear, 50%) / 2));
+}

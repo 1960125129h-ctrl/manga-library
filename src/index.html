@@ -102,7 +102,7 @@
       </div>
       <div class="grp">
         <button class="b" id="bwheel" title="滚轮翻页 开/关">滚轮翻页</button>
-        <button class="b" id="btheme" title="阅读配色与亮度（纯黑/深灰/米白纸/护眼绿）">配色</button>
+        <button class="b" id="btheme" title="阅读设置：配色与亮度、图片调色、防剧透边缘模糊">设置</button>
         <button class="b" id="bbm" title="给当前页加书签 (B)">书签</button>
         <button class="b" id="bfull" title="全屏 (F)">全屏</button>
       </div>
@@ -112,7 +112,10 @@
     <button id="edge-left" class="reader-edge" type="button" aria-label="从左边缘滑动返回书架" tabindex="-1"></button>
     <button id="edge-right" class="reader-edge" type="button" aria-label="从右边缘滑动返回书架" tabindex="-1"></button>
     <button id="exit-fullscreen" class="b" type="button">退出全屏</button>
-    <div id="stage" class="stage mode-single fit-height dir-ltr"></div>
+    <div id="stage" class="stage mode-single fit-height dir-ltr">
+        <div class="edgeblur edgeblur-l" aria-hidden="true"></div>
+        <div class="edgeblur edgeblur-r" aria-hidden="true"></div>
+      </div>
   </div>
   <aside id="thumbs">
     <button class="sidehandle" id="thumbtoggle" title="展开预览 (P)"><span>›</span></button>
