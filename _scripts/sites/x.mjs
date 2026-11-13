@@ -303,10 +303,21 @@ export async function chapters(url) {
   const got = await grab('https://x.com/' + h, wantRounds(url));
   const list = got.items.filter((x) => x.pics && x.pics.length);
   if (!list.length) throw new Error('@' + h + ' 主页里没有带图片的原创推文');
-  return list.map((x, i) => ({ id: x.id, title: clean(x.text, 24) || ('t' + x.id), index: i + 1, order: i + 1, handle: h, _pics: x.pics }));
+  const chaps = list.map((x, i) => ({ id: x.id, title: clean(x.text, 24) || ('t' + x.id), index: i + 1, order: i + 1, handle: h, _pics: x.pics, _bulk: true }));
+  // 单条推文大多只有 1 张图，一条一条下很麻烦 —— 额外给一个"全部"章节，按时间把所有图合并。
+  const all = [];
+  const seenU = {};
+  for (const x of list) for (const u of x.pics) { if (!u || seenU[u]) continue; seenU[u] = 1; all.push(u); }
+  if (all.length > (chaps[0] ? chaps[0]._pics.length : 0)) {
+    chaps.unshift({ id: 'ALL', title: '【全部】' + all.length + ' 张', index: 0, order: 0, handle: h, _pics: all, _bulk: true });
+  }
+  return chaps;
 }
 export async function images(chapter) {
   const pagePics = (chapter._pics || []).map((u) => origUrl(u));
+  // 主页批量枚举时页面数据已经是完整的（每条推文的 media 都在 GraphQL 响应里），
+  // 再逐条请求接口只会更慢。所以批量章节直接用页面结果。
+  if (chapter._bulk && pagePics.length) return pagePics.map((u) => ({ url: u, headers: { 'Referer': 'https://x.com/' } }));
   // 页面抓到的张数常常偏少：X 的图片是懒加载/虚拟列表，DOM 里往往只有第一张。
   // 所以只要张数 < 4（一条推文最多 4 图），就去接口按推文 ID 问一次完整列表。
   if (pagePics.length >= 4) return pagePics.map((u) => ({ url: u, headers: { 'Referer': 'https://x.com/' } }));
