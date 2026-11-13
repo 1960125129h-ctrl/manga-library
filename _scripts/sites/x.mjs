@@ -214,17 +214,47 @@ function origUrl(u0) {   // X 的裸地址给的是缩略图(small), 必须显�
   if (/[?&]name=/i.test(u)) return u.replace(/([?&])name=[^&]*/i, '$1name=orig');
   return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'name=orig';
 }
+// X 的 syndication 接口要一个 partner token，形如 ((id/1e15)*PI).toString(36) 去掉 0 和小数点。
+// 以前写死 token=a —— 那是个无效 token，接口会返回降级数据甚至错误页(HTML)，结果就是"只拿到第一张图"。
+function tweetToken(id) {
+  try { return ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, ''); } catch (e) { return 'a'; }
+}
+// 镜像回退：fxtwitter 的公开 API 会把推文里的所有媒体一次返回（vxtwitter 现在被 Cloudflare 拦，实测 403）。
+async function fxTweet(id) {
+  try {
+    const r = await fetch('https://api.fxtwitter.com/status/' + id, { headers: { 'User-Agent': UA, 'Accept': 'application/json' } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const t = j && j.tweet;
+    if (!t) return null;
+    const media = (t.media && (t.media.all || t.media.photos)) || [];
+    const urls = media.filter((m) => m && m.type === 'photo' && m.url).map((m) => String(m.url).split('?')[0]);
+    if (!urls.length) return null;
+    return {
+      user: { name: t.author && t.author.name, screen_name: t.author && t.author.screen_name },
+      text: String(t.text || ''),
+      mediaDetails: urls.map((u) => ({ type: 'photo', media_url_https: u })),
+    };
+  } catch (e) { return null; }
+}
 async function tweet(idNum) {   // 备用通道(单条推文 / 页面没抓到时): 免登录接口
   const c = loadCache();
   if (c[idNum]) return c[idNum];
   let j = null;
-  for (let i = 0; i < 3; i++) {
+  const tok = tweetToken(idNum);
+  for (let i = 0; i < 2; i++) {
     try {
-      const r = await fetch('https://cdn.syndication.twimg.com/tweet-result?id=' + idNum + '&token=a', { headers: { 'User-Agent': UA, 'Accept-Language': 'zh-CN,zh;q=0.9' } });
-      if (r.status === 429) { await sleep(2500 * (i + 1)); continue; }
+      const r = await fetch('https://cdn.syndication.twimg.com/tweet-result?id=' + idNum + '&token=' + tok, { headers: { 'User-Agent': UA, 'Accept-Language': 'zh-CN,zh;q=0.9', 'Accept': 'application/json' } });
+      if (r.status === 429) { await sleep(1800 * (i + 1)); continue; }
       if (!r.ok) break;
-      j = await r.json(); break;
-    } catch (e) { await sleep(1500 * (i + 1)); }
+      const txt = await r.text();
+      if (txt && txt.trim().startsWith('<')) break;   // 返回 HTML = 错误页，别当 JSON 解析
+      j = JSON.parse(txt); break;
+    } catch (e) { await sleep(1000 * (i + 1)); }
+  }
+  if (!j || !(j.mediaDetails || []).length) {   // syndication 没给图 -> 换镜像再试一次
+    const fx = await fxTweet(idNum);
+    if (fx && (fx.mediaDetails || []).length) j = fx;
   }
   // 只留用得上的字段, 别把整份推文 JSON 存进缓存(之前能涨到几百 KB)
   c[idNum] = j ? {
@@ -276,11 +306,20 @@ export async function chapters(url) {
   return list.map((x, i) => ({ id: x.id, title: clean(x.text, 24) || ('t' + x.id), index: i + 1, order: i + 1, handle: h, _pics: x.pics }));
 }
 export async function images(chapter) {
-  if (chapter._pics && chapter._pics.length) {   // 枚举时已经从页面响应里拿到原图地址: 不用再发请求
-    return chapter._pics.map((u) => ({ url: origUrl(u), headers: { 'Referer': 'https://x.com/' } }));
+  const pagePics = (chapter._pics || []).map((u) => origUrl(u));
+  // 页面抓到的张数常常偏少：X 的图片是懒加载/虚拟列表，DOM 里往往只有第一张。
+  // 所以只要张数 < 4（一条推文最多 4 图），就去接口按推文 ID 问一次完整列表。
+  if (pagePics.length >= 4) return pagePics.map((u) => ({ url: u, headers: { 'Referer': 'https://x.com/' } }));
+  let apiPics = [];
+  try {
+    apiPics = photosOf(await tweet(chapter.id)).map(origUrl);
+  } catch (e) { apiPics = []; }
+  // 取并集：接口给的通常完整，页面给的兜底（接口挂了也不至于没图）
+  const seen = {}; const out = [];
+  for (const u of [...apiPics, ...pagePics]) {
+    if (!u || seen[u]) continue;
+    seen[u] = 1; out.push(u);
   }
-  const j = await tweet(chapter.id);
-  const ph = photosOf(j);
-  if (!ph.length) throw new Error('这条推文里没有图片（可能是视频/纯文字）');
-  return ph.map((u) => ({ url: u, headers: { 'Referer': 'https://x.com/' } }));
+  if (!out.length) throw new Error('这条推文里没有图片（可能是视频/纯文字）');
+  return out.map((u) => ({ url: u, headers: { 'Referer': 'https://x.com/' } }));
 }
