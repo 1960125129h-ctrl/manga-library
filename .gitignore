@@ -60,6 +60,7 @@ _scripts/jm/_zm*.html
 _scripts/jm/_manga-only*
 _scripts/jm/待下载*.txt
 _scripts/sites/cache-pixiv*.json
+_visual-check/2.0/
 _visual-check/dl-general.png
 _visual-check/verify-panel.png
 _scripts/sites/*cookies*

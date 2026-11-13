@@ -193,3 +193,15 @@ body.bar-autohide #bar.show{transform:translateY(0)}
 /* zoom 与横排互斥：放大后交还原生的绝对定位 + transform 布局 */
 #stage.zoom.mode-hscroll #canvas,
 #stage.zoom.mode-hspread #canvas{height:auto;width:max-content;padding:0;gap:0}
+
+/* 横排的横向滚动条：压细、半透明。转正瞬间 scrollLeft 数字会骤降（删页重算），
+   粗滚动条会明显跳一下；压细之后几乎看不出来，同时保留鼠标拖动能力。 */
+#stage.mode-hscroll::-webkit-scrollbar,
+#stage.mode-hspread::-webkit-scrollbar{height:7px}
+#stage.mode-hscroll::-webkit-scrollbar-track,
+#stage.mode-hspread::-webkit-scrollbar-track{background:transparent}
+#stage.mode-hscroll::-webkit-scrollbar-thumb,
+#stage.mode-hspread::-webkit-scrollbar-thumb{background:rgba(127,127,127,.32);border-radius:4px}
+#stage.mode-hscroll::-webkit-scrollbar-thumb:hover,
+#stage.mode-hspread::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,.55)}
+#stage.mode-hscroll, #stage.mode-hspread{scrollbar-width:thin}
