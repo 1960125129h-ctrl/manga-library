@@ -41,6 +41,9 @@ export function applyImgFilter() {
   var parts = [];
   var en = S.enhance || "off";
   if (en === "soft" || en === "medium" || en === "strong") parts.push("url(#enh-" + en + ")");
+  // 线稿增强：黑白稿/扫描件那种"纸底发灰、墨不黑"的，靠锐化解决不了。
+  // 用轻度锐化 + 拉开对比 + 略微提亮，把灰底顶白、把墨线压黑（不需要外部模型）。
+  else if (en === "line") { parts.push("url(#enh-soft)"); parts.push("contrast(1.32)"); parts.push("brightness(1.06)"); }
   var b = (typeof S.bright === "number") ? S.bright : 1;
   if (b < 1) parts.push("brightness(" + Math.max(0.2, Math.round(b * 100) / 100) + ")");
   var c = (typeof S.contrast === "number") ? S.contrast : 1;

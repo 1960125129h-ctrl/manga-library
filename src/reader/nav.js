@@ -68,18 +68,46 @@ export function openThemeDialog() {
     var subEnh = document.createElement("div"); subEnh.className = "sub";
     subEnh.textContent = "锐化会放大边缘对比：轻=高清电子版、中=压缩网图、强=扫描糊图。过强会在白底气泡的文字周围出灰边，网点纸会龟裂。";
     box.appendChild(subEnh);
-    var swEnh = document.createElement("div"); swEnh.id = "enhswatch"; box.appendChild(swEnh);
-    [["off", "关"], ["soft", "轻"], ["medium", "中"], ["strong", "强"]].forEach(function (t) {
+    var swEnh = document.createElement("div"); swEnh.id = "enhswatch";
+    swEnh.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px";
+    box.appendChild(swEnh);
+    // 档位写清用途 + 前面标序号（数字键 1~5 可以直接选）
+    var ENH_OPTS = [
+      ["off",    "关闭",        "不处理，看原图"],
+      ["soft",   "轻微",        "电子版原图，只想提一点"],
+      ["medium", "标准",        "压缩过的网图（默认推荐）"],
+      ["strong", "强力",        "扫描件、发糊的旧书"],
+      ["line",   "线稿增强",    "黑白稿去灰提黑，纸底顶白"]
+    ];
+    var setEnh = function (key, btn) {
+      S.enhance = key;
+      applyImgFilter(); saveReaderDefaults();
+      Array.prototype.forEach.call(swEnh.children, function (x) { x.className = (x === btn) ? "on" : ""; });
+    };
+    ENH_OPTS.forEach(function (t, i) {
       var be = document.createElement("button");
-      be.textContent = t[1];
       be.className = (S.enhance === t[0] || (!S.enhance && t[0] === "off")) ? "on" : "";
-      be.onclick = function () {
-        S.enhance = t[0];
-        applyImgFilter(); saveReaderDefaults();
-        Array.prototype.forEach.call(swEnh.children, function (x) { x.className = (x === be) ? "on" : ""; });
-      };
+      be.title = (i + 1) + " · " + t[2] + "（键盘按 " + (i + 1) + " 直接切）";
+      be.setAttribute("data-enh", t[0]);
+      var n1 = document.createElement("b"); n1.textContent = (i + 1) + ". " + t[1];
+      var n2 = document.createElement("small");
+      n2.style.cssText = "display:block;font-weight:400;opacity:.65;font-size:11px;margin-top:2px";
+      n2.textContent = t[2];
+      be.appendChild(n1); be.appendChild(n2);
+      be.onclick = function () { setEnh(t[0], be); };
       swEnh.appendChild(be);
     });
+    // 键盘：对话框开着时按 1~5 直接切档，不用去点小按钮
+    if (window.__enhKeyHandler) document.removeEventListener("keydown", window.__enhKeyHandler, true);
+    window.__enhKeyHandler = function (ev) {
+      var m = document.getElementById("modal");
+      if (!m || !m.classList.contains("on")) return;          // 对话框已关
+      var idx = ["1", "2", "3", "4", "5"].indexOf(ev.key);
+      if (idx < 0) return;
+      var btn = swEnh.children[idx];
+      if (btn) { btn.click(); ev.preventDefault(); }
+    };
+    document.addEventListener("keydown", window.__enhKeyHandler, true);
 
     var lbCt = document.createElement("label"); lbCt.textContent = "对比度"; box.appendChild(lbCt);
     var rgCt = document.createElement("input"); rgCt.type = "range"; rgCt.min = "80"; rgCt.max = "140"; rgCt.step = "1";

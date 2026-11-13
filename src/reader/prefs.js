@@ -51,7 +51,7 @@ export function sanitize(src) {
   var sc = Number(s.scale);
   o.scale = (isFinite(sc) && sc >= 0.1 && sc <= 1.6) ? Math.round(sc * 100) / 100 : d.scale;
   // 2.0 施工项 A：画质增强（三档锐化 + 对比）与预加载页数
-  o.enhance = ['off', 'soft', 'medium', 'strong'].indexOf(s.enhance) >= 0 ? s.enhance : d.enhance;
+  o.enhance = ['off', 'soft', 'medium', 'strong', 'line'].indexOf(s.enhance) >= 0 ? s.enhance : d.enhance;
   var ct = Number(s.contrast);
   o.contrast = (isFinite(ct) && ct >= 0.8 && ct <= 1.4) ? Math.round(ct * 100) / 100 : d.contrast;
   var st2 = Number(s.saturate);

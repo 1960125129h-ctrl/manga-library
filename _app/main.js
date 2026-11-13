@@ -796,7 +796,7 @@ function sanitizePrefs(src) {
   o.scale = (isFinite(sc) && sc >= 0.1 && sc <= 1.6) ? Math.round(sc * 100) / 100 : 1;
   // 2.0：画质增强 / 预加载 / 横向条带。渲染进程与主进程各有一份白名单，必须同步，
   // 否则主进程会把新字段剥掉 -> 改了偏好重启就丢（这一条踩过）。
-  o.enhance = ['off', 'soft', 'medium', 'strong'].indexOf(s.enhance) >= 0 ? s.enhance : 'off';
+  o.enhance = ['off', 'soft', 'medium', 'strong', 'line'].indexOf(s.enhance) >= 0 ? s.enhance : 'off';
   const ct = Number(s.contrast);
   o.contrast = (isFinite(ct) && ct >= 0.8 && ct <= 1.4) ? Math.round(ct * 100) / 100 : 1;
   const sa = Number(s.saturate);
