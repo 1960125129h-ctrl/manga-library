@@ -79,7 +79,9 @@ try {
   const leak = siteFiles.filter((f) => /cookie/i.test(f) && /\.(txt|json)$/i.test(f));
   chk('包里没有 cookie 文件', leak.length === 0, leak.join(','));
   chk('包里没有 pixiv 抓取缓存', !siteFiles.some((f) => /^cache-pixiv/.test(f)));
-  chk('包里没有开发期调试脚本', !fs.existsSync(path.join(RES, '_scripts', 'jm', 'p013052.mjs')));
+  chk('包里没有开发期调试脚本', !fs.existsSync(path.join(RES, '_scripts', 'jm', 'p013052.mjs'))
+    && !fs.existsSync(path.join(RES, '_scripts', 'jm', 'probe', 'p013052.mjs'))
+    && !fs.existsSync(path.join(RES, '_scripts', 'jm', 'probe')));
   // OCR: 打包版只走图片直取, 验证码识别组件与老方式脚本一律不进包
   chk('包里没有验证码识别组件(ocr_server.py)', !fs.existsSync(path.join(RES, '_scripts', 'jm', 'ocr_server.py')));
   chk('包里没有老方式脚本(run-album.mjs)', !fs.existsSync(path.join(RES, '_scripts', 'jm', 'run-album.mjs')));
