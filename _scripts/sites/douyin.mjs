@@ -2,6 +2,10 @@
 // 枚举: 调试浏览器打开主页/作品页, 注入捕获器读页面自己发的 /aweme/v1/web/aweme/post/ 响应(签名/cookie 都由浏览器搞定)
 // 【硬规则】只收图文作品(视频作品跳过); 图片取 url_list 里体积最大的那档; 动图(image.video 存在)= 下载 mp4 转 GIF 存盘
 import { openPage, sleep } from '../jm/cdp.mjs';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const id = 'douyin';
 export const label = '抖音';
 export const home = 'https://www.douyin.com/';
