@@ -156,8 +156,33 @@ function wantRounds(url) { return itemOf(url) ? 0 : (process.env.FETCH_PROBE ===
 async function readPage(p) {
   try { return JSON.parse(String(await p.ev(READ) || '') || '{}'); } catch (e) { return null; }
 }
+/* 磁盘缓存：预览和下载是两个独立的 node 进程，内存缓存互相看不见，
+   结果就是"解析一次要开一次浏览器、下载时又开一次"。
+   这里把页面抓到的结果落到 _scripts/sites/cache-douyin.json，两个进程共用。 */
+const DISK = path.join(HERE, 'cache-douyin.json');
+const DISK_TTL = 30 * 60 * 1000;   // 30 分钟；抖音主页/作品基本不会在这个窗口里变
+function diskLoad(url) {
+  try {
+    const all = JSON.parse(fs.readFileSync(DISK, 'utf8'));
+    const hit = all[url];
+    if (hit && Date.now() - hit.at < DISK_TTL && hit.data && hit.data.items && hit.data.items.length) return hit.data;
+  } catch (e) {}
+  return null;
+}
+function diskSave(url, data) {
+  try {
+    let all = {};
+    try { all = JSON.parse(fs.readFileSync(DISK, 'utf8')); } catch (e) { all = {}; }
+    all[url] = { at: Date.now(), rounds: 0, data: data };
+    const ks = Object.keys(all);
+    if (ks.length > 60) for (const k of ks.slice(0, ks.length - 60)) delete all[k];   // 只留最近 60 条
+    fs.writeFileSync(DISK, JSON.stringify(all), 'utf8');
+  } catch (e) {}
+}
 async function grab(url, rounds) {
   if (CACHE.data && CACHE.url === url && (rounds || 0) <= CACHE.rounds && Date.now() - CACHE.at < CACHE_MS) return CACHE.data;
+  const disk = diskLoad(url);
+  if (disk) { CACHE = { url: url, at: Date.now(), rounds: rounds || 0, data: disk }; return disk; }
   const got = await withPage(async (p) => {
     await p.send('Page.addScriptToEvaluateOnNewDocument', { source: HOOK }).catch(() => {});
     await p.send('Page.navigate', { url: url }).catch(() => {});
@@ -240,6 +265,7 @@ async function grab(url, rounds) {
     return best;
   });
   CACHE = { url: url, at: Date.now(), rounds: rounds || 0, data: got };
+    diskSave(url, got);   // 落盘给别的进程用（预览抓过，下载就不必再开浏览器）
   return got;
 }
 /* ---------- 纯 HTTP 通道（单条作品） ----------
@@ -301,6 +327,8 @@ async function expandShort(url) {
 }
 async function httpOne(aid) {
   if (!aid) return null;
+  const hitNote = diskLoad('note:' + aid);
+  if (hitNote && hitNote.items && hitNote.items.length) return hitNote.items[0];
   for (const path of ['/share/note/', '/share/video/']) {
     let html = '';
     try {
@@ -314,13 +342,15 @@ async function httpOne(aid) {
     if (!data) continue;
     const imgs = findMedia(data);
     if (!imgs.length) continue;
-    return {
+    const one = {
       id: aid,
       desc: findField(data, 'desc') || findField(data, 'title') || '',
       nick: findField(data, 'nickname') || findField(data, 'nickName') || '',
       sec: findField(data, 'sec_uid') || findField(data, 'secUid') || '',
       t: 0, type: 0, imgs: imgs, _http: true
     };
+    diskSave('note:' + aid, { items: [one] });   // 预览/下载两个进程共用
+    return one;
   }
   return null;
 }
