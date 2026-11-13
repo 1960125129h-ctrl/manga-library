@@ -28,7 +28,11 @@ export function bgParallax(y) {
     document.body.style.backgroundPositionY = 'calc(' + py + '% + ' + Math.round(y * 0.18) + 'px)';
   });
 }
-export function pages() { return pageList(comic, comic.chapters[S.ci]); }
+export function pages() {
+  // comic 可能已被关闭（回到书架、切书），这里不能直接摸 comic.chapters
+  if (!comic || !comic.chapters) return [];
+  return pageList(comic, comic.chapters[S.ci]);
+}
 export function openThemeDialog() {
   showModal(function (box) {
     var h = document.createElement("h3"); h.textContent = "阅读配色与亮度"; box.appendChild(h);

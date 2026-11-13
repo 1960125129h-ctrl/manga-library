@@ -184,11 +184,11 @@ body.bar-autohide #bar.show{transform:translateY(0)}
 #stage.mode-hspread .pagewrap.dual .pageimg{max-width:calc(var(--sw) / 2 - 1px)}
 /* 章节中割：一话末尾接下一话，中间插一条带章节号的竖条 */
 #stage.mode-hscroll .chbreak,
-#stage.mode-hspread .chbreak{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 0 auto;height:100%;width:150px;gap:12px;color:var(--fg2, #9aa4b2);background:linear-gradient(90deg,transparent 0%,rgba(127,127,127,.10) 18%,rgba(127,127,127,.22) 50%,rgba(127,127,127,.10) 82%,transparent 100%);border-left:1px solid rgba(127,127,127,.35);border-right:1px solid rgba(127,127,127,.35)}
+#stage.mode-hspread .chbreak{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 0 auto;height:100%;width:150px;gap:14px;color:#fff;background:linear-gradient(90deg,rgba(124,128,136,.22) 0%,rgba(98,102,110,.36) 50%,rgba(62,66,74,.52) 100%);border-left:1px solid rgba(255,255,255,.10);border-right:1px solid rgba(255,255,255,.10)}
 #stage.mode-hscroll .chbreak .cbn,
-#stage.mode-hspread .chbreak .cbn{writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:3px;font-size:13px;font-weight:600;opacity:.9;max-height:70%;overflow:hidden}
+#stage.mode-hspread .chbreak .cbn{writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:4px;font-size:23px;line-height:1.15;font-weight:700;opacity:.97;max-height:82%;overflow:hidden;text-shadow:0 1px 3px rgba(0,0,0,.55)}
 #stage.mode-hscroll .chbreak .cbt,
-#stage.mode-hspread .chbreak .cbt{font-size:15px;opacity:.55}
+#stage.mode-hspread .chbreak .cbt{font-size:20px;opacity:.7}
 
 /* zoom 与横排互斥：放大后交还原生的绝对定位 + transform 布局 */
 #stage.zoom.mode-hscroll #canvas,
@@ -205,16 +205,3 @@ body.bar-autohide #bar.show{transform:translateY(0)}
 #stage.mode-hscroll::-webkit-scrollbar-thumb:hover,
 #stage.mode-hspread::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,.55)}
 #stage.mode-hscroll, #stage.mode-hspread{scrollbar-width:thin}
-/* 中割条按主题分色：深色主题用灰亮渐变（上面那套），浅色/护眼/纸色改成灰暗渐变 + 深字，
-   否则 150px 的竖条会和纸色糊在一起、字也看不清。 */
-#reader[data-theme="light"] #stage.mode-hscroll .chbreak,
-#reader[data-theme="light"] #stage.mode-hspread .chbreak,
-#reader[data-theme="eye"] #stage.mode-hscroll .chbreak,
-#reader[data-theme="eye"] #stage.mode-hspread .chbreak,
-#reader[data-theme="paper"] #stage.mode-hscroll .chbreak,
-#reader[data-theme="paper"] #stage.mode-hspread .chbreak{
-  background:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.05) 18%,rgba(0,0,0,.14) 50%,rgba(0,0,0,.05) 82%,transparent 100%);
-  border-left-color:rgba(0,0,0,.16);
-  border-right-color:rgba(0,0,0,.16);
-  color:#565b62;
-}
