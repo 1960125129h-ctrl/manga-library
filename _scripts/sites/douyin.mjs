@@ -163,7 +163,7 @@ const DISK = path.join(HERE, 'cache-douyin.json');
 const DISK_TTL = 30 * 60 * 1000;   // 30 分钟；抖音主页/作品基本不会在这个窗口里变
 // 体积上限：一个博主动辄上千条作品，单条记录就有 11MB 左右（每张图 4 个签名 URL）。
 // 只按"条数"限会撑到几百 MB，所以再压一道总字节数，超了按时间删最旧的。
-const DISK_MAX = 60 * 1024 * 1024;
+const DISK_MAX = 300 * 1024 * 1024;   // 只按体积限，不限条数：一个千条作品的大主页约 11MB，够放 27 个
 function diskLoad(url) {
   try {
     const all = JSON.parse(fs.readFileSync(DISK, 'utf8'));

@@ -165,7 +165,7 @@ let CACHE_MEM = { url: '', at: 0, data: null };
    不加这个的话下载时会重新开一次浏览器再抓 18 秒。 */
 const PAGECACHE = path.join(HERE, 'cache-x-pages.json');
 const PAGE_TTL = 30 * 60 * 1000;
-const PAGE_MAX = 30 * 1024 * 1024;   // 体积上限（上千条推文也就几百 KB，这里留足余量）
+const PAGE_MAX = 100 * 1024 * 1024;   // 只按体积限，不限条数（上千条推文也就几百 KB）
 function pageLoad(url) {
   try {
     const all = JSON.parse(fs.readFileSync(PAGECACHE, 'utf8'));
@@ -179,8 +179,6 @@ function pageSave(url, data) {
     let all = {};
     try { all = JSON.parse(fs.readFileSync(PAGECACHE, 'utf8')); } catch (e) { all = {}; }
     all[url] = { at: Date.now(), data: data };
-    const ks = Object.keys(all);
-    if (ks.length > 40) for (const k of ks.slice(0, ks.length - 40)) delete all[k];
     let json = JSON.stringify(all);
     if (json.length > PAGE_MAX) {
       const byAge = Object.keys(all).sort((a, b) => (all[a].at || 0) - (all[b].at || 0));
