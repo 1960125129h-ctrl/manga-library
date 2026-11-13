@@ -295,13 +295,13 @@ export async function resolve(url) {
   // 书名就该是**作者名**：优先用推文里的用户显示名，取不到就用 handle。
   // 不要再用 document.title —— /media 页面的标题是"某条推文的正文 (@某人) / X"，
   // 拿它当书名会变成作品名，作者那栏也就跟着丢了。
-  // 只用 screen_name / handle 当作者名。
-  // it.disp 实测不可信 —— 会取到别的推文的标题（"你害羞的样子很可爱"那种），
-  // 它就是"书名变成作品名、作者消失"的根源。
+  // it.disp = 作者的显示名（主 ID，例："你害羞的样子很可爱"）
+  // it.name = screen_name（handle，例：Sora_dong1），X 新版有时给空，就用 URL 里的
+  const disp = clean(it.disp || '', 40);
   const uname = clean(it.name || '', 40) || h;
   return {
-    title: uname,                    // 书名 = 作者名
-    author: '@' + uname,             // 作者 = @handle
+    title: disp || uname,                                   // 书名 = 显示名
+    author: disp ? (disp + ' (@' + uname + ')') : ('@' + uname),   // 作者 = 显示名 (@handle)
     desc: '', cover: null, status: 'X / @' + h
   };
 }
