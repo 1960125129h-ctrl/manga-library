@@ -89,11 +89,8 @@ export function openThemeDialog() {
       be.className = (S.enhance === t[0] || (!S.enhance && t[0] === "off")) ? "on" : "";
       be.title = (i + 1) + " · " + t[2] + "（键盘按 " + (i + 1) + " 直接切）";
       be.setAttribute("data-enh", t[0]);
-      var n1 = document.createElement("b"); n1.textContent = (i + 1) + ". " + t[1];
-      var n2 = document.createElement("small");
-      n2.style.cssText = "display:block;font-weight:400;opacity:.65;font-size:11px;margin-top:2px";
-      n2.textContent = t[2];
-      be.appendChild(n1); be.appendChild(n2);
+      be.textContent = t[1];
+      be.style.cssText = "padding:4px 7px;font-size:12px;line-height:1.2";
       be.onclick = function () { setEnh(t[0], be); };
       swEnh.appendChild(be);
     });
@@ -109,32 +106,73 @@ export function openThemeDialog() {
     };
     document.addEventListener("keydown", window.__enhKeyHandler, true);
 
-    var lbCt = document.createElement("label"); lbCt.textContent = "对比度"; box.appendChild(lbCt);
-    var rgCt = document.createElement("input"); rgCt.type = "range"; rgCt.min = "80"; rgCt.max = "140"; rgCt.step = "1";
-    rgCt.value = String(Math.round(((typeof S.contrast === "number") ? S.contrast : 1) * 100));
-    var valCt = document.createElement("div"); valCt.className = "stat"; valCt.textContent = rgCt.value + "%";
-    var ctTimer = 0;
-    rgCt.oninput = function () {
-      S.contrast = Number(rgCt.value) / 100; valCt.textContent = rgCt.value + "%";
-      applyImgFilter();
-      if (ctTimer) clearTimeout(ctTimer);
-      ctTimer = setTimeout(function () { ctTimer = 0; saveReaderDefaults(); }, 400);
+    // 对比度 + 饱和度并排一行，省纵向空间
+    var rowCS = document.createElement("div");
+    rowCS.style.cssText = "display:flex;gap:16px;align-items:center;margin:8px 0 4px";
+    box.appendChild(rowCS);
+    var mkSlider = function (host, text, min, max, cur, apply, save) {
+      var cell = document.createElement("div");
+      cell.style.cssText = "flex:1 1 0;min-width:0;display:flex;align-items:center;gap:6px";
+      var lb = document.createElement("span"); lb.textContent = text;
+      lb.style.cssText = "font-size:12px;opacity:.85;white-space:nowrap";
+      var rg = document.createElement("input"); rg.type = "range"; rg.min = String(min); rg.max = String(max); rg.step = "1";
+      rg.value = String(Math.round(cur * 100));
+      rg.style.cssText = "flex:1 1 auto;min-width:40px";
+      var vv = document.createElement("span"); vv.className = "stat";
+      vv.style.cssText = "font-size:12px;min-width:38px;text-align:right";
+      vv.textContent = rg.value + "%";
+      var tm = 0;
+      rg.oninput = function () {
+        vv.textContent = rg.value + "%";
+        apply(Number(rg.value) / 100);
+        if (tm) clearTimeout(tm);
+        tm = setTimeout(function () { tm = 0; save(); }, 400);
+      };
+      cell.appendChild(lb); cell.appendChild(rg); cell.appendChild(vv);
+      host.appendChild(cell);
+      return { rg: rg, vv: vv };
     };
-    box.appendChild(rgCt); box.appendChild(valCt);
+    var ctS = mkSlider(rowCS, "对比度", 80, 140, (typeof S.contrast === "number") ? S.contrast : 1,
+      function (v) { S.contrast = v; applyImgFilter(); },
+      function () { saveReaderDefaults(); });
+    var saS = mkSlider(rowCS, "饱和度", 50, 180, (typeof S.saturate === "number") ? S.saturate : 1,
+      function (v) { S.saturate = v; applyImgFilter(); },
+      function () { saveReaderDefaults(); });
 
-    // ---- 饱和度（滤镜三件套的第三件：锐化 + 对比 + 饱和）----
-    var lbSa = document.createElement("label"); lbSa.textContent = "饱和度"; box.appendChild(lbSa);
-    var rgSa = document.createElement("input"); rgSa.type = "range"; rgSa.min = "50"; rgSa.max = "180"; rgSa.step = "1";
-    rgSa.value = String(Math.round(((typeof S.saturate === "number") ? S.saturate : 1) * 100));
-    var valSa = document.createElement("div"); valSa.className = "stat"; valSa.textContent = rgSa.value + "%";
-    var saTimer = 0;
-    rgSa.oninput = function () {
-      S.saturate = Number(rgSa.value) / 100; valSa.textContent = rgSa.value + "%";
-      applyImgFilter();
-      if (saTimer) clearTimeout(saTimer);
-      saTimer = setTimeout(function () { saTimer = 0; saveReaderDefaults(); }, 400);
-    };
-    box.appendChild(rgSa); box.appendChild(valSa);
+    // ---- 一键风格：把"锐化 + 对比 + 饱和"打包成几个常用组合 ----
+    var lbSty = document.createElement("label"); lbSty.textContent = "一键风格"; box.appendChild(lbSty);
+    var subSty = document.createElement("div"); subSty.className = "sub";
+    subSty.textContent = "一次把上面三个参数配好；点完还能再单独微调。";
+    box.appendChild(subSty);
+    var swSty = document.createElement("div");
+    swSty.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px";
+    box.appendChild(swSty);
+    var STYLES = [
+      ["原图", "不做任何处理", { enhance: "off", contrast: 1, saturate: 1 }],
+      ["高清", "网图提亮提脆（默认推荐）", { enhance: "medium", contrast: 1.06, saturate: 1.08 }],
+      ["柔和", "降对比降饱和，久看不累", { enhance: "soft", contrast: 0.96, saturate: 0.9 }],
+      ["浓烈", "对比饱和一起拉，彩页更艳", { enhance: "medium", contrast: 1.12, saturate: 1.22 }],
+      ["线稿", "黑白稿去灰提黑", { enhance: "line", contrast: 1, saturate: 0.88 }]
+    ];
+    STYLES.forEach(function (s) {
+      var b = document.createElement("button");
+      b.textContent = s[0];
+      b.title = s[1];
+      b.style.cssText = "padding:4px 9px;font-size:12px";
+      b.onclick = function () {
+        S.enhance = s[2].enhance;
+        S.contrast = s[2].contrast;
+        S.saturate = s[2].saturate;
+        // 同步界面上的档位与两根滑杆
+        Array.prototype.forEach.call(swEnh.children, function (x) {
+          x.className = (x.getAttribute("data-enh") === s[2].enhance) ? "on" : "";
+        });
+        ctS.rg.value = String(Math.round(s[2].contrast * 100)); ctS.vv.textContent = ctS.rg.value + "%";
+        saS.rg.value = String(Math.round(s[2].saturate * 100)); saS.vv.textContent = saS.rg.value + "%";
+        applyImgFilter(); saveReaderDefaults();
+      };
+      swSty.appendChild(b);
+    });
 
     var foot = document.createElement("div"); foot.id = "mfoot"; box.appendChild(foot);
     var done = document.createElement("button"); done.className = "btn"; done.textContent = "完成";
