@@ -19,7 +19,7 @@ const STAGE = path.join(TMP, 'src');
 const ZIP = path.join(TMP, BOOK + '.zip');
 const CBZ = path.join(TMP, BOOK + '.cbz');
 const BOOKDIR = path.join(LIB, '漫画', BOOK);
-const SRC_LIB = 'D:/gong zuo qu/漫画书库/漫画';
+const SRC_LIB = '<书库根>/漫画';
 
 function cleanup() {
   for (const d of [TMP, BOOKDIR]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) {} }

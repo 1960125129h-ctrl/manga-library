@@ -2,7 +2,7 @@
 //
 // 【为什么要单独一个模块】
 // 以前这个路径是**写死在 4 个文件里**的:
-//   C:\Users\终楠\AppData\Local\Programs\Python\Python311\python.exe
+//   %USERPROFILE%\AppData\Local\Programs\Python\Python311\python.exe
 // 换电脑、改用户名、或者把项目交给别人 —— 三件事会**一起坏**, 而且是静默地坏:
 //   · 缩略图不再生成      -> 表现为"书架卡片没图"
 //   · 禁漫拼页没做出来    -> 表现为"长条图没拼上"

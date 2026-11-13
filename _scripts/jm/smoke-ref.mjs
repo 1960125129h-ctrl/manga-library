@@ -91,7 +91,7 @@ try {
   try { const pr = JSON.parse(pickJson); pickOk = !!(pr.ok && pr.color && /^#[0-9a-f]{6}$/.test(pr.color.hex)); pickHex = pr.color ? pr.color.hex : ''; } catch (e) {}
   chk('主进程 IPC 能吸色', pickOk, pickHex);
 
-  const wbFile = 'D:/gong zuo qu/漫画书库重构v0/.workbench.json';
+  const wbFile = '<仓库根>/.workbench.json';
   const exists = fs.existsSync(wbFile);
   chk('数据落盘成 .workbench.json', exists);
   if (exists) { const j = JSON.parse(fs.readFileSync(wbFile, 'utf8')); chk('落盘结构正确', !!j.images && !Array.isArray(j.images) && Array.isArray(j.inbox), Object.keys(j.images).length + ' 张'); }

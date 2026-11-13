@@ -126,13 +126,13 @@ _scripts/build-library.mjs   扫描 漫画/ + 识别(标签/作者/角色/分级
 ## 开发方式
 
 ```powershell
-cd 'D:\gong zuo qu\漫画书库重构v0'
+cd '<仓库根>'
 
 # 改 src/ 里的界面代码 -> 重启窗口即可, 不用构建
 node _scripts\jm\app-start.mjs --restart
 
 # 改了书库数据(加书/删书/改标签) -> 重算数据
-node _scripts\build-library.mjs --lib "D:\gong zuo qu\漫画书库重构v0"
+node _scripts\build-library.mjs --lib "<仓库根>"
 ```
 
 ## 抽取方法（每抽一块都照这个走）
@@ -151,7 +151,7 @@ node _scripts\build-library.mjs --lib "D:\gong zuo qu\漫画书库重构v0"
 **一键跑全套（改完必须跑这个）**
 
 ```powershell
-cd 'D:\gong zuo qu\漫画书库重构v0'
+cd '<仓库根>'
 node _scripts\jm\verify-all.mjs
 ```
 
@@ -271,7 +271,7 @@ node _scripts\jm\make-fixture.mjs --remove
 ## 打包
 
 ```powershell
-cd 'D:\gong zuo qu\漫画书库重构v0\_app'
+cd '<仓库根>\_app'
 .\node_modules\.bin\electron-builder.cmd --win
 ```
 

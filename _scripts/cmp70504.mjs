@@ -1,5 +1,5 @@
 import fs from "node:fs";
-const P = "D:/gong zuo qu/漫画书库/";
+const P = "<书库根>/";
 function look(file, label) {
   let t;
   try { t = fs.readFileSync(file, "utf8").split(String.fromCharCode(13)).join(""); } catch (e) { console.log(label + ": 读不到"); return; }

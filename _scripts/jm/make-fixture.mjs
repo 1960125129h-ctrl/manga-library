@@ -14,7 +14,7 @@ const LIB = path.resolve(WORK, '..', '..');
 const CAT = path.join(LIB, '漫画');
 const BOOK = path.join(CAT, '测试用书');
 const BOOK2 = path.join(CAT, '测试用书2');   // 第二本: 多选/批量操作需要库里不止一本书
-const SRC_LIB = 'D:/gong zuo qu/漫画书库/漫画';   // 借图源(正式库), 只读不改
+const SRC_LIB = '<书库根>/漫画';   // 借图源(正式库), 只读不改
 
 if (process.argv.includes('--remove')) {
   for (const b of [BOOK, BOOK2]) { fs.rmSync(b, { recursive: true, force: true }); console.log('已删除: ' + b); }

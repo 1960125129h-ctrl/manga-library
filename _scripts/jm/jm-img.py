@@ -13,7 +13,7 @@ jm-img.py —— 禁漫图片直取（完全不依赖 Cloudflare / 浏览器 / �
 用法：
   python _scripts\jm\jm-img.py 1452133 1452134 1452135 --book "尼古喵喵"
   python _scripts\jm\jm-img.py 1452133 --book "书名" --start 7 --workers 16
-  python _scripts\jm\jm-img.py 1452133 --lib "D:\gong zuo qu\漫画书库" --book "x" --stitch
+  python _scripts\jm\jm-img.py 1452133 --lib "<书库根>" --book "x" --stitch
 
 输出：<lib>\漫画\<book>\第NN話\00001.webp …；末尾一行 __JSON__{...}
 """

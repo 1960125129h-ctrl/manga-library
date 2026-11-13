@@ -1,5 +1,5 @@
 const fs = await import('node:fs');
-const PORT = parseInt(fs.readFileSync('D:/gong zuo qu/漫画书库/_scripts/jm/.port', 'utf8').trim(), 10);
+const PORT = parseInt(fs.readFileSync('<书库根>/_scripts/jm/.port', 'utf8').trim(), 10);
 const list = await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json();
 const t = list.find((x) => x.type === 'page' && /%E4%B9%A6%E5%BA%93\.html/.test(x.url));
 if (!t) { console.log('【没有书库页面】'); process.exit(1); }

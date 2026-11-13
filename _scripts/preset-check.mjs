@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 const APP = 'F:/DSH/DSH Desktop/resources/app.asar.unpacked/';
 const mod = await import(pathToFileURL(APP + 'node_modules/@deepseek-ai/dsh-agent-presets/lib/index.js').href);
 const roots = [
-  { path: 'C:/Users/终楠/.dsh/.agent-presets', trust: 'user' },
+  { path: (process.env.USERPROFILE || '') + '/.dsh/.agent-presets', trust: 'user' },
   { path: APP + 'node_modules/@deepseek-ai/dsh-agent-presets/presets', trust: 'system' },
 ];
 const list = await mod.discoverPresets(roots, pathToFileURL(APP));

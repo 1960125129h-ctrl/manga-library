@@ -5,7 +5,7 @@
 
 ## 0. 一句话总览
 
-- 书库根：D:\gong zuo qu\漫画书库（下称 LIB）
+- 书库根：<书库根>（下称 LIB）
 - 漫画都在 LIB\漫画\<书名>\第NN話\*.webp；书库根与书目录里不放任何图片。
 - 下载只走一条命令：node _scripts\jm\run-albums.mjs "<专辑链接>"
 - **轻量版（推荐先试这个）**：在后面加 `--img` —— 跳过「点免等待 / 验证码 OCR / 表单提交 / 收 zip / 解压」整条重链路，改图片 CDN 直取（实测单话 1.7~2.9 秒，无浏览器也能跑）。原理、实测数据、踩坑见 `docs\资源获取-更优路径.md`
@@ -38,16 +38,16 @@
 
 ## 2. 常用命令
 
-cd 'D:\gong zuo qu\漫画书库'
+cd '<书库根>'
 
 node _scripts\jm\run-albums.mjs "<专辑链接>"        # 下载+入库（已入库会自动跳过）
 node _scripts\jm\import-zips.mjs                     # 手动包入库（扫 _zips）
-node _scripts\jm\import-zips.mjs --dir "C:\Users\终楠\Downloads"
+node _scripts\jm\import-zips.mjs --dir "%USERPROFILE%\Downloads"
 node _scripts\jm\import-zips.mjs --probe 1452133     # 只反查书名/话号
-node _scripts\build-library.mjs --lib "D:\gong zuo qu\漫画书库"   # 重建书库
+node _scripts\build-library.mjs --lib "<书库根>"   # 重建书库
 python _scripts\jm\stitch-pages.py "<LIB>\漫画\<书名>\第01話" [--dry]  # 切页拼合+像素校验
 
-Python：C:\Users\终楠\AppData\Local\Programs\Python\Python311\python.exe（EasyOCR 1.7.2）。
+Python：%USERPROFILE%\AppData\Local\Programs\Python\Python311\python.exe（EasyOCR 1.7.2）。
 
 ## 3. 下载全流程（run-albums.mjs 内部 9 步）
 
@@ -88,7 +88,7 @@ Python：C:\Users\终楠\AppData\Local\Programs\Python\Python311\python.exe（Ea
 ## 5. 验证码 OCR（ocr_server.py）
 
 - 常驻进程：stdin 读图片路径，stdout 打 RESULT {"cands":[...],"detail":[...]}；模型只加载一次（省掉每次 20 秒）。
-- 模型：本机 EasyOCR，C:\Users\终楠\.EasyOCR\model\（craft_mlt_25k.pth + zh_sim_g2.pth）。只有中文模型，别用 en（会报缺文件）。
+- 模型：本机 EasyOCR，%USERPROFILE%\.EasyOCR\model\（craft_mlt_25k.pth + zh_sim_g2.pth）。只有中文模型，别用 en（会报缺文件）。
 - 7 个预处理变体：原图、3×/4× 放大+Otsu、放大+高斯+Otsu、反相二值化。
 - 每个变体 allowlist 0123456789+-x×*÷= → 正则解析数字±数字 → ≥3 个变体一致才收工（2 个容易一起错）→ 按命中次数+置信度排序出候选。
 - 中文路径会让 cv2.imread 返回 None，所以要读字节再喂给 EasyOCR。

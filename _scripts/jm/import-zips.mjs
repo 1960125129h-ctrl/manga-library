@@ -2,7 +2,7 @@
 // 手动下载的 zip 导入器: 只靠文件名里的 <photo_id> 反查书名/话号, 再解压入库
 // 用法:
 //   node import-zips.mjs                 # 扫描 _zips 目录并全部导入
-//   node import-zips.mjs --dir "C:\Users\终楠\Downloads"
+//   node import-zips.mjs --dir "%USERPROFILE%\Downloads"
 //   node import-zips.mjs --probe 1452133 # 只查这个 id 的书名与话号(不导入)
 import fs from 'node:fs';
 import { requirePython } from '../lib/python.mjs';

@@ -1,4 +1,4 @@
-// 跨站搜索: node _scripts\sites\search.mjs --keyword "琉璃龙龙" [--sites zaimanhua,komiic] [--lib "D:\\gong zuo qu\\漫画书库"]
+// 跨站搜索: node _scripts\sites\search.mjs --keyword "琉璃龙龙" [--sites zaimanhua,komiic] [--lib "<书库根>"]
 // 输出 @@RESULT@@{...}: 按"同一个作品"聚合, 每组列出各站结果; 顺带标记是否已在库中
 import path from 'node:path';
 import fs from 'node:fs';

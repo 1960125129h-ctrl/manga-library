@@ -68,7 +68,7 @@ if (!ids.length) {
 }
 
 function findPython() {
-  const cands = [process.env.PYTHON, 'C:\\Users\\终楠\\AppData\\Local\\Programs\\Python\\Python311\\python.exe', 'python', 'python3'];
+  const cands = [process.env.PYTHON, (process.env.LOCALAPPDATA || '') + '\\Programs\\Python\\Python311\\python.exe', 'python', 'python3'];
   for (const p of cands) {
     if (!p) continue;
     const r = spawnSync(p, ['-c', 'import jmcomic, PIL; print(1)'], { encoding: 'utf8', timeout: 30000 });
