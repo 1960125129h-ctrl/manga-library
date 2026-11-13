@@ -63,116 +63,59 @@ export function openThemeDialog() {
     };
     box.appendChild(rg); box.appendChild(val);
 
-    // ---- 2.0 施工项 A：画质锐化（SVG 实时，不改原图） ----
-    var lbEnh = document.createElement("label"); lbEnh.textContent = "画质锐化（实时滤镜，不动原图）"; box.appendChild(lbEnh);
-    var subEnh = document.createElement("div"); subEnh.className = "sub";
-    subEnh.textContent = "锐化会放大边缘对比：轻=高清电子版、中=压缩网图、强=扫描糊图。过强会在白底气泡的文字周围出灰边，网点纸会龟裂。";
-    box.appendChild(subEnh);
-    var swEnh = document.createElement("div"); swEnh.id = "enhswatch";
-    swEnh.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px";
-    box.appendChild(swEnh);
-    // 档位写清用途 + 前面标序号（数字键 1~5 可以直接选）
-    var ENH_OPTS = [
-      ["off",    "关闭",        "不处理，看原图"],
-      ["soft",   "轻微",        "电子版原图，只想提一点"],
-      ["medium", "标准",        "压缩过的网图（默认推荐）"],
-      ["strong", "强力",        "扫描件、发糊的旧书"],
-      ["line",   "线稿增强",    "黑白稿去灰提黑，纸底顶白"]
+    // ---- 图片调色：13 条滑杆，两列排布（替代原来的"5 档锐化 + 一键风格"）----
+    var fx = S.imgfx || {};
+    var FX_GROUPS = [
+      ["基础", [["bright", "亮度", 0, 200, 100], ["contrast", "对比度", 0, 200, 100], ["saturate", "饱和度", 0, 200, 100], ["warmth", "色温", -100, 100, 0], ["tint", "色调", -100, 100, 0]]],
+      ["细节", [["sharpen", "锐化", 0, 100, 0], ["clarity", "清晰度", 0, 100, 0], ["denoise", "降噪", 0, 100, 0]]],
+      ["明暗", [["highlights", "高光", -100, 100, 0], ["shadows", "阴影", -100, 100, 0], ["curve", "曲线", -100, 100, 0]]],
+      ["风格", [["fade", "褪色", 0, 100, 0], ["grain", "颗粒", 0, 100, 0]]]
     ];
-    var setEnh = function (key, btn) {
-      S.enhance = key;
-      applyImgFilter(); saveReaderDefaults();
-      Array.prototype.forEach.call(swEnh.children, function (x) { x.className = (x === btn) ? "on" : ""; });
+    var fxSaveTimer = 0;
+    var fxSave = function () {
+      if (fxSaveTimer) clearTimeout(fxSaveTimer);
+      fxSaveTimer = setTimeout(function () { fxSaveTimer = 0; saveReaderDefaults(); }, 400);
     };
-    ENH_OPTS.forEach(function (t, i) {
-      var be = document.createElement("button");
-      be.className = (S.enhance === t[0] || (!S.enhance && t[0] === "off")) ? "on" : "";
-      be.title = (i + 1) + " · " + t[2] + "（键盘按 " + (i + 1) + " 直接切）";
-      be.setAttribute("data-enh", t[0]);
-      be.textContent = t[1];
-      be.style.cssText = "padding:4px 7px;font-size:12px;line-height:1.2";
-      be.onclick = function () { setEnh(t[0], be); };
-      swEnh.appendChild(be);
+    var setFx = function (k, v) {
+      S.imgfx = S.imgfx || {};
+      S.imgfx[k] = v;
+      applyImgFilter(); fxSave();
+    };
+    FX_GROUPS.forEach(function (g) {
+      var h = document.createElement("div");
+      h.textContent = g[0];
+      h.style.cssText = "margin:10px 0 4px;font-size:12px;font-weight:600;opacity:.75;letter-spacing:.5px";
+      box.appendChild(h);
+      var wrap = document.createElement("div");
+      wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px 14px";
+      box.appendChild(wrap);
+      g[1].forEach(function (it) {
+        var k = it[0], name = it[1], lo = it[2], hi = it[3], dv = it[4];
+        var cell = document.createElement("div");
+        cell.style.cssText = "flex:1 1 calc(50% - 14px);min-width:150px;display:flex;align-items:center;gap:6px";
+        var lb = document.createElement("span");
+        lb.textContent = name;
+        lb.style.cssText = "font-size:12px;opacity:.85;white-space:nowrap;width:44px";
+        var rg = document.createElement("input");
+        rg.type = "range"; rg.min = String(lo); rg.max = String(hi); rg.step = "1";
+        rg.value = String((typeof fx[k] === "number") ? fx[k] : dv);
+        rg.style.cssText = "flex:1 1 auto;min-width:50px";
+        rg.title = name + "：双击滑杆恢复默认 " + dv;
+        var vv = document.createElement("span");
+        vv.className = "stat";
+        vv.style.cssText = "font-size:12px;min-width:34px;text-align:right";
+        vv.textContent = rg.value;
+        rg.oninput = function () { vv.textContent = rg.value; setFx(k, Number(rg.value)); };
+        rg.ondblclick = function () { rg.value = String(dv); vv.textContent = String(dv); setFx(k, dv); };
+        cell.appendChild(lb); cell.appendChild(rg); cell.appendChild(vv);
+        wrap.appendChild(cell);
+      });
     });
-    // 键盘：对话框开着时按 1~5 直接切档，不用去点小按钮
-    if (window.__enhKeyHandler) document.removeEventListener("keydown", window.__enhKeyHandler, true);
-    window.__enhKeyHandler = function (ev) {
-      var m = document.getElementById("modal");
-      if (!m || !m.classList.contains("on")) return;          // 对话框已关
-      var idx = ["1", "2", "3", "4", "5"].indexOf(ev.key);
-      if (idx < 0) return;
-      var btn = swEnh.children[idx];
-      if (btn) { btn.click(); ev.preventDefault(); }
-    };
-    document.addEventListener("keydown", window.__enhKeyHandler, true);
-
-    // 对比度 + 饱和度并排一行，省纵向空间
-    var rowCS = document.createElement("div");
-    rowCS.style.cssText = "display:flex;gap:16px;align-items:center;margin:8px 0 4px";
-    box.appendChild(rowCS);
-    var mkSlider = function (host, text, min, max, cur, apply, save) {
-      var cell = document.createElement("div");
-      cell.style.cssText = "flex:1 1 0;min-width:0;display:flex;align-items:center;gap:6px";
-      var lb = document.createElement("span"); lb.textContent = text;
-      lb.style.cssText = "font-size:12px;opacity:.85;white-space:nowrap";
-      var rg = document.createElement("input"); rg.type = "range"; rg.min = String(min); rg.max = String(max); rg.step = "1";
-      rg.value = String(Math.round(cur * 100));
-      rg.style.cssText = "flex:1 1 auto;min-width:40px";
-      var vv = document.createElement("span"); vv.className = "stat";
-      vv.style.cssText = "font-size:12px;min-width:38px;text-align:right";
-      vv.textContent = rg.value + "%";
-      var tm = 0;
-      rg.oninput = function () {
-        vv.textContent = rg.value + "%";
-        apply(Number(rg.value) / 100);
-        if (tm) clearTimeout(tm);
-        tm = setTimeout(function () { tm = 0; save(); }, 400);
-      };
-      cell.appendChild(lb); cell.appendChild(rg); cell.appendChild(vv);
-      host.appendChild(cell);
-      return { rg: rg, vv: vv };
-    };
-    var ctS = mkSlider(rowCS, "对比度", 80, 140, (typeof S.contrast === "number") ? S.contrast : 1,
-      function (v) { S.contrast = v; applyImgFilter(); },
-      function () { saveReaderDefaults(); });
-    var saS = mkSlider(rowCS, "饱和度", 50, 180, (typeof S.saturate === "number") ? S.saturate : 1,
-      function (v) { S.saturate = v; applyImgFilter(); },
-      function () { saveReaderDefaults(); });
-
-    // ---- 一键风格：把"锐化 + 对比 + 饱和"打包成几个常用组合 ----
-    var lbSty = document.createElement("label"); lbSty.textContent = "一键风格"; box.appendChild(lbSty);
-    var subSty = document.createElement("div"); subSty.className = "sub";
-    subSty.textContent = "一次把上面三个参数配好；点完还能再单独微调。";
-    box.appendChild(subSty);
-    var swSty = document.createElement("div");
-    swSty.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px";
-    box.appendChild(swSty);
-    var STYLES = [
-      ["原图", "不做任何处理", { enhance: "off", contrast: 1, saturate: 1 }],
-      ["高清", "网图提亮提脆（默认推荐）", { enhance: "medium", contrast: 1.06, saturate: 1.08 }],
-      ["柔和", "降对比降饱和，久看不累", { enhance: "soft", contrast: 0.96, saturate: 0.9 }],
-      ["浓烈", "对比饱和一起拉，彩页更艳", { enhance: "medium", contrast: 1.12, saturate: 1.22 }],
-      ["线稿", "黑白稿去灰提黑", { enhance: "line", contrast: 1, saturate: 0.88 }]
-    ];
-    STYLES.forEach(function (s) {
-      var b = document.createElement("button");
-      b.textContent = s[0];
-      b.title = s[1];
-      b.style.cssText = "padding:4px 9px;font-size:12px";
-      b.onclick = function () {
-        S.enhance = s[2].enhance;
-        S.contrast = s[2].contrast;
-        S.saturate = s[2].saturate;
-        // 同步界面上的档位与两根滑杆
-        Array.prototype.forEach.call(swEnh.children, function (x) {
-          x.className = (x.getAttribute("data-enh") === s[2].enhance) ? "on" : "";
-        });
-        ctS.rg.value = String(Math.round(s[2].contrast * 100)); ctS.vv.textContent = ctS.rg.value + "%";
-        saS.rg.value = String(Math.round(s[2].saturate * 100)); saS.vv.textContent = saS.rg.value + "%";
-        applyImgFilter(); saveReaderDefaults();
-      };
-      swSty.appendChild(b);
-    });
+    var tip = document.createElement("div");
+    tip.className = "sub";
+    tip.style.cssText = "margin:10px 0 2px;opacity:.6;font-size:11.5px";
+    tip.textContent = "双击任意滑杆恢复默认值。降噪会让画面变软；颗粒/清晰度较重，长条模式页数多时可能掉帧。";
+    box.appendChild(tip);
 
     var foot = document.createElement("div"); foot.id = "mfoot"; box.appendChild(foot);
     var done = document.createElement("button"); done.className = "btn"; done.textContent = "完成";

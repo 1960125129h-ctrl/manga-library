@@ -773,7 +773,22 @@ ipcMain.handle('state:all', async () => ({
 // 防止半成品(比如 images 变成数组)被落盘 —— 那个文件丢了就等于参考图全丢。
 /* ================= 阅读器显示偏好(全局) ================= */
 const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright', 'scale',
-                   'enhance', 'contrast', 'saturate', 'preload', 'spreadWide', 'gap'];
+                   'enhance', 'contrast', 'saturate', 'preload', 'spreadWide', 'gap', 'imgfx'];
+const FX_KEYS = { bright: [0, 200, 100], contrast: [0, 200, 100], saturate: [0, 200, 100],
+                  warmth: [-100, 100, 0], tint: [-100, 100, 0],
+                  highlights: [-100, 100, 0], shadows: [-100, 100, 0], curve: [-100, 100, 0],
+                  denoise: [0, 100, 0], clarity: [0, 100, 0], fade: [0, 100, 0],
+                  grain: [0, 100, 0], sharpen: [0, 100, 0] };
+function sanitizeImgFx(src) {
+  const s = (src && typeof src === 'object') ? src : {};
+  const o = {};
+  for (const k in FX_KEYS) {
+    const lim = FX_KEYS[k];
+    const v = Number(s[k]);
+    o[k] = (isFinite(v) && v >= lim[0] && v <= lim[1]) ? Math.round(v) : lim[2];
+  }
+  return o;
+}
 const PREF_MODES = ['single', 'double', 'scroll', 'hscroll'];
 const PREF_FITS = ['width', 'height', 'page', 'original'];
 const PREF_THEMES = ['dark', 'light', 'eye', 'paper'];
@@ -803,6 +818,7 @@ function sanitizePrefs(src) {
   o.saturate = (isFinite(sa) && sa >= 0.5 && sa <= 1.8) ? Math.round(sa * 100) / 100 : 1;
   const pl = Number(s.preload);
   o.preload = (isFinite(pl) && pl >= 1 && pl <= 8) ? Math.round(pl) : 4;
+  o.imgfx = sanitizeImgFx(s.imgfx);
   o.spreadWide = ['auto', 'on', 'off'].indexOf(s.spreadWide) >= 0 ? s.spreadWide : 'auto';
   const gp = Number(s.gap);
   o.gap = (isFinite(gp) && gp >= 0 && gp <= 48) ? Math.round(gp) : 8;

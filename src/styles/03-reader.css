@@ -205,3 +205,12 @@ body.bar-autohide #bar.show{transform:translateY(0)}
 #stage.mode-hscroll::-webkit-scrollbar-thumb:hover,
 #stage.mode-hspread::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,.55)}
 #stage.mode-hscroll, #stage.mode-hspread{scrollbar-width:thin}
+/* 颗粒：在画面上叠一层噪点纹理，透明度由 --fx-grain 控制（0~1）。
+   用 SVG feTurbulence 内联成 data-uri，不额外增加请求。 */
+#stage{position:relative}
+#stage::after{
+  content:"";position:absolute;inset:0;pointer-events:none;z-index:3;
+  opacity:var(--fx-grain,0);mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='0.55'/></svg>");
+  background-repeat:repeat;
+}

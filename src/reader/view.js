@@ -37,20 +37,94 @@ export function applyReaderTheme() {
    注意：**不动 --r-dim**。那层遮罩管的是"画面环境暗度"（背景一起暗），
    删掉会回归旧观感；这里的 filter 只管图片本身。
    顺序固定：先锐化，再亮度，最后对比 —— 反过来会把锐化出来的高光一起压掉。 */
+/* ---------- 图片调色：一条 CSS filter 链 ----------
+   参数全在 S.imgfx 里（0 表示"不动"），滑杆改值 -> 这里重拼 -> 页面立刻变。
+   能用原生 CSS 的走 CSS（快）；色温/色调/高光/阴影/曲线 走 SVG（#fx-tone）；
+   锐化走动态卷积核（#fx-sharpen）；颗粒是叠一层噪点纹理（CSS 变量控制透明度）。 */
+export function fxDef() {
+  return { bright: 100, contrast: 100, saturate: 100, warmth: 0, tint: 0,
+           highlights: 0, shadows: 0, curve: 0, denoise: 0, clarity: 0,
+           fade: 0, grain: 0, sharpen: 0 };
+}
+function fxNum(k, d) {
+  var v = (S.imgfx && typeof S.imgfx[k] === "number") ? S.imgfx[k] : d;
+  return isFinite(v) ? v : d;
+}
+/* 高光/阴影/曲线 -> feFunc tableValues（11 个控制点，浏览器线性插值） */
+function toneTable(hi, sh, cv) {
+  var out = [];
+  for (var i = 0; i <= 10; i++) {
+    var x = i / 10, y = x;
+    if (x > 0.5) y += (hi / 100) * 0.55 * (x - 0.5) * 2 * (1.4 - x);      // 高光段
+    if (x < 0.5) y += (sh / 100) * 0.55 * (0.5 - x) * 2 * (x + 0.4);      // 阴影段
+    y += (cv / 100) * (x - 0.5) * Math.abs(x - 0.5) * 2.2;                // S 曲线
+    out.push(Math.max(0, Math.min(1, y)).toFixed(3));
+  }
+  return out.join(" ");
+}
 export function applyImgFilter() {
   var parts = [];
-  var en = S.enhance || "off";
-  if (en === "soft" || en === "medium" || en === "strong") parts.push("url(#enh-" + en + ")");
-  // 线稿增强：黑白稿/扫描件那种"纸底发灰、墨不黑"的，靠锐化解决不了。
-  // 用轻度锐化 + 拉开对比 + 略微提亮，把灰底顶白、把墨线压黑（不需要外部模型）。
-  else if (en === "line") { parts.push("url(#enh-soft)"); parts.push("contrast(1.32)"); parts.push("brightness(1.06)"); }
-  var b = (typeof S.bright === "number") ? S.bright : 1;
-  if (b < 1) parts.push("brightness(" + Math.max(0.2, Math.round(b * 100) / 100) + ")");
-  var c = (typeof S.contrast === "number") ? S.contrast : 1;
-  if (c !== 1) parts.push("contrast(" + c + ")");
-  var sa = (typeof S.saturate === "number") ? S.saturate : 1;
-  if (Math.abs(sa - 1) > 0.001) parts.push("saturate(" + sa + ")");
-  try { document.documentElement.style.setProperty("--r-img-filter", parts.length ? parts.join(" ") : "none"); } catch (e) {}
+  var br = fxNum("bright", 100), ct = fxNum("contrast", 100), sa = fxNum("saturate", 100);
+  var wa = fxNum("warmth", 0), ti = fxNum("tint", 0);
+  var hi = fxNum("highlights", 0), sh = fxNum("shadows", 0), cv = fxNum("curve", 0);
+  var dn = fxNum("denoise", 0), cl = fxNum("clarity", 0), fd = fxNum("fade", 0);
+  var gr = fxNum("grain", 0), sk = fxNum("sharpen", 0);
+
+  if (br !== 100) parts.push("brightness(" + (br / 100).toFixed(3) + ")");
+  if (ct !== 100) parts.push("contrast(" + (ct / 100).toFixed(3) + ")");
+  if (sa !== 100) parts.push("saturate(" + (sa / 100).toFixed(3) + ")");
+  if (dn > 0) parts.push("blur(" + (dn / 100 * 0.9).toFixed(2) + "px)");          // 降噪=轻微糊
+  if (fd > 0) { parts.push("sepia(" + (fd / 100 * 0.35).toFixed(2) + ")"); parts.push("contrast(" + (1 - fd / 100 * 0.12).toFixed(3) + ")"); }
+
+  // 色温 / 色调（feColorMatrix：暖=红升蓝降，色调=绿升品红降）
+  var wm = wa / 100, tm = ti / 100;
+  if (wm !== 0 || tm !== 0) {
+    try {
+      var cm = document.getElementById("fx-cm");
+      if (cm) {
+        var r = (1 + wm * 0.10).toFixed(3), g = (1 + tm * 0.08).toFixed(3), b = (1 - wm * 0.10).toFixed(3);
+        cm.setAttribute("values",
+          r + " 0 0 0 0  0 " + g + " 0 0 0  0 0 " + b + " 0 0  0 0 0 1 0");
+      }
+      parts.push("url(#fx-tone)");
+    } catch (e) {}
+  }
+  // 高光 / 阴影 / 曲线（feFunc tableValues）
+  if (hi !== 0 || sh !== 0 || cv !== 0) {
+    try {
+      var tb = toneTable(hi, sh, cv);
+      ["fx-cr", "fx-cg", "fx-cb"].forEach(function (id) {
+        var f = document.getElementById(id);
+        if (f) f.setAttribute("tableValues", tb);
+      });
+      if (parts.indexOf("url(#fx-tone)") < 0) parts.push("url(#fx-tone)");
+    } catch (e) {}
+  }
+  // 锐化（连续）：卷积核 [0,-a,0; -a,1+4a,-a; 0,-a,0]，a 从 0 到 0.6
+  var a = Math.min(0.6, sk / 100 * 0.6);
+  if (a > 0.001) {
+    try {
+      var km = document.getElementById("fx-sharp-k");
+      if (km) km.setAttribute("kernelMatrix", "0 " + (-a).toFixed(3) + " 0 " + (-a).toFixed(3) + " " + (1 + 4 * a).toFixed(3) + " " + (-a).toFixed(3) + " 0 " + (-a).toFixed(3) + " 0");
+      parts.push("url(#fx-sharpen)");
+    } catch (e) {}
+  }
+  // 清晰度：中等半径的局部对比（借 unsharp 的 strong 档，按量调强度）
+  if (cl > 0.5) {
+    try {
+      var ub = document.getElementById("enh-strong-b");
+      var uc = document.getElementById("enh-strong-c");
+      var amt = cl / 100 * 0.9;
+      if (ub) ub.setAttribute("stdDeviation", (0.8 + cl / 100 * 1.6).toFixed(2));
+      if (uc) { uc.setAttribute("k2", (1 + amt).toFixed(3)); uc.setAttribute("k3", (-amt).toFixed(3)); }
+      parts.push("url(#enh-strong)");
+    } catch (e) {}
+  }
+
+  try {
+    document.documentElement.style.setProperty("--r-img-filter", parts.length ? parts.join(" ") : "none");
+    document.documentElement.style.setProperty("--fx-grain", String(gr / 100));   // 颗粒透明度
+  } catch (e) {}
 }
 
 /* 大图守门：单张超过 12MP 时 SVG 卷积在部分 Chromium 构建上会回落 CPU 算，

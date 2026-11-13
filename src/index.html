@@ -147,8 +147,25 @@
       <feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="0 -1 0 -1 5 -1 0 -1 0"/>
     </filter>
     <filter id="enh-strong" x="-2%" y="-2%" width="104%" height="104%" color-interpolation-filters="sRGB">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="1.1" result="b"/>
-      <feComposite in="SourceGraphic" in2="b" operator="arithmetic" k1="0" k2="1.8" k3="-0.8" k4="0"/>
+      <feGaussianBlur id="enh-strong-b" in="SourceGraphic" stdDeviation="1.1" result="b"/>
+      <feComposite id="enh-strong-c" in="SourceGraphic" in2="b" operator="arithmetic" k1="0" k2="1.8" k3="-0.8" k4="0"/>
+    </filter>
+
+    <!-- 连续锐化：kernel 由 JS 按"锐化量"动态算 -->
+    <filter id="fx-sharpen" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feConvolveMatrix id="fx-sharp-k" order="3" preserveAlpha="true"
+        kernelMatrix="0 0 0 0 1 0 0 0 0"/>
+    </filter>
+
+    <!-- 色调：高光/阴影/曲线走 feComponentTransfer 的分通道曲线；色温/色调走 feColorMatrix -->
+    <filter id="fx-tone" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feComponentTransfer id="fx-ct">
+        <feFuncR id="fx-cr" type="table" tableValues="0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1"/>
+        <feFuncG id="fx-cg" type="table" tableValues="0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1"/>
+        <feFuncB id="fx-cb" type="table" tableValues="0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1"/>
+      </feComponentTransfer>
+      <feColorMatrix id="fx-cm" in="fx-ct" type="matrix"
+        values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
     </filter>
   </defs>
 </svg>

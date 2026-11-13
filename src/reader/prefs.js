@@ -13,7 +13,22 @@ import { S } from '../app/state.js';
 const API = '/api/reader-prefs';
 const LKEY = 'readerPrefs';          // 本机镜像: 启动瞬间先按它渲染, 再异步跟文件对齐
 export const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright', 'scale',
-                        'enhance', 'contrast', 'saturate', 'preload', 'spreadWide', 'gap'];
+                        'enhance', 'contrast', 'saturate', 'preload', 'spreadWide', 'gap', 'imgfx'];
+const FX_KEYS = { bright: [0, 200, 100], contrast: [0, 200, 100], saturate: [0, 200, 100],
+                  warmth: [-100, 100, 0], tint: [-100, 100, 0],
+                  highlights: [-100, 100, 0], shadows: [-100, 100, 0], curve: [-100, 100, 0],
+                  denoise: [0, 100, 0], clarity: [0, 100, 0], fade: [0, 100, 0],
+                  grain: [0, 100, 0], sharpen: [0, 100, 0] };
+export function sanitizeImgFx(src) {
+  const s = (src && typeof src === 'object') ? src : {};
+  const o = {};
+  for (const k in FX_KEYS) {
+    const [lo, hi, dv] = FX_KEYS[k];
+    const v = Number(s[k]);
+    o[k] = (isFinite(v) && v >= lo && v <= hi) ? Math.round(v) : dv;
+  }
+  return o;
+}
 const MODES = ['single', 'double', 'scroll', 'hscroll'];
 const FITS = ['width', 'height', 'page', 'original'];
 const THEMES = ['dark', 'light', 'eye', 'paper'];
@@ -29,7 +44,8 @@ export function defaults() {
   return { mode: 'single', fit: 'height', dir: 'ltr', cover: false,
            sidebar: !coarse(), thumbs: false, wheel: true, rev: false, prevRev: false,
            theme: 'dark', bright: 1, scale: 1,
-           enhance: 'off', contrast: 1, saturate: 1, preload: 4, spreadWide: 'auto', gap: 8 };
+           enhance: 'off', contrast: 1, saturate: 1, preload: 4, spreadWide: 'auto', gap: 8,
+           imgfx: sanitizeImgFx(null) };
 }
 
 // 只认列出来的键, 并且逐个校验类型/取值 —— 文件坏了或手改错了也不会把界面搞崩
@@ -59,6 +75,7 @@ export function sanitize(src) {
   var pl = Number(s.preload);
   o.preload = (isFinite(pl) && pl >= 1 && pl <= 8) ? Math.round(pl) : d.preload;
   // 2.0 施工项 B：横向条带的跨页判定与页间距
+  o.imgfx = sanitizeImgFx(s.imgfx);
   o.spreadWide = ['auto', 'on', 'off'].indexOf(s.spreadWide) >= 0 ? s.spreadWide : d.spreadWide;
   var gp = Number(s.gap);
   o.gap = (isFinite(gp) && gp >= 0 && gp <= 48) ? Math.round(gp) : d.gap;
@@ -82,6 +99,7 @@ export function applyToState(p) {
   S.theme = v.theme; S.bright = v.bright;
   S.scale = v.scale;
   S.enhance = v.enhance; S.contrast = v.contrast; S.saturate = v.saturate; S.preload = v.preload;
+  S.imgfx = v.imgfx;
   S.spreadWide = v.spreadWide; S.gap = v.gap;
   try { document.documentElement.style.setProperty('--hgap', String(v.gap) + 'px'); } catch (err) {}
   // 立刻把比例写到 CSS 变量和工具栏文字上：
