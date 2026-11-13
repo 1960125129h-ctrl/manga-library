@@ -9,7 +9,7 @@ import { isBigPlat } from '../library/store.js';
 import { chStep, renderChapters } from '../reader/panel.js';
 import { render, stripJump, animateScrollX, maybePromoteNext } from '../reader/render.js';
 import { comic } from '../reader/state.js';
-import { applyReaderTheme, spreads, spreadIndex, saveReaderDefaults, applyImgFilter } from '../reader/view.js';
+import { applyReaderTheme, spreads, spreadIndex, saveReaderDefaults, applyImgFilter, fxDef } from '../reader/view.js';
 import { pageList, chLabel, nOf } from '../shared/chapter.js';
 import { enc } from '../shared/text.js';
 import { showModal, closeModal, hint } from '../shared/ui.js';
@@ -71,6 +71,7 @@ export function openThemeDialog() {
       ["明暗", [["highlights", "高光", -100, 100, 0], ["shadows", "阴影", -100, 100, 0], ["curve", "曲线", -100, 100, 0]]],
       ["风格", [["fade", "褪色", 0, 100, 0], ["grain", "颗粒", 0, 100, 0]]]
     ];
+    var fxSliders = {};        // k -> { rg, vv, dv }，"恢复默认"要同步它们
     var fxSaveTimer = 0;
     var fxSave = function () {
       if (fxSaveTimer) clearTimeout(fxSaveTimer);
@@ -107,15 +108,35 @@ export function openThemeDialog() {
         vv.textContent = rg.value;
         rg.oninput = function () { vv.textContent = rg.value; setFx(k, Number(rg.value)); };
         rg.ondblclick = function () { rg.value = String(dv); vv.textContent = String(dv); setFx(k, dv); };
+        fxSliders[k] = { rg: rg, vv: vv, dv: dv };
         cell.appendChild(lb); cell.appendChild(rg); cell.appendChild(vv);
         wrap.appendChild(cell);
       });
     });
-    var tip = document.createElement("div");
+    var fxFootRow = document.createElement("div");
+    fxFootRow.style.cssText = "display:flex;align-items:center;gap:10px;margin:10px 0 2px";
+    var resetFx = document.createElement("button");
+    resetFx.className = "btn ghost";
+    resetFx.textContent = "恢复默认";
+    resetFx.title = "把上面 13 项全部恢复默认（亮度/对比/饱和 = 100%，其余 = 0）";
+    resetFx.onclick = function () {
+      S.imgfx = fxDef();
+      applyImgFilter();
+      Object.keys(fxSliders).forEach(function (k) {
+        var s = fxSliders[k];
+        s.rg.value = String(s.dv);
+        s.vv.textContent = String(s.dv);
+      });
+      saveReaderDefaults();
+      hint("调色已恢复默认");
+    };
+    fxFootRow.appendChild(resetFx);
+    var tip = document.createElement("span");
     tip.className = "sub";
-    tip.style.cssText = "margin:10px 0 2px;opacity:.6;font-size:11.5px";
-    tip.textContent = "双击任意滑杆恢复默认值。降噪会让画面变软；颗粒/清晰度较重，长条模式页数多时可能掉帧。";
-    box.appendChild(tip);
+    tip.style.cssText = "opacity:.6;font-size:11.5px";
+    tip.textContent = "双击任意滑杆 = 单项恢复默认";
+    fxFootRow.appendChild(tip);
+    box.appendChild(fxFootRow);
 
     var foot = document.createElement("div"); foot.id = "mfoot"; box.appendChild(foot);
     var done = document.createElement("button"); done.className = "btn"; done.textContent = "完成";
