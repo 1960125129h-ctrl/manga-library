@@ -46,13 +46,20 @@ for (const [a, b] of files) {
   const s = path.join(SRC, a), d = path.join(DST, b);
   try { if (fs.existsSync(s)) { fs.copyFileSync(s, d); copied++; } } catch (e) { if (String(e.message).indexOf('EBUSY') >= 0 || String(e.message).indexOf('busy') >= 0) locked = a; }
 }
+// 以前的写法是"复制不到就 quit(2)"，但 Edge 平时就开着，Cookies 一定被锁 ——
+// 结果用户点站名永远打不开，且错误只打在 stdout（main.js 用 stdio:'ignore' 全丢了）。
+// 现在改成：能复制就复制，复制不到就用上次的副本继续启动，最差是"未登录但页面能开"。
+const log = [];
 if (locked) {
-  console.log('[edge] 无法复制登录态: ' + locked + ' 被占用 —— 说明 Edge 正在运行。');
-  console.log('       请先完全关闭 Edge 窗口(任务栏右下角也要退), 再重跑本脚本一次。');
-  await quit(2);
+  log.push('登录态文件被占用(Edge 正在运行): ' + locked);
+  const hasOldCookies = (() => { try { return fs.existsSync(path.join(DST, prof, 'Network', 'Cookies')); } catch (e) { return false; } })();
+  log.push(hasOldCookies ? '改用上次同步的登录态副本' : '没有可用登录态，本次以未登录状态打开');
+  console.log('[edge] ' + log[log.length - 1]);
 }
 console.log('[edge] 已从 Edge 的 ' + prof + ' 复制登录态(' + copied + ' 个文件)');
 
+const LOGF = path.join(HERE, '..', '..', '_logs', 'edge-launch.log');
+try { fs.mkdirSync(path.dirname(LOGF), { recursive: true }); fs.appendFileSync(LOGF, '[' + new Date().toISOString() + '] ' + JSON.stringify({ port: PORT, prof, copied, locked: !!locked, notes: log }) + '\n'); } catch (e) {}
 const { cleanProfileCache } = await import('./profile-cache.mjs');
 cleanProfileCache(DST, { limitMB: 400 });   // 超过 400MB 先清一次缓存(只删缓存, 不动登录态)
 spawn(EDGE, [
