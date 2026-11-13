@@ -773,7 +773,7 @@ ipcMain.handle('state:all', async () => ({
 // 防止半成品(比如 images 变成数组)被落盘 —— 那个文件丢了就等于参考图全丢。
 /* ================= 阅读器显示偏好(全局) ================= */
 const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright', 'scale',
-                   'enhance', 'contrast', 'preload', 'spreadWide', 'gap'];
+                   'enhance', 'contrast', 'saturate', 'preload', 'spreadWide', 'gap'];
 const PREF_MODES = ['single', 'double', 'scroll', 'hscroll'];
 const PREF_FITS = ['width', 'height', 'page', 'original'];
 const PREF_THEMES = ['dark', 'light', 'eye', 'paper'];
@@ -799,6 +799,8 @@ function sanitizePrefs(src) {
   o.enhance = ['off', 'soft', 'medium', 'strong'].indexOf(s.enhance) >= 0 ? s.enhance : 'off';
   const ct = Number(s.contrast);
   o.contrast = (isFinite(ct) && ct >= 0.8 && ct <= 1.4) ? Math.round(ct * 100) / 100 : 1;
+  const sa = Number(s.saturate);
+  o.saturate = (isFinite(sa) && sa >= 0.5 && sa <= 1.8) ? Math.round(sa * 100) / 100 : 1;
   const pl = Number(s.preload);
   o.preload = (isFinite(pl) && pl >= 1 && pl <= 8) ? Math.round(pl) : 4;
   o.spreadWide = ['auto', 'on', 'off'].indexOf(s.spreadWide) >= 0 ? s.spreadWide : 'auto';

@@ -45,6 +45,8 @@ export function applyImgFilter() {
   if (b < 1) parts.push("brightness(" + Math.max(0.2, Math.round(b * 100) / 100) + ")");
   var c = (typeof S.contrast === "number") ? S.contrast : 1;
   if (c !== 1) parts.push("contrast(" + c + ")");
+  var sa = (typeof S.saturate === "number") ? S.saturate : 1;
+  if (Math.abs(sa - 1) > 0.001) parts.push("saturate(" + sa + ")");
   try { document.documentElement.style.setProperty("--r-img-filter", parts.length ? parts.join(" ") : "none"); } catch (e) {}
 }
 

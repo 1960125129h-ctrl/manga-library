@@ -94,6 +94,20 @@ export function openThemeDialog() {
     };
     box.appendChild(rgCt); box.appendChild(valCt);
 
+    // ---- 饱和度（滤镜三件套的第三件：锐化 + 对比 + 饱和）----
+    var lbSa = document.createElement("label"); lbSa.textContent = "饱和度"; box.appendChild(lbSa);
+    var rgSa = document.createElement("input"); rgSa.type = "range"; rgSa.min = "50"; rgSa.max = "180"; rgSa.step = "1";
+    rgSa.value = String(Math.round(((typeof S.saturate === "number") ? S.saturate : 1) * 100));
+    var valSa = document.createElement("div"); valSa.className = "stat"; valSa.textContent = rgSa.value + "%";
+    var saTimer = 0;
+    rgSa.oninput = function () {
+      S.saturate = Number(rgSa.value) / 100; valSa.textContent = rgSa.value + "%";
+      applyImgFilter();
+      if (saTimer) clearTimeout(saTimer);
+      saTimer = setTimeout(function () { saTimer = 0; saveReaderDefaults(); }, 400);
+    };
+    box.appendChild(rgSa); box.appendChild(valSa);
+
     var foot = document.createElement("div"); foot.id = "mfoot"; box.appendChild(foot);
     var done = document.createElement("button"); done.className = "btn"; done.textContent = "完成";
     done.onclick = closeModal; foot.appendChild(done);
