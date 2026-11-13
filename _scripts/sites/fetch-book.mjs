@@ -724,6 +724,8 @@ async function runTagBatch(tagUrl) {
           totalImgs += res.n; totalBytes += res.bi;
           if (res.n < imgs.length) say('  缺页 ' + (imgs.length - res.n) + ' 张');
         }
+        try { if (typeof adapter.clearCache === 'function') adapter.clearCache(g.url); } catch (e2) {}   // 下载成功：这条缓存没用了
+
         entries.push({ book: bName, meta: gMeta, sourceUrl: g.url });
         say('  完成: ' + bName);
         success = true;
@@ -1072,6 +1074,7 @@ try {
 const rebuiltOk = await rebuildAsync(CAT + '/' + book);
 say('@@REBUILT@@' + JSON.stringify({ ok: rebuiltOk }));
 say('完成: 下载 ' + done + '/' + todo.length + ' 话');
+  try { if (done === todo.length && typeof adapter.clearCache === 'function') adapter.clearCache(url); } catch (e3) {}   // 全部下完才清缓存
 say('@@DONE@@' + JSON.stringify({ chapters: done, images: gotImages, bytes: gotBytes, out: path.join(LIB, CAT, book), book: book }));
 if (skippedAll && !done && !gotImages) say('这本已经完整下过了，没有需要补的（已下过的话不会重下；要重下请加 --force 或按页勾选）。');
 process.exit(done || gotImages || skippedAll ? 0 : 1);   // 一张都没下到且本来也没有 = 失败, 让上层能看出来

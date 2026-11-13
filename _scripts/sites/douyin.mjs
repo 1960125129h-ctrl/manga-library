@@ -160,7 +160,7 @@ async function readPage(p) {
    结果就是"解析一次要开一次浏览器、下载时又开一次"。
    这里把页面抓到的结果落到 _scripts/sites/cache-douyin.json，两个进程共用。 */
 const DISK = path.join(HERE, 'cache-douyin.json');
-const DISK_TTL = 30 * 60 * 1000;   // 30 分钟；抖音主页/作品基本不会在这个窗口里变
+const DISK_TTL = 60 * 60 * 1000;   // 1 小时   // 30 分钟；抖音主页/作品基本不会在这个窗口里变
 // 体积上限：一个博主动辄上千条作品，单条记录就有 11MB 左右（每张图 4 个签名 URL）。
 // 只按"条数"限会撑到几百 MB，所以再压一道总字节数，超了按时间删最旧的。
 const DISK_MAX = 300 * 1024 * 1024;   // 只按体积限，不限条数：一个千条作品的大主页约 11MB，够放 27 个
@@ -185,6 +185,18 @@ function diskSave(url, data) {
       while (json.length > DISK_MAX && byAge.length > 1) { delete all[byAge.shift()]; json = JSON.stringify(all); }
     }
     fs.writeFileSync(DISK, json, 'utf8');
+  } catch (e) {}
+}
+// 下载成功后把这条缓存删掉：它只为"解析→下载"这段服务，下载完就没用了。
+// 下载失败时不要调 —— 留着缓存重试才不用重新开浏览器。
+export function clearCache(url) {
+  try {
+    const all = JSON.parse(fs.readFileSync(DISK, 'utf8'));
+    let hit = false;
+    for (const k of [url, 'note:' + (itemOf(url) || '')]) {
+      if (k && all[k]) { delete all[k]; hit = true; }
+    }
+    if (hit) fs.writeFileSync(DISK, JSON.stringify(all), 'utf8');
   } catch (e) {}
 }
 async function grab(url, rounds) {

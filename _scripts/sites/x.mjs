@@ -164,7 +164,7 @@ let CACHE_MEM = { url: '', at: 0, data: null };
 /* 主页抓取结果落磁盘：预览和下载是两个独立 node 进程，内存缓存互相看不见，
    不加这个的话下载时会重新开一次浏览器再抓 18 秒。 */
 const PAGECACHE = path.join(HERE, 'cache-x-pages.json');
-const PAGE_TTL = 30 * 60 * 1000;
+const PAGE_TTL = 60 * 60 * 1000;   // 1 小时
 const PAGE_MAX = 100 * 1024 * 1024;   // 只按体积限，不限条数（上千条推文也就几百 KB）
 function pageLoad(url) {
   try {
@@ -191,6 +191,16 @@ const CACHE_MS = 90000;
 // 单条推文: 第一批数据里就有, 不滚; 主页: 滚, 但探到新数据就继续、连着几轮没新增就停
 function wantRounds(url) { return statusOf(url) ? 0 : (process.env.FETCH_PROBE === '1' ? 6 : 80); }
 const IDLE_MAX = () => (process.env.FETCH_PROBE === '1' ? 2 : 9);   // 连续这么多轮没新增才认为到底了(X 加载下一批有时候要等十几秒)
+export function clearCache(url) {
+  try {
+    const all = JSON.parse(fs.readFileSync(PAGECACHE, 'utf8'));
+    let hit = false;
+    for (const k of [url, mediaUrl(handleOf(url))]) {
+      if (k && all[k]) { delete all[k]; hit = true; }
+    }
+    if (hit) fs.writeFileSync(PAGECACHE, JSON.stringify(all), 'utf8');
+  } catch (e) {}
+}
 async function grab(url, rounds) {
   if (CACHE_MEM.data && CACHE_MEM.url === url && Date.now() - CACHE_MEM.at < CACHE_MS) return CACHE_MEM.data;
   const diskHit = pageLoad(url);
