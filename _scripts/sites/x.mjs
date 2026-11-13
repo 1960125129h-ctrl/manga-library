@@ -292,8 +292,18 @@ export async function resolve(url) {
   }
   const got = await grab(mediaUrl(h), wantRounds(url));
   const it = got.items[0] || {};
-  const name = clean(it.disp || '', 40) || clean(String(got.title || '').replace(/\s*\(@.*$/, '').replace(/\s*\/\s*X.*$/, ''), 40) || ('@' + h);
-  return { title: name, author: name + ' (@' + h + ')', desc: '', cover: null, status: 'X / @' + h };
+  // 书名就该是**作者名**：优先用推文里的用户显示名，取不到就用 handle。
+  // 不要再用 document.title —— /media 页面的标题是"某条推文的正文 (@某人) / X"，
+  // 拿它当书名会变成作品名，作者那栏也就跟着丢了。
+  // 只用 screen_name / handle 当作者名。
+  // it.disp 实测不可信 —— 会取到别的推文的标题（"你害羞的样子很可爱"那种），
+  // 它就是"书名变成作品名、作者消失"的根源。
+  const uname = clean(it.name || '', 40) || h;
+  return {
+    title: uname,                    // 书名 = 作者名
+    author: '@' + uname,             // 作者 = @handle
+    desc: '', cover: null, status: 'X / @' + h
+  };
 }
 export async function chapters(url) {
   const h = handleOf(url);
