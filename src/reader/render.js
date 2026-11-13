@@ -156,6 +156,24 @@ function applyPickX(axis) {
   if (Date.now() < pickLockUntil) return;
   var imgsNow = elStage.querySelectorAll(".hstripimg:not(.extra), .scrollimg");
   if (!imgsNow.length) return;
+  // 两端特殊：第一页/最后一页无法居中（边上没有内容可露），
+  // 滚到最左就是第 1 页、滚到最右就是最后一页 —— 否则 Home/End 之后页码会被"更居中的邻居"顶掉。
+  if (axis === "x") {
+    var maxSl = elStage.scrollWidth - elStage.clientWidth;
+    if (elStage.scrollLeft <= 2) {
+      if (S.pi !== 0) { S.pi = 0; updateInfo(); syncThumbsActive(); save(); }
+      return;
+    }
+    if (maxSl > 0 && elStage.scrollLeft >= maxSl - 2) {
+      var lastI = -1;
+      for (var q2 = 0; q2 < imgsNow.length; q2++) {
+        var v2 = parseInt(imgsNow[q2].getAttribute("data-i"), 10);
+        if (isFinite(v2) && v2 > lastI) lastI = v2;
+      }
+      if (lastI >= 0 && S.pi !== lastI) { S.pi = lastI; updateInfo(); syncThumbsActive(); save(); }
+      return;
+    }
+  }
   var st = elStage.getBoundingClientRect();
   var cx = st.left + st.width / 2, cy = st.top + st.height / 2;
   var pick = S.pi, bestD = 1e9;
@@ -371,6 +389,26 @@ export function animateScrollX(x) {
   var t = Math.max(0, Math.min(maxX, Math.round(x)));
   try { elStage.scrollTo({ left: t, behavior: "smooth" }); }
   catch (e) { elStage.scrollLeft = t; }
+}
+
+/* 直接定位到某一页（横排用）：不重建画布，只滚过去。
+   Home/End 走这里 —— 原来的 S.pi=0 + render() 会把整条画布重建一遍，横排下会闪，
+   而且会丢掉"保留上一话最后 3 页"的状态。 */
+export function stripSeek(idx) {
+  if (S.mode !== "hscroll" && S.mode !== "hspread") return false;
+  var p = pages();
+  if (!p.length) return false;
+  var next = Math.max(0, Math.min(p.length - 1, idx | 0));
+  var el = elStage.querySelector('.hstripimg[data-i="' + next + '"]');
+  if (!el) return false;
+  var st = elStage.getBoundingClientRect(), a = el.getBoundingClientRect();
+  if (next === 0) animateScrollX(0);                        // 首页贴左（无法居中）
+  else if (next === p.length - 1) animateScrollX(elStage.scrollWidth);   // 末页贴右
+  else animateScrollX(elStage.scrollLeft + Math.round((a.left + a.width / 2) - (st.left + st.width / 2)));
+  S.pi = next;
+  pickLockUntil = Date.now() + 600;
+  updateInfo(); syncThumbsActive(); save();
+  return true;
 }
 
 export function stripJump(delta) {

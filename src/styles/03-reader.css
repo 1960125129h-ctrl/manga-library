@@ -205,3 +205,16 @@ body.bar-autohide #bar.show{transform:translateY(0)}
 #stage.mode-hscroll::-webkit-scrollbar-thumb:hover,
 #stage.mode-hspread::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,.55)}
 #stage.mode-hscroll, #stage.mode-hspread{scrollbar-width:thin}
+/* 中割条按主题分色：深色主题用灰亮渐变（上面那套），浅色/护眼/纸色改成灰暗渐变 + 深字，
+   否则 150px 的竖条会和纸色糊在一起、字也看不清。 */
+#reader[data-theme="light"] #stage.mode-hscroll .chbreak,
+#reader[data-theme="light"] #stage.mode-hspread .chbreak,
+#reader[data-theme="eye"] #stage.mode-hscroll .chbreak,
+#reader[data-theme="eye"] #stage.mode-hspread .chbreak,
+#reader[data-theme="paper"] #stage.mode-hscroll .chbreak,
+#reader[data-theme="paper"] #stage.mode-hspread .chbreak{
+  background:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.05) 18%,rgba(0,0,0,.14) 50%,rgba(0,0,0,.05) 82%,transparent 100%);
+  border-left-color:rgba(0,0,0,.16);
+  border-right-color:rgba(0,0,0,.16);
+  color:#565b62;
+}

@@ -169,7 +169,7 @@ let hWheelBound = false;
    滚过这条竖条 = 换话（此时用户已经在看下一话的图了，切过去不会跳内容）。
    这样一话读完是"顺下去"，不是"卡在末尾再点一下"。 */
 let chBreakLock = 0;
-const CH_STEP = 8;          // 每话预接 8 页（第 4 页前后都要有内容）
+const CH_STEP = 12;         // 每话预接 12 页：第 4 页落点前后各留 6 页，中割区能看得更远
 const CH_LAND_PAGE = 3;     // 转正落点：第 4 页（0 基）
 const CH_KEEP_PREV = 3;     // 转正后保留上一话最后 3 页
 
@@ -191,7 +191,7 @@ function appendNextChapterStrip(container) {
   var total = (comic.chapters || []).length;
 
   // 最多往后接 3 个章节：不足 4 页的短章节（番外/特典）也接上，继续找够 4 页的当落点
-  for (var guard = 0; guard < 3; guard++) {
+  for (var guard = 0; guard < 5; guard++) {
     var nx = cur + step;
     if (nx < 0 || nx >= total) break;
     var list = pageList(comic, comic.chapters[nx]) || [];

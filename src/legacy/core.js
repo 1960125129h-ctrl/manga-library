@@ -27,7 +27,7 @@ import { initShelfAuthors, autoAuthor, authorGroups, authorCtx, mergeAuthorInto,
 import { initShelfSites, openSitesDialog, openSiteSearch, multiUpdate, checkUpdate, quickDownload } from '../shelf/sites.js';
 import { initShelfInfoEditor, openInfo, openEditor } from '../shelf/info-editor.js';
 import { initShelfDrag, applyGroupDrop, makeGroupDrop, autoScroll, dragScrollTick, setHover, makeDraggable } from '../shelf/drag.js';
-import { initReaderRender, render, renderPaged, renderScroll, applyThumbs, updateInfo, syncButtons } from '../reader/render.js';
+import { initReaderRender, render, renderPaged, renderScroll, applyThumbs, updateInfo, syncButtons, stripSeek } from '../reader/render.js';
 import { initReaderOpen, vtWrap, openComic, closeComic, flyOpenComic, flyCloseComic, openByDir, reopenLast, save, perfSample, delImage, delChapter } from '../reader/open.js';
 import { initReaderZoom, applyZoom, centerCanvas, zoomStep, zoomAt, onWheel, refit } from '../reader/zoom.js';
 import { initReaderNav, nextPage, prevPage, nextChapter, prevChapter, cur, pages, clamp, openThemeDialog, bgParallax } from '../reader/nav.js';
@@ -796,8 +796,15 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
     if (k === "ArrowDown" || k === "ArrowUp") { if (!scrollMode) e.preventDefault(); return; }
     if (k === " " || k === "PageDown") { e.preventDefault(); nextPage(); return; }
     if (k === "PageUp") { e.preventDefault(); prevPage(); return; }
-    if (k === "Home") { e.preventDefault(); S.pi = 0; render(); return; }
-    if (k === "End") { e.preventDefault(); S.pi = pages().length - 1; render(); return; }
+    if (k === "Home" || k === "End") {
+      e.preventDefault();
+      var toEnd = (k === "End");
+      // 横排：直接滚到首/末页，不重建画布（重建会闪，还会丢掉保留的上一话页）
+      if (S.mode === "hscroll" || S.mode === "hspread") {
+        if (stripSeek(toEnd ? 1e9 : 0)) return;
+      }
+      S.pi = toEnd ? pages().length - 1 : 0; render(); return;
+    }
     if (k === "[") { e.preventDefault(); prevChapter(false); return; }
     if (k === "]") { e.preventDefault(); nextChapter(); return; }
     if (k === "1") { S.mode = "single"; render(); saveReaderDefaults(); return; }

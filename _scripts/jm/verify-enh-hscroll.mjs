@@ -140,6 +140,21 @@ try {
   const thumbSig = String(await ev('(function(){var l=document.getElementById("thumblist"); if(!l) return "no-list"; return (l.getAttribute("data-sig")||"") + "|" + l.children.length;})()'));
   chk('横排: 转正后右侧缩略图跟着换话', thumbSig !== 'no-list' && thumbSig.split('|')[1] !== '0', '缩略图 sig|数量 = ' + thumbSig);
 
+  // ---- Home / End：横排下直接定位，不重建画布 ----
+  await gotoPage(2);
+  await p.ev('(function(){ if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); })()', 2);
+  const firstImg = String(await ev('(function(){var im=document.querySelector("#stage .hstripimg"); if(!im) return ""; im.setAttribute("data-probe","1"); return "1";})()'));
+  await p.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'End', code: 'End', windowsVirtualKeyCode: 35, nativeVirtualKeyCode: 35 });
+  await p.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'End', code: 'End', windowsVirtualKeyCode: 35, nativeVirtualKeyCode: 35 });
+  await sleep(1000);
+  const endInfo = JSON.parse(await ev('JSON.stringify((function(){var p=document.getElementById("pageinput"); var t=document.getElementById("pageinfo"); return {page:Number(p?p.value:0), total:Number((t?t.textContent:"").replace("/","").trim()), probe:!!document.querySelector("[data-probe]")};})())'));
+  chk('横排: End 跳到本话最后一页', endInfo.page === endInfo.total && endInfo.total > 0, endInfo.page + '/' + endInfo.total);
+  chk('横排: End 没有重建画布（原页元素还在）', endInfo.probe === true, firstImg === '1' ? '首图仍存在' : '未标记');
+  await p.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Home', code: 'Home', windowsVirtualKeyCode: 36, nativeVirtualKeyCode: 36 });
+  await p.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Home', code: 'Home', windowsVirtualKeyCode: 36, nativeVirtualKeyCode: 36 });
+  await sleep(1000);
+  chk('横排: Home 回到第 1 页', Number(await ev('document.getElementById("pageinput").value')) === 1, await ev('document.getElementById("pageinput").value'));
+
   // ---- 位置可拖动（放最后，因为它会改位置） ----
   await p.ev('(function(){var s=document.getElementById("stage"); s.scrollLeft=260; return s.scrollLeft;})()', 2);
   const sl = Number(await ev('document.getElementById("stage").scrollLeft'));
