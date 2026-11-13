@@ -778,7 +778,7 @@ const FX_KEYS = { bright: [0, 200, 100], contrast: [0, 200, 100], saturate: [0, 
                   warmth: [-100, 100, 0], tint: [-100, 100, 0],
                   highlights: [-100, 100, 0], shadows: [-100, 100, 0], curve: [-100, 100, 0],
                   denoise: [0, 100, 0], clarity: [0, 100, 0], fade: [0, 100, 0],
-                  grain: [0, 100, 0], sharpen: [0, 100, 0] };
+                  grain: [0, 100, 0], noise: [0, 100, 0], sharpen: [0, 100, 0] };
 function sanitizeImgFx(src) {
   const s = (src && typeof src === 'object') ? src : {};
   const o = {};

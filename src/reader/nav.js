@@ -69,8 +69,21 @@ export function openThemeDialog() {
       ["基础", [["bright", "亮度", 0, 200, 100], ["contrast", "对比度", 0, 200, 100], ["saturate", "饱和度", 0, 200, 100], ["warmth", "色温", -100, 100, 0], ["tint", "色调", -100, 100, 0]]],
       ["细节", [["sharpen", "锐化", 0, 100, 0], ["clarity", "清晰度", 0, 100, 0], ["denoise", "降噪", 0, 100, 0]]],
       ["明暗", [["highlights", "高光", -100, 100, 0], ["shadows", "阴影", -100, 100, 0], ["curve", "曲线", -100, 100, 0]]],
-      ["风格", [["fade", "褪色", 0, 100, 0], ["grain", "颗粒", 0, 100, 0]]]
+      ["风格", [["fade", "褪色", 0, 100, 0], ["grain", "颗粒", 0, 100, 0], ["noise", "杂色", 0, 100, 0]]]
     ];
+    // ---- 一键风格：把常用组合打包，点一下套用（滑杆会跟着动，还能继续微调）----
+    var STYLES = [
+      ["原图", "全部归零", {}],
+      ["高清", "网图提脆（默认推荐）", { contrast: 106, saturate: 108, sharpen: 45, clarity: 22 }],
+      ["柔和", "降对比降饱和，久看不累", { contrast: 96, saturate: 90, sharpen: 12, denoise: 16 }],
+      ["浓烈", "对比饱和一起拉", { contrast: 112, saturate: 122, sharpen: 55, clarity: 30 }],
+      ["线稿", "黑白稿去灰提黑", { contrast: 132, bright: 106, saturate: 88, sharpen: 30 }]
+    ];
+    var lbSty2 = document.createElement("label"); lbSty2.textContent = "一键风格"; box.appendChild(lbSty2);
+    var swSty2 = document.createElement("div");
+    swSty2.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px";
+    box.appendChild(swSty2);
+
     var fxSliders = {};        // k -> { rg, vv, dv }，"恢复默认"要同步它们
     var fxSaveTimer = 0;
     var fxSave = function () {
@@ -113,6 +126,29 @@ export function openThemeDialog() {
         wrap.appendChild(cell);
       });
     });
+    // 预设按钮（此时 fxSliders 已建好，可以同步滑杆位置）
+    STYLES.forEach(function (st) {
+      var b = document.createElement("button");
+      b.className = "btn ghost";
+      b.textContent = st[0];
+      b.title = st[1];
+      b.style.cssText = "padding:3px 10px;font-size:12px";
+      b.onclick = function () {
+        var base = fxDef();
+        Object.keys(st[2]).forEach(function (k) { base[k] = st[2][k]; });
+        S.imgfx = base;
+        applyImgFilter();
+        Object.keys(fxSliders).forEach(function (k) {
+          var sl = fxSliders[k];
+          sl.rg.value = String(base[k]);
+          sl.vv.textContent = String(base[k]);
+        });
+        saveReaderDefaults();
+        hint("已套用风格：" + st[0]);
+      };
+      swSty2.appendChild(b);
+    });
+
     var fxFootRow = document.createElement("div");
     fxFootRow.style.cssText = "display:flex;align-items:center;gap:10px;margin:10px 0 2px";
     var resetFx = document.createElement("button");

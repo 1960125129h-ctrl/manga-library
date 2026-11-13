@@ -44,7 +44,7 @@ export function applyReaderTheme() {
 export function fxDef() {
   return { bright: 100, contrast: 100, saturate: 100, warmth: 0, tint: 0,
            highlights: 0, shadows: 0, curve: 0, denoise: 0, clarity: 0,
-           fade: 0, grain: 0, sharpen: 0 };
+           fade: 0, grain: 0, noise: 0, sharpen: 0 };
 }
 function fxNum(k, d) {
   var v = (S.imgfx && typeof S.imgfx[k] === "number") ? S.imgfx[k] : d;
@@ -68,7 +68,7 @@ export function applyImgFilter() {
   var wa = fxNum("warmth", 0), ti = fxNum("tint", 0);
   var hi = fxNum("highlights", 0), sh = fxNum("shadows", 0), cv = fxNum("curve", 0);
   var dn = fxNum("denoise", 0), cl = fxNum("clarity", 0), fd = fxNum("fade", 0);
-  var gr = fxNum("grain", 0), sk = fxNum("sharpen", 0);
+  var gr = fxNum("grain", 0), nz = fxNum("noise", 0), sk = fxNum("sharpen", 0);
 
   if (br !== 100) parts.push("brightness(" + (br / 100).toFixed(3) + ")");
   if (ct !== 100) parts.push("contrast(" + (ct / 100).toFixed(3) + ")");
@@ -124,6 +124,7 @@ export function applyImgFilter() {
   try {
     document.documentElement.style.setProperty("--r-img-filter", parts.length ? parts.join(" ") : "none");
     document.documentElement.style.setProperty("--fx-grain", String(gr / 100));   // 颗粒透明度
+    document.documentElement.style.setProperty("--fx-noise", String(nz / 100));   // 杂色透明度
   } catch (e) {}
 }
 
