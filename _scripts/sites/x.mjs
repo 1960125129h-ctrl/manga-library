@@ -160,12 +160,37 @@ async function withBrowser(fn) {
   try { await p.send('Page.bringToFront').catch(() => {}); return await fn(p); } finally { try { p.close(); } catch (e) {} }
 }
 let CACHE_MEM = { url: '', at: 0, data: null };
+
+/* 主页抓取结果落磁盘：预览和下载是两个独立 node 进程，内存缓存互相看不见，
+   不加这个的话下载时会重新开一次浏览器再抓 18 秒。 */
+const PAGECACHE = path.join(HERE, 'cache-x-pages.json');
+const PAGE_TTL = 30 * 60 * 1000;
+function pageLoad(url) {
+  try {
+    const all = JSON.parse(fs.readFileSync(PAGECACHE, 'utf8'));
+    const hit = all[url];
+    if (hit && Date.now() - hit.at < PAGE_TTL && hit.data && hit.data.items && hit.data.items.length) return hit.data;
+  } catch (e) {}
+  return null;
+}
+function pageSave(url, data) {
+  try {
+    let all = {};
+    try { all = JSON.parse(fs.readFileSync(PAGECACHE, 'utf8')); } catch (e) { all = {}; }
+    all[url] = { at: Date.now(), data: data };
+    const ks = Object.keys(all);
+    if (ks.length > 40) for (const k of ks.slice(0, ks.length - 40)) delete all[k];
+    fs.writeFileSync(PAGECACHE, JSON.stringify(all), 'utf8');
+  } catch (e) {}
+}
 const CACHE_MS = 90000;
 // 单条推文: 第一批数据里就有, 不滚; 主页: 滚, 但探到新数据就继续、连着几轮没新增就停
 function wantRounds(url) { return statusOf(url) ? 0 : (process.env.FETCH_PROBE === '1' ? 6 : 80); }
 const IDLE_MAX = () => (process.env.FETCH_PROBE === '1' ? 2 : 9);   // 连续这么多轮没新增才认为到底了(X 加载下一批有时候要等十几秒)
 async function grab(url, rounds) {
   if (CACHE_MEM.data && CACHE_MEM.url === url && Date.now() - CACHE_MEM.at < CACHE_MS) return CACHE_MEM.data;
+  const diskHit = pageLoad(url);
+  if (diskHit) { CACHE_MEM = { url: url, at: Date.now(), data: diskHit }; return diskHit; }
   const got = await withBrowser(async (p) => {
     await p.send('Page.addScriptToEvaluateOnNewDocument', { source: HOOK }).catch(() => {});
     await p.send('Page.navigate', { url: url }).catch(() => {});
@@ -200,6 +225,7 @@ async function grab(url, rounds) {
     return best;
   });
   CACHE_MEM = { url: url, at: Date.now(), data: got };
+  pageSave(url, got);   // 落盘给别的进程用
   return got;
 }
 let cache = null;
