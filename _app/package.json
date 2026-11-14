@@ -78,7 +78,8 @@
           "!**/jm/run-album.mjs",
           "!**/jm/jmcomic_dl.py",
           "!**/jm/README.md",
-          "!**/*.md"
+          "!**/*.md",
+          "!**/release/**"
         ]
       },
       {
