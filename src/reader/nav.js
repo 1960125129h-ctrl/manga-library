@@ -9,7 +9,7 @@ import { isBigPlat } from '../library/store.js';
 import { chStep, renderChapters } from '../reader/panel.js';
 import { render, stripJump, animateScrollX, maybePromoteNext } from '../reader/render.js';
 import { comic } from '../reader/state.js';
-import { applyReaderTheme, spreads, spreadIndex, saveReaderDefaults, applyImgFilter, applyEdgeFx, fxDef } from '../reader/view.js';
+import { applyReaderTheme, spreads, spreadIndex, saveReaderDefaults, applyImgFilter, applyEdgeFx, updateEdgeFxDynamic, fxDef } from '../reader/view.js';
 import { pageList, chLabel, nOf } from '../shared/chapter.js';
 import { enc } from '../shared/text.js';
 import { showModal, closeModal, hint } from '../shared/ui.js';
@@ -157,37 +157,82 @@ export function openThemeDialog() {
     box.appendChild(sepEf);
     var efNote = document.createElement("div");
     efNote.className = "sub";
-    efNote.style.cssText = "margin-bottom:6px";
-    efNote.textContent = "横排两侧会渐变模糊变暗，只看清中间那一页，防止一眼扫到旁边的剧透。";
+    efNote.style.cssText = "margin-bottom:8px";
+    efNote.textContent = "横排两侧会渐变模糊变暗，只看清中间那一页。自动挡会跟随当前页的宽度，并在首尾两端关掉没有内容那一侧。";
     box.appendChild(efNote);
-    var efSliders = {};
+
     var efSaveT = 0;
     var efSave = function () {
       if (efSaveT) clearTimeout(efSaveT);
-      efSaveT = setTimeout(function () { efSaveT = 0; saveReaderDefaults(); }, 350);
+      efSaveT = setTimeout(function () { efSaveT = 0; saveReaderDefaults(); }, 300);
     };
-    var setEf = function (k, v) { S.edgefx = S.edgefx || {}; S.edgefx[k] = v; applyEdgeFx(); efSave(); };
-    // 左右开关
-    var swRow = document.createElement("div");
-    swRow.style.cssText = "display:flex;gap:14px;align-items:center;margin:6px 0 8px";
-    box.appendChild(swRow);
-    [["left", "左侧模糊"], ["right", "右侧模糊"]].forEach(function (it) {
-      var lab = document.createElement("label");
-      lab.className = "chk";
-      lab.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12.5px";
-      var cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = (ef[it[0]] !== 0);
-      cb.onchange = function () { setEf(it[0], cb.checked ? 1 : 0); };
-      lab.appendChild(cb);
-      lab.appendChild(document.createTextNode(it[1]));
-      swRow.appendChild(lab);
-      efSliders[it[0]] = cb;
-    });
+    var setEf = function (k, v) {
+      S.edgefx = S.edgefx || {};
+      S.edgefx[k] = v;
+      applyEdgeFx();
+      refreshEfUI();
+      efSave();
+    };
+    // 一组三态按钮
+    var mkSeg = function (opts, cur, onPick) {
+      var row = document.createElement("div");
+      row.style.cssText = "display:flex;gap:4px";
+      opts.forEach(function (o) {
+        var b = document.createElement("button");
+        b.className = "btn ghost" + (o.v === cur ? " on" : "");
+        b.textContent = o.t;
+        b.title = o.d || "";
+        b.style.cssText = "padding:3px 10px;font-size:12px";
+        b.setAttribute("data-v", o.v);
+        if (o.v === cur) b.style.background = "var(--accent, #2f6df6)", b.style.color = "#fff", b.style.borderColor = "transparent";
+        b.onclick = function () { onPick(o.v); };
+        row.appendChild(b);
+      });
+      row.__set = function (v) {
+        Array.prototype.forEach.call(row.children, function (b) {
+          var on = b.getAttribute("data-v") === v;
+          b.style.background = on ? "var(--accent, #2f6df6)" : "";
+          b.style.color = on ? "#fff" : "";
+          b.style.borderColor = on ? "transparent" : "";
+        });
+      };
+      return row;
+    };
+    var mkRow = function (label, control) {
+      var row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;gap:10px;margin:6px 0";
+      var lb = document.createElement("span");
+      lb.textContent = label;
+      lb.style.cssText = "font-size:12.5px;opacity:.85;width:64px;flex:0 0 auto";
+      row.appendChild(lb); row.appendChild(control);
+      return row;
+    };
+
+    var modeSeg = mkSeg([
+      { v: "auto", t: "自动挡", d: "清晰区跟随当前页图片宽度；首尾两端自动关掉该侧" },
+      { v: "manual", t: "手动挡", d: "完全按下面的清晰区滑杆和左右开关" }
+    ], ef.mode || "auto", function (v) { setEf("mode", v); });
+    box.appendChild(mkRow("模式", modeSeg));
+
+    var leftSeg = mkSeg([
+      { v: "auto", t: "自动", d: "非最左端时开启" },
+      { v: "on", t: "开", d: "始终开启" },
+      { v: "off", t: "关", d: "始终关闭" }
+    ], ef.left || "auto", function (v) { setEf("left", v); });
+    box.appendChild(mkRow("左侧", leftSeg));
+
+    var rightSeg = mkSeg([
+      { v: "auto", t: "自动", d: "非最右端时开启" },
+      { v: "on", t: "开", d: "始终开启" },
+      { v: "off", t: "关", d: "始终关闭" }
+    ], ef.right || "auto", function (v) { setEf("right", v); });
+    box.appendChild(mkRow("右侧", rightSeg));
+
     // 三条滑杆
     var efWrap = document.createElement("div");
-    efWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px 14px";
+    efWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px";
     box.appendChild(efWrap);
+    var efSliders = {};
     [["clear", "清晰区", 30, 90, 50, "%"], ["blur", "模糊强度", 0, 30, 12, "px"], ["dim", "边缘压暗", 0, 80, 28, "%"]].forEach(function (it) {
       var k = it[0], name = it[1], lo = it[2], hi = it[3], dv = it[4], unit = it[5];
       var cell = document.createElement("div");
@@ -208,7 +253,36 @@ export function openThemeDialog() {
       rg.ondblclick = function () { rg.value = String(dv); vv.textContent = dv + unit; setEf(k, dv); };
       cell.appendChild(lb); cell.appendChild(rg); cell.appendChild(vv);
       efWrap.appendChild(cell);
+      efSliders[k] = { rg: rg, vv: vv, dv: dv, unit: unit };
     });
+
+    // 过渡开关
+    var smoothLab = document.createElement("label");
+    smoothLab.className = "chk";
+    smoothLab.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12.5px;margin-top:8px";
+    var smoothCb = document.createElement("input");
+    smoothCb.type = "checkbox";
+    smoothCb.checked = (ef.smooth !== 0);
+    smoothCb.onchange = function () { setEf("smooth", smoothCb.checked ? 1 : 0); };
+    smoothLab.appendChild(smoothCb);
+    smoothLab.appendChild(document.createTextNode("切页时渐变平滑过渡（0.2 秒）"));
+    box.appendChild(smoothLab);
+
+    // 自动挡下清晰区滑杆置灰 + 显示「跟随图片」
+    function refreshEfUI() {
+      var m = (S.edgefx && S.edgefx.mode === "manual") ? "manual" : "auto";
+      var s1 = efSliders.clear;
+      if (s1) {
+        s1.rg.disabled = (m === "auto");
+        s1.rg.style.opacity = (m === "auto") ? ".45" : "";
+        s1.vv.textContent = (m === "auto") ? "跟随图片" : (s1.rg.value + "%");
+        s1.vv.style.opacity = (m === "auto") ? ".5" : "";
+      }
+      if (modeSeg.__set) modeSeg.__set(S.edgefx && S.edgefx.mode || "auto");
+      if (leftSeg.__set) leftSeg.__set(S.edgefx && S.edgefx.left || "auto");
+      if (rightSeg.__set) rightSeg.__set(S.edgefx && S.edgefx.right || "auto");
+    }
+    refreshEfUI();
 
     var fxFootRow = document.createElement("div");
     fxFootRow.style.cssText = "display:flex;align-items:center;gap:10px;margin:10px 0 2px";
@@ -489,10 +563,16 @@ function bindHScrollWheel() {
 
   // 滚动停下后看一眼中割有没有被滚过去（用 scroll 而不是 IO：中割不是 img）
   let chCheckTimer = 0;
+  let ebRaf = 0;
   elStage.addEventListener("scroll", function () {
     if (S.mode !== "hscroll" && S.mode !== "hspread") return;
     if (chCheckTimer) clearTimeout(chCheckTimer);
     chCheckTimer = setTimeout(function () { chCheckTimer = 0; checkChBreak(); }, 50);
+    // 防剧透：清晰区跟随当前页宽度、左右按位置开关（用 rAF 合并成每帧最多一次）
+    if (!ebRaf) ebRaf = requestAnimationFrame(function () {
+      ebRaf = 0;
+      try { updateEdgeFxDynamic(); } catch (e) {}
+    });
   }, { passive: true });
 }
 

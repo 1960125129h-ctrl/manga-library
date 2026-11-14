@@ -227,8 +227,15 @@ body.bar-autohide #bar.show{transform:translateY(0)}
    两块固定在视口上的层（#stagewrap 的子元素，不随画布滚动）。
    比例：清晰区两侧各占一半做模糊，0~66% 保持接近全糊，只在最后 34% 内平滑收边 ——
    既不是硬切，也不会因为过渡带太宽把模糊"吃掉"变成一大片半清楚。 */
+/* 让 --eb-clear 成为可插值的自定义属性：mask-image 是离散属性，只有变量本身能过渡 */
+@property --eb-clear {
+  syntax: '<length-percentage>';
+  inherits: true;
+  initial-value: 50%;
+}
 #stagewrap > .edgeblur{
   position:absolute; inset:0; pointer-events:none; z-index:6;
+  transition: --eb-clear var(--eb-smooth, 0.2s) ease;
   display:none;
   --eb-edge: calc(50% - var(--eb-clear, 50%) / 2);
   backdrop-filter: blur(var(--eb-blur, 12px)) saturate(1.04);

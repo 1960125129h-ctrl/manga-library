@@ -10,7 +10,7 @@ import { S } from '../app/state.js';
 import { isBigPlat } from '../library/store.js';
 import { bmSync, showImgCtx } from '../reader/panel.js';
 import { elCanvas, io, setIo, comic, setElCanvas } from '../reader/state.js';
-import { makeImg, applyEdgeFx, syncThumbsActive, spreads, spreadIndex, preload, preloadAround, syncSideHandles, scrollThumbToCenter, applyImgFilter } from '../reader/view.js';
+import { makeImg, applyEdgeFx, updateEdgeFxDynamic, syncThumbsActive, spreads, spreadIndex, preload, preloadAround, syncSideHandles, scrollThumbToCenter, applyImgFilter } from '../reader/view.js';
 import { chLabel } from '../shared/chapter.js';
 import { enc } from '../shared/text.js';
 
@@ -435,6 +435,7 @@ export function stripJump(delta) {
   }
   S.pi = next;
   pickLockUntil = Date.now() + 450;   // 动画期间别让 IO 把页码抢回原页（往回翻时最明显）
+  try { updateEdgeFxDynamic(); } catch (e) {}   // 翻页后清晰区/左右开关要跟着变
   updateInfo(); syncThumbsActive(); save();
   return true;
 }

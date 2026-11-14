@@ -783,9 +783,23 @@ const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 
 const sanitizeEdgeFx = (src) => {
   const s = (src && typeof src === 'object') ? src : {};
   const num = (v, lo, hi, dv) => { const n = Number(v); return (isFinite(n) && n >= lo && n <= hi) ? Math.round(n) : dv; };
-  const off = (v) => (v === false || v === 0 || v === '0' || v === 'false');   // 存的是数字 0，别只认 false
-  return { left: off(s.left) ? 0 : 1, right: off(s.right) ? 0 : 1,
-           clear: num(s.clear, 30, 90, 50), blur: num(s.blur, 0, 30, 12), dim: num(s.dim, 0, 80, 28) };
+  const legacy = typeof s.mode !== 'string';
+  const tri = (v) => {
+    if (v === 'auto') return 'auto';
+    if (v === 'off' || v === 0 || v === '0' || v === false) return 'off';
+    if (v === 'on') return 'on';
+    if (v === 1 || v === '1' || v === true) return legacy ? 'auto' : 'on';
+    return 'auto';
+  };
+  return {
+    mode: (s.mode === 'manual') ? 'manual' : 'auto',
+    left: tri(s.left),
+    right: tri(s.right),
+    clear: num(s.clear, 30, 90, 50),
+    blur: num(s.blur, 0, 30, 12),
+    dim: num(s.dim, 0, 80, 28),
+    smooth: (s.smooth === 0 || s.smooth === false) ? 0 : 1
+  };
 };
 const FX_KEYS = { bright: [0, 200, 100], contrast: [0, 200, 100], saturate: [0, 200, 100],
                   warmth: [-100, 100, 0], tint: [-100, 100, 0],

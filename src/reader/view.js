@@ -63,27 +63,95 @@ function toneTable(hi, sh, cv) {
   }
   return out.join(" ");
 }
-/* 横排防剧透：把设置写进 CSS 变量 + 控制左右两层开关 */
-export function applyEdgeFx() {
+/* ---------- 横排防剧透：两侧渐变毛玻璃 ----------
+   两种挡位：
+     自动 —— 清晰区跟随"当前页图片的显示宽度"（clamp 到视口 40%~100%），
+             左/右模糊按位置自动开关（链条两端各自关闭）；
+     手动 —— 完全按设置里的清晰区滑杆 + 左右开关。
+   模糊强度和边缘压暗两种挡位共用。 */
+/* 本模块取阅读区元素（view.js 没有 import elStage） */
+let _ebStage = null;
+function ebStageEl() {
+  if (!_ebStage || !_ebStage.isConnected) _ebStage = document.getElementById("stage");
+  return _ebStage;
+}
+function ebCfg() {
   const f = S.edgefx || {};
-  const clear = (typeof f.clear === "number") ? f.clear : 50;
-  const blur = (typeof f.blur === "number") ? f.blur : 12;
-  const dim = (typeof f.dim === "number") ? f.dim : 28;
+  return {
+    mode: (f.mode === 'manual') ? 'manual' : 'auto',
+    left: f.left || 'auto',
+    right: f.right || 'auto',
+    clear: (typeof f.clear === "number") ? f.clear : 50,
+    blur: (typeof f.blur === "number") ? f.blur : 12,
+    dim: (typeof f.dim === "number") ? f.dim : 28,
+    smooth: (f.smooth === 0) ? 0 : 1
+  };
+}
+/* 当前视口中心那一页的显示宽度（横排）；取不到就返回 0 */
+function centerPageWidth() {
+  const st = ebStageEl();
+  if (!st) return 0;
+  const sr = st.getBoundingClientRect();
+  const cx = sr.left + sr.width / 2;
+  const imgs = st.querySelectorAll("img");
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < imgs.length; i++) {
+    const r = imgs[i].getBoundingClientRect();
+    if (!r.width) continue;
+    const d = Math.abs((r.left + r.width / 2) - cx);
+    if (d < bestD) { bestD = d; best = r.width; }
+  }
+  return best;
+}
+/* 横排是否已滚到链条最左 / 最右 */
+function ebAtEdges() {
+  const st = ebStageEl();
+  if (!st) return { left: false, right: false };
+  const maxX = st.scrollWidth - st.clientWidth;
+  // 右端留 12px 容差：滚动条（约 9px）会让 scrollLeft 停在 maxX 前面一点，
+  // 原来用 -2 判不到最右，右侧模糊就不会自动关。
+  return { left: st.scrollLeft <= 2, right: maxX > 0 && st.scrollLeft >= maxX - 12 };
+}
+/* 只重算"清晰区"和左右开关（滚动时高频调用，不碰强度/压暗） */
+export function updateEdgeFxDynamic() {
+  const cfg = ebCfg();
   const root = document.documentElement;
-  try {
-    root.style.setProperty("--eb-clear", clear + "%");
-    root.style.setProperty("--eb-blur", blur + "px");
-    root.style.setProperty("--eb-dim", String(Math.round(dim) / 100));
-  } catch (e) {}
-  // 模糊 0 且压暗 0 就整层关掉，省掉 backdrop-filter 的开销
-  const dead = (blur <= 0 && dim <= 0);
+  const st = ebStageEl();
+  if (!st) return;
+  const sr = st.getBoundingClientRect();
+  let clearPx = 0;
+  if (cfg.mode === 'manual') {
+    clearPx = Math.round(sr.width * cfg.clear / 100);
+  } else {
+    const pw = centerPageWidth();
+    const lo = Math.round(sr.width * 0.40);
+    const hi = Math.round(sr.width * 1.00);   // 图片撑满或超宽 -> 清晰区 = 视口宽 -> 不糊
+    clearPx = pw > 0 ? Math.max(lo, Math.min(hi, Math.round(pw))) : Math.round(sr.width * (cfg.clear / 100));
+  }
+  try { root.style.setProperty("--eb-clear", clearPx + "px"); } catch (e) {}
+  // 左右是否启用
+  const cfgEdge = ebAtEdges();
+  const wantL = (cfg.left === 'auto') ? !cfgEdge.left : (cfg.left !== 'off');
+  const wantR = (cfg.right === 'auto') ? !cfgEdge.right : (cfg.right !== 'off');
+  const dead = (cfg.blur <= 0 && cfg.dim <= 0);
   const apply = (sel, on) => {
     const el = document.querySelector(sel);
     if (!el) return;
     el.setAttribute("data-off", (dead || !on) ? "1" : "0");
   };
-  apply("#stagewrap > .edgeblur-l", f.left !== 0);
-  apply("#stagewrap > .edgeblur-r", f.right !== 0);
+  apply("#stagewrap > .edgeblur-l", wantL);
+  apply("#stagewrap > .edgeblur-r", wantR);
+}
+/* 全量应用（改设置时调用）：强度、压暗、过渡、然后重算动态部分 */
+export function applyEdgeFx() {
+  const cfg = ebCfg();
+  const root = document.documentElement;
+  try {
+    root.style.setProperty("--eb-blur", cfg.blur + "px");
+    root.style.setProperty("--eb-dim", String(Math.round(cfg.dim) / 100));
+    root.style.setProperty("--eb-smooth", cfg.smooth ? "0.2s" : "0s");
+  } catch (e) {}
+  updateEdgeFxDynamic();
 }
 
 export function applyImgFilter() {
