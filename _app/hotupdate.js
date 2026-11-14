@@ -194,7 +194,7 @@ function maybeAutoSync(libRoot) {
   if (!app.isPackaged) return false;
   const c = readCfg();
   if (c.hotSync === false) return false;
-  if (Date.now() - (Number(c.lastScriptSync) || 0) < 12 * 3600 * 1000) return false;
+  if (Date.now() - (Number(c.lastScriptSync) || 0) < 60 * 60 * 1000) return false;   // 1 小时一次（原来 12 小时，改完之后要等半天才生效，太钝）
   sync(libRoot).catch(function () {});
   return true;
 }

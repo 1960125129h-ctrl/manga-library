@@ -240,28 +240,70 @@ export function openSettings() {
     };
     refreshSkip();
 
-    // ---- 站点脚本热更新(不重装应用, 只换 _scripts/sites/*.mjs) ----
+    // ---- 界面与站点脚本热更新 ----
     var hotSep = document.createElement('div');
     hotSep.style.cssText = 'border-top:1px solid var(--border);margin:14px 0 8px;padding-top:10px;font-weight:600;font-size:13px';
-    hotSep.textContent = '站点脚本（热更新）';
+    hotSep.textContent = '界面与站点脚本（热更新）';
     pUpdate.appendChild(hotSep);
+
     var hotHint = document.createElement('div'); hotHint.className = 'sub';
-    hotHint.textContent = '只同步各站点适配器（几百 KB），不用重装应用、不用重启；改完下一次下载就生效。';
+    hotHint.style.cssText = 'line-height:1.6';
+    hotHint.textContent = '同步界面代码与各站点适配器，不用重装应用、不用重启。界面文件刷新窗口后生效，适配器下一次下载生效。';
     pUpdate.appendChild(hotHint);
+
     var hotRow = document.createElement('div'); hotRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin:8px 0 4px';
     var hotBtn = document.createElement('button'); hotBtn.className = 'btn ghost'; hotBtn.textContent = '立即同步';
     var hotTxt = document.createElement('span'); hotTxt.style.cssText = 'font-size:12px;color:var(--fg2)';
     hotRow.appendChild(hotBtn); hotRow.appendChild(hotTxt);
     pUpdate.appendChild(hotRow);
+
+    var hotDetail = document.createElement('div');
+    hotDetail.style.cssText = 'display:none;margin:6px 0;padding:8px 10px;background:var(--surface2);border-radius:6px;font-size:12px;line-height:1.7;color:var(--fg2)';
+    pUpdate.appendChild(hotDetail);
+
+    var hotBanner = document.createElement('div');
+    hotBanner.style.cssText = 'display:none;margin:8px 0;padding:8px 10px;border-radius:6px;background:rgba(47,109,246,.12);border:1px solid rgba(47,109,246,.35);font-size:12.5px;line-height:1.6';
+    pUpdate.appendChild(hotBanner);
+
     var hotBox = document.createElement('div'); pUpdate.appendChild(hotBox);
     var hotLab = document.createElement('label'); hotLab.className = 'chk';
     var hotChk = document.createElement('input'); hotChk.type = 'checkbox'; hotChk.checked = true;
-    hotLab.appendChild(hotChk); hotLab.appendChild(document.createTextNode('启动时自动同步站点脚本（12 小时一次）'));
+    hotLab.appendChild(hotChk); hotLab.appendChild(document.createTextNode('启动时自动检查更新（每 1 小时一次）'));
     hotBox.appendChild(hotLab);
+
     function fmtTime(ts) {
       if (!ts) return '还没同步过';
       var d = new Date(ts); function p2(n) { return (n < 10 ? '0' : '') + n; }
       return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+    }
+    function latestVersion() {
+      try { var c = (window.CHANGELOG || [])[0]; return c ? c.v : ''; } catch (e) { return ''; }
+    }
+    function shortName(p) { var s2 = String(p || ''); var i2 = s2.lastIndexOf('/'); return i2 >= 0 ? s2.slice(i2 + 1) : s2; }
+    function showDetail(r) {
+      var nS2 = (r.changed || []).length, nU2 = (r.changedSrc || []).length;
+      if (!nS2 && !nU2) { hotDetail.style.display = 'none'; return; }
+      var lines2 = [];
+      if (nU2) lines2.push('界面文件 ' + nU2 + ' 个：' + (r.changedSrc || []).slice(0, 6).map(shortName).join('、') + (nU2 > 6 ? ' 等' : ''));
+      if (nS2) lines2.push('站点脚本 ' + nS2 + ' 个：' + (r.changed || []).slice(0, 6).map(shortName).join('、') + (nS2 > 6 ? ' 等' : ''));
+      if ((r.failed || []).length) lines2.push('写入失败 ' + r.failed.length + ' 个');
+      hotDetail.textContent = lines2.join('\n');
+      hotDetail.style.display = 'block';
+    }
+    function showBanner(kind) {
+      if (!kind) { hotBanner.style.display = 'none'; return; }
+      hotBanner.style.display = 'block';
+      hotBanner.textContent = (kind === 'ui')
+        ? '有界面更新可用，刷新窗口后生效。'
+        : '站点适配器已更新，下一次下载自动使用新版本。';
+      if (kind === 'ui') {
+        var bb = document.createElement('button');
+        bb.className = 'btn'; bb.textContent = '点此刷新';
+        bb.style.cssText = 'margin-top:6px;display:block';
+        bb.onclick = doReload;
+        hotBanner.appendChild(document.createElement('br'));
+        hotBanner.appendChild(bb);
+      }
     }
     function refreshHot() {
       if (!DISK || !DISK.hotStatus) return;
@@ -269,24 +311,20 @@ export function openSettings() {
         DISK.hotStatus().then(function (st) {
           hotChk.checked = !!st.enabled;
           hotTxt.textContent = '上次同步：' + fmtTime(st.last) + (st.lastResult ? '（' + st.lastResult + '）' : '');
+          if (st.needsReload) showBanner('ui');
         }).catch(function () {});
       } catch (e) {}
     }
     hotChk.onchange = function () { try { DISK.hotSetEnabled(hotChk.checked); } catch (e) {} };
-    // 界面文件同步完要 reload 才生效; 起不来会自动回滚(main 里的 hot:reload)
-    var hotReloadBtn = document.createElement('button');
-    hotReloadBtn.className = 'btn'; hotReloadBtn.textContent = '界面已更新，点此刷新';
-    hotReloadBtn.style.cssText = 'display:none;margin:6px 0 4px';
-    pUpdate.appendChild(hotReloadBtn);
-    hotReloadBtn.onclick = async function () {
-      hotReloadBtn.disabled = true; hotReloadBtn.textContent = '刷新中…';
+
+    async function doReload() {
       var rr = null;
       try { rr = await DISK.hotReload(); } catch (e) {}
-      hotReloadBtn.disabled = false; hotReloadBtn.textContent = '界面已更新，点此刷新';
       if (rr && rr.ok === false) hint((rr && rr.msg) || '刷新失败');
-      else hotReloadBtn.style.display = 'none';
+      else { hotBanner.style.display = 'none'; hint('已刷新'); }
       refreshHot();
-    };
+    }
+
     hotBtn.onclick = async function () {
       hotBtn.disabled = true; hotBtn.textContent = '同步中…';
       var r = null;
@@ -294,19 +332,23 @@ export function openSettings() {
       hotBtn.disabled = false; hotBtn.textContent = '立即同步';
       if (!r || !r.ok) { hint('同步失败：' + ((r && r.msg) || '网络不可用')); refreshHot(); return; }
       var nS = (r.changed || []).length, nU = (r.changedSrc || []).length;
+      showDetail(r);
       if (r.blocked && r.blocked.length) {
         hint('这版界面需要更新应用（依赖了新接口：' + r.blocked.slice(0, 3).join(', ') + '）');
+        showBanner(null);
       } else if (nU > 0) {
-        hint('已更新 ' + nU + ' 个界面文件，点「刷新」生效');
-        hotReloadBtn.style.display = 'inline-block';
+        var v = latestVersion();
+        hint('已更新 ' + nU + ' 个界面文件' + (v ? '（当前 ' + v + '）' : '') + '，刷新窗口后生效');
+        showBanner('ui');
       } else if (nS > 0) {
-        hint('已更新 ' + nS + ' 个站点脚本（下次下载生效）');
+        hint('已更新 ' + nS + ' 个站点脚本，下一次下载生效');
+        showBanner('scripts');
       } else {
         hint('已是最新，无需更新');
+        showBanner(null);
       }
       refreshHot();
     };
-    refreshHot();
     tabBtns[0].click();
 
     function num(parent, k, label, min, max, step, unit) {
