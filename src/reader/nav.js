@@ -209,24 +209,45 @@ export function openThemeDialog() {
     };
 
     var modeSeg = mkSeg([
-      { v: "auto", t: "自动挡", d: "清晰区跟随当前页图片宽度；首尾两端自动关掉该侧" },
-      { v: "manual", t: "手动挡", d: "完全按下面的清晰区滑杆和左右开关" }
+      { v: "auto", t: "自动", d: "清晰区跟随当前页宽度；左右按位置自动开关（到头那一侧不糊）" },
+      { v: "manual", t: "手动", d: "清晰区用下面的滑杆；左右可以各自设成自动/开/关" }
     ], ef.mode || "auto", function (v) { setEf("mode", v); });
     box.appendChild(mkRow("模式", modeSeg));
 
-    var leftSeg = mkSeg([
-      { v: "auto", t: "自动", d: "非最左端时开启" },
-      { v: "on", t: "开", d: "始终开启" },
-      { v: "off", t: "关", d: "始终关闭" }
-    ], ef.left || "auto", function (v) { setEf("left", v); });
-    box.appendChild(mkRow("左侧", leftSeg));
+    // 左右两行的容器：自动挡只有「跟随 / 关」两档，
+    // 手动挡才给「自动 / 开 / 关」三档 —— 自动挡下"始终开"没意义
+    // （第一页左边本来没内容，强制开就是糊着空的）。
+    var leftRow = document.createElement("div");
+    var rightRow = document.createElement("div");
+    box.appendChild(leftRow); box.appendChild(rightRow);
+    var leftSeg = null, rightSeg = null;
 
-    var rightSeg = mkSeg([
-      { v: "auto", t: "自动", d: "非最右端时开启" },
-      { v: "on", t: "开", d: "始终开启" },
-      { v: "off", t: "关", d: "始终关闭" }
-    ], ef.right || "auto", function (v) { setEf("right", v); });
-    box.appendChild(mkRow("右侧", rightSeg));
+    function buildSideRows() {
+      var isAuto = ((S.edgefx && S.edgefx.mode) || "auto") !== "manual";
+      var optsL = isAuto
+        ? [{ v: "auto", t: "跟随", d: "非最左端时开启" }, { v: "off", t: "关", d: "始终关闭" }]
+        : [{ v: "auto", t: "自动", d: "非最左端时开启" }, { v: "on", t: "开", d: "始终开启" }, { v: "off", t: "关", d: "始终关闭" }];
+      var optsR = isAuto
+        ? [{ v: "auto", t: "跟随", d: "非最右端时开启" }, { v: "off", t: "关", d: "始终关闭" }]
+        : [{ v: "auto", t: "自动", d: "非最右端时开启" }, { v: "on", t: "开", d: "始终开启" }, { v: "off", t: "关", d: "始终关闭" }];
+      var curL = (S.edgefx && S.edgefx.left) || "auto";
+      var curR = (S.edgefx && S.edgefx.right) || "auto";
+      // 自动挡下若存着"开"，显示成"跟随"（切回手动时才看得到"开"）
+      if (isAuto && curL === "on") curL = "auto";
+      if (isAuto && curR === "on") curR = "auto";
+      leftRow.innerHTML = ""; rightRow.innerHTML = "";
+      leftSeg = mkSeg(optsL, curL, function (v) { setEf("left", v); });
+      rightSeg = mkSeg(optsR, curR, function (v) { setEf("right", v); });
+      leftRow.appendChild(mkRow("左侧", leftSeg));
+      rightRow.appendChild(mkRow("右侧", rightSeg));
+    }
+    buildSideRows();
+    // 模式一变就重建左右两行
+    var _origSetEf = setEf;
+    setEf = function (k, v) {
+      _origSetEf(k, v);
+      if (k === "mode") buildSideRows();
+    };
 
     // 三条滑杆
     var efWrap = document.createElement("div");
