@@ -233,7 +233,7 @@ export function openThemeDialog() {
     efWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px";
     box.appendChild(efWrap);
     var efSliders = {};
-    [["clear", "清晰区", 30, 90, 50, "%"], ["blur", "模糊强度", 0, 30, 12, "px"], ["dim", "边缘压暗", 0, 80, 28, "%"]].forEach(function (it) {
+    [["clear", "清晰区", 30, 90, 50, "%"], ["blur", "模糊强度", 0, 30, 12, "px"], ["dim", "边缘压暗", 0, 80, 28, "%"], ["speed", "切换速度", 0, 400, 120, "ms"]].forEach(function (it) {
       var k = it[0], name = it[1], lo = it[2], hi = it[3], dv = it[4], unit = it[5];
       var cell = document.createElement("div");
       cell.style.cssText = "flex:1 1 calc(50% - 14px);min-width:150px;display:flex;align-items:center;gap:6px";
@@ -241,13 +241,16 @@ export function openThemeDialog() {
       lb.textContent = name;
       lb.style.cssText = "font-size:12px;opacity:.85;white-space:nowrap;width:52px";
       var rg = document.createElement("input");
-      rg.type = "range"; rg.min = String(lo); rg.max = String(hi); rg.step = "1";
+      rg.type = "range"; rg.min = String(lo); rg.max = String(hi);
+      rg.step = (k === "speed") ? "10" : "1";
       rg.value = String((typeof ef[k] === "number") ? ef[k] : dv);
       rg.style.cssText = "flex:1 1 auto;min-width:50px";
-      rg.title = name + "：双击恢复默认 " + dv + unit;
+      rg.title = (k === "speed")
+        ? "换页时模糊边界收放的过渡时长：0 最干脆，400 最柔和。双击恢复 " + dv + unit
+        : name + "：双击恢复默认 " + dv + unit;
       var vv = document.createElement("span");
       vv.className = "stat";
-      vv.style.cssText = "font-size:12px;min-width:42px;text-align:right";
+      vv.style.cssText = "font-size:12px;min-width:" + (k === "speed" ? "52px" : "42px") + ";text-align:right";
       vv.textContent = rg.value + unit;
       rg.oninput = function () { vv.textContent = rg.value + unit; setEf(k, Number(rg.value)); };
       rg.ondblclick = function () { rg.value = String(dv); vv.textContent = dv + unit; setEf(k, dv); };

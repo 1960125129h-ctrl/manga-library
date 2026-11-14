@@ -84,39 +84,39 @@ function ebCfg() {
     clear: (typeof f.clear === "number") ? f.clear : 50,
     blur: (typeof f.blur === "number") ? f.blur : 12,
     dim: (typeof f.dim === "number") ? f.dim : 28,
+    speed: (typeof f.speed === "number") ? f.speed : 120,
     smooth: (f.smooth === 0) ? 0 : 1
   };
 }
-/* 当前居中页在视口里的左右边界（相对视口左缘）；取不到返回 null */
-function currentPageSpan() {
+/* 当前视口中心那一页的显示宽度（横排）；取不到就返回 0 */
+function centerPageWidth() {
   const st = ebStageEl();
-  if (!st) return null;
+  if (!st) return 0;
   const sr = st.getBoundingClientRect();
-  // 用"当前页码 S.pi 对应的那张图"，而不是"视口中心最近的图"：
-  // 横排第一页只有 800 多像素宽，滚到最左时视口中心其实落在第二页上，
-  // 按最近页判定会认错人，左侧也就不会贴着屏幕边。
-  let best = null;
-  const cur = st.querySelector('.hstripimg[data-i="' + (S.pi | 0) + '"]');
-  if (cur && cur.getBoundingClientRect().width) {
-    best = cur.getBoundingClientRect();
-  } else {
-    const cx = sr.left + sr.width / 2;
-    const imgs = st.querySelectorAll("img");
-    let bestD = Infinity;
-    for (let i = 0; i < imgs.length; i++) {
-      const r = imgs[i].getBoundingClientRect();
-      if (!r.width) continue;
-      const d = Math.abs((r.left + r.width / 2) - cx);
-      if (d < bestD) { bestD = d; best = r; }
-    }
+  const cx = sr.left + sr.width / 2;
+  const imgs = st.querySelectorAll("img");
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < imgs.length; i++) {
+    const r = imgs[i].getBoundingClientRect();
+    if (!r.width) continue;
+    const d = Math.abs((r.left + r.width / 2) - cx);
+    if (d < bestD) { bestD = d; best = r.width; }
   }
-  if (!best) return null;
-  // 超出视口就夹到边界：跨页图会自然变成"两侧都不糊"
-  const left = Math.max(0, Math.min(sr.width, Math.round(best.left - sr.left)));
-  const right = Math.max(0, Math.min(sr.width, Math.round(best.right - sr.left)));
-  return { left: left, right: right, width: Math.round(best.width), vw: Math.round(sr.width) };
+  return best;
 }
-/* 只重算"模糊边界"和左右开关（滚动时高频调用，不碰强度/压暗） */
+/* 横排是否已滚到链条最左 / 最右 */
+function ebAtEdges() {
+  const st = ebStageEl();
+  if (!st) return { left: false, right: false };
+  const maxX = st.scrollWidth - st.clientWidth;
+  // 右端留 12px 容差：滚动条（约 9px）会让 scrollLeft 停在 maxX 前面一点，
+  // 原来用 -2 判不到最右，右侧模糊就不会自动关。
+  return { left: st.scrollLeft <= 2, right: maxX > 0 && st.scrollLeft >= maxX - 12 };
+}
+/* 只重算"边界"和左右开关（滚动时高频调用，不碰强度/压暗）。
+   宽度：中间页用 clamp(页宽, 视口40%, 视口100%)，再居中。
+   两端：不用 clamp 值 —— 第 1 页往往比 40% 还窄，用 clamp 会把第二页一大段划进清晰区，
+         直接取首/末页的真实左右边，才能完整遮住相邻页。 */
 export function updateEdgeFxDynamic() {
   const cfg = ebCfg();
   const root = document.documentElement;
@@ -124,38 +124,70 @@ export function updateEdgeFxDynamic() {
   if (!st) return;
   const sr = st.getBoundingClientRect();
   const vw = Math.round(sr.width);
-  const span = currentPageSpan();
+  const maxX = st.scrollWidth - st.clientWidth;
+  const atLeft = st.scrollLeft <= 2;
+  const atRight = maxX > 0 && st.scrollLeft >= maxX - 12;
+  const imgs = st.querySelectorAll("img");
+  const rectOf = function (el) {
+    const r = el.getBoundingClientRect();
+    if (!r.width) return null;
+    return {
+      left: Math.max(0, Math.min(vw, Math.round(r.left - sr.left))),
+      right: Math.max(0, Math.min(vw, Math.round(r.right - sr.left))),
+      width: Math.round(r.width)
+    };
+  };
 
-  // 模糊边界：默认 = 当前页在屏幕上的真实左右边（这样第二页整段都会被糊住）
-  // 手动挡：按清晰区百分比居中算，跟以前一样
   let leftPx, rightPx;
-  if (cfg.mode === 'manual') {
-    const half = Math.round(vw * cfg.clear / 100 / 2);
-    leftPx = Math.round(vw / 2) - half;
-    rightPx = Math.round(vw / 2) + half;
-  } else if (span && span.right > 0 && span.left < vw) {
-    // 当前页还看得见 → 模糊边界贴在它的真实左右边上
-    leftPx = span.left;
-    rightPx = span.right;
+  if (atLeft) {
+    // 第一页的真实边界
+    let p = null;
+    for (let i = 0; i < imgs.length; i++) { p = rectOf(imgs[i]); if (p) break; }
+    if (p) { leftPx = 0; rightPx = p.right; }
+    else { leftPx = 0; rightPx = Math.round(vw * cfg.clear / 100); }
+  } else if (atRight) {
+    // 最后一页的真实边界
+    let p = null;
+    for (let i = imgs.length - 1; i >= 0; i--) { p = rectOf(imgs[i]); if (p) break; }
+    if (p) { rightPx = vw; leftPx = p.left; }
+    else { rightPx = vw; leftPx = vw - Math.round(vw * cfg.clear / 100); }
   } else {
-    // 当前页已完全滚出视口（滚到中割/预接区），或还没渲染 → 回退到居中算法
-    const half = Math.round(vw * cfg.clear / 100 / 2);
-    leftPx = Math.round(vw / 2) - half;
-    rightPx = Math.round(vw / 2) + half;
+    let clearPx = 0;
+    if (cfg.mode === 'manual') {
+      clearPx = Math.round(vw * cfg.clear / 100);
+    } else {
+      const pw = centerPageWidth();
+      const lo = Math.round(vw * 0.40);
+      const hi = Math.round(vw * 1.00);
+      clearPx = pw > 0 ? Math.max(lo, Math.min(hi, Math.round(pw))) : Math.round(vw * (cfg.clear / 100));
+    }
+    leftPx = Math.round((vw - clearPx) / 2);
+    rightPx = leftPx + clearPx;
   }
+  leftPx = Math.max(0, Math.min(vw, leftPx));
+  rightPx = Math.max(0, Math.min(vw, rightPx));
+
+  // 过渡时长跟着「切换速度」
+  const td = Math.max(0, Math.round(cfg.speed)) + "ms";
+  const op = cfg.smooth ? "0.2s" : "0s";
   try {
-    root.style.setProperty("--eb-left", leftPx + "px");
-    root.style.setProperty("--eb-right", rightPx + "px");
+    const elL = document.querySelector("#stagewrap > .edgeblur-l");
+    const elR = document.querySelector("#stagewrap > .edgeblur-r");
+    const key = td + "|" + op;
+    if (root.__ebKey !== key) {
+      root.__ebKey = key;
+      [elL, elR].forEach(function (el) {
+        if (!el) return;
+        el.style.transition = "--eb-left " + td + " ease-out, --eb-right " + td + " ease-out, opacity " + op + " ease, visibility 0s";
+      });
+    }
+    if (elL) { elL.style.setProperty("--eb-left", leftPx + "px"); elL.style.setProperty("--eb-right", rightPx + "px"); }
+    if (elR) { elR.style.setProperty("--eb-left", leftPx + "px"); elR.style.setProperty("--eb-right", rightPx + "px"); }
   } catch (e) {}
 
-  // 左右是否启用：按滚动位置判断"链条两端"。
-  // 不能用 leftPx/rightPx —— 本话末页后面还有预接的下一话，那时 rightPx 已经是负数了，
-  // 但屏幕右边其实还有内容要糊。
-  const maxX = st.scrollWidth - st.clientWidth;
-  const edgeL = st.scrollLeft <= 2;
-  const edgeR = maxX > 0 && st.scrollLeft >= maxX - 12;
-  const wantL = (cfg.left === 'off') ? false : (cfg.left === 'on') ? true : !edgeL;
-  const wantR = (cfg.right === 'off') ? false : (cfg.right === 'on') ? true : !edgeR;
+  // 自动挡下不隐藏整层（贴边时 mask 已经全透明，再叠一层 opacity 会截断过渡帧）
+  const wantL = (cfg.left === 'off') ? false : true;
+  const wantR = (cfg.right === 'off') ? false : true;
   const dead = (cfg.blur <= 0 && cfg.dim <= 0);
   const apply = (sel, on) => {
     const el = document.querySelector(sel);
@@ -173,6 +205,15 @@ export function applyEdgeFx() {
     root.style.setProperty("--eb-blur", cfg.blur + "px");
     root.style.setProperty("--eb-dim", String(Math.round(cfg.dim) / 100));
     root.style.setProperty("--eb-smooth", cfg.smooth ? "0.2s" : "0s");
+    // 边界收放的过渡时长：走设置里的「切换速度」
+    const td = Math.max(0, Math.round(typeof cfg.speed === "number" ? cfg.speed : 120)) + "ms";
+    const op2 = cfg.smooth ? "0.2s" : "0s";
+    ["#stagewrap > .edgeblur-l", "#stagewrap > .edgeblur-r"].forEach(function (sel) {
+      const el = document.querySelector(sel);
+      if (!el) return;
+      el.style.transition =
+        "--eb-clear " + td + " ease-out, opacity " + op2 + " ease, visibility 0s";
+    });
   } catch (e) {}
   updateEdgeFxDynamic();
 }

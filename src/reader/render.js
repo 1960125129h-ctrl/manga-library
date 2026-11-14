@@ -481,6 +481,10 @@ export function render() {
   bmSync();
   applyImgFilter();   // 偏好/主题变了要重算 --r-img-filter
   applyEdgeFx();      // 横排两侧的毛玻璃开关也跟着刷新
+  // 上面这次调用时图片可能还没解码完（宽高是 0），边界会按默认值设一遍，
+  // 表现就是"刚进书/换书后模糊不对，动一下才正常"。等布局和图片到位后再补两次。
+  try { requestAnimationFrame(function () { try { updateEdgeFxDynamic(); } catch (e) {} }); } catch (e) {}
+  setTimeout(function () { try { updateEdgeFxDynamic(); } catch (e) {} }, 320);
   updateInfo(); syncButtons(); save();
 }
 export function applyThumbs() {

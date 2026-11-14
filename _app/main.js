@@ -798,6 +798,7 @@ const sanitizeEdgeFx = (src) => {
     clear: num(s.clear, 30, 90, 50),
     blur: num(s.blur, 0, 30, 12),
     dim: num(s.dim, 0, 80, 28),
+    speed: num(s.speed, 0, 400, 120),
     smooth: (s.smooth === 0 || s.smooth === false) ? 0 : 1
   };
 };
