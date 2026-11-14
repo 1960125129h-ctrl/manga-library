@@ -206,14 +206,18 @@ export function applyEdgeFx() {
     root.style.setProperty("--eb-dim", String(Math.round(cfg.dim) / 100));
     root.style.setProperty("--eb-smooth", cfg.smooth ? "0.2s" : "0s");
     // 边界收放的过渡时长：走设置里的「切换速度」
+    // 注意属性名必须和 CSS 里实际使用的变量一致（--eb-left / --eb-right）。
+    // 之前这里写的是旧的 --eb-clear，等于声明了一个不存在的属性，过渡根本没生效；
+    // 只有拖动滑杆触发 updateEdgeFxDynamic 时才会被改成正确的名字。
     const td = Math.max(0, Math.round(typeof cfg.speed === "number" ? cfg.speed : 120)) + "ms";
     const op2 = cfg.smooth ? "0.2s" : "0s";
     ["#stagewrap > .edgeblur-l", "#stagewrap > .edgeblur-r"].forEach(function (sel) {
       const el = document.querySelector(sel);
       if (!el) return;
       el.style.transition =
-        "--eb-clear " + td + " ease-out, opacity " + op2 + " ease, visibility 0s";
+        "--eb-left " + td + " ease-out, --eb-right " + td + " ease-out, opacity " + op2 + " ease, visibility 0s";
     });
+    root.__ebKey = td + "|" + op2;
   } catch (e) {}
   updateEdgeFxDynamic();
 }
