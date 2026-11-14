@@ -227,71 +227,86 @@ body.bar-autohide #bar.show{transform:translateY(0)}
    两块固定在视口上的层（#stagewrap 的子元素，不随画布滚动）。
    比例：清晰区两侧各占一半做模糊，0~66% 保持接近全糊，只在最后 34% 内平滑收边 ——
    既不是硬切，也不会因为过渡带太宽把模糊"吃掉"变成一大片半清楚。 */
-/* 让 --eb-clear 成为可插值的自定义属性：mask-image 是离散属性，只有变量本身能过渡 */
-@property --eb-clear {
-  syntax: '<length-percentage>';
+/* 模糊边界 = 当前页在屏幕上的实际左右边（由 JS 写进 --eb-left / --eb-right）。
+   这样第二页整段都会被糊住；当前页贴左/贴右时边界等于屏幕边，那一侧自然不糊。
+   mask-image 是离散属性不能插值，所以把边界做成可插值的自定义属性。 */
+@property --eb-left {
+  syntax: '<length>';
   inherits: true;
-  initial-value: 50%;
+  initial-value: 0px;
+}
+@property --eb-right {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 100vw;
 }
 #stagewrap > .edgeblur{
   position:absolute; inset:0; pointer-events:none; z-index:6;
-  transition: --eb-clear var(--eb-smooth, 0.2s) ease;
   display:none;
-  --eb-edge: calc(50% - var(--eb-clear, 50%) / 2);
   backdrop-filter: blur(var(--eb-blur, 12px)) saturate(1.04);
   -webkit-backdrop-filter: blur(var(--eb-blur, 12px)) saturate(1.04);
+  opacity:1;
+  /* 边界（--eb-left/--eb-right）不加过渡：滚动时每帧由 rAF 跟随当前页，
+     加过渡只会和 smooth scroll 赛跑，看起来"边界不跟图片走"。
+     这里只过渡透明度，用于左右开关的淡入淡出。 */
+  transition: opacity var(--eb-smooth, 0.2s) ease, visibility 0s;
 }
 #stage.mode-hscroll ~ .edgeblur, #stage.mode-hspread ~ .edgeblur{ display:block; }
-#stagewrap > .edgeblur[data-off="1"]{ display:none; }
+/* 位置切换用淡入淡出，不再 display:none 硬切；visibility 延迟到淡出结束，省掉 GPU 开销 */
+#stagewrap > .edgeblur[data-off="1"]{
+  opacity:0; visibility:hidden;
+  transition: opacity var(--eb-smooth, 0.2s) ease, visibility 0s linear var(--eb-smooth, 0.2s);
+}
 
+/* 左侧：从屏幕左缘糊到 --eb-left */
 #stagewrap > .edgeblur-l{
   -webkit-mask-image: linear-gradient(90deg,
     #000 0%,
-    rgba(0,0,0,.99) calc(var(--eb-edge) * 0.66),
-    rgba(0,0,0,.94) calc(var(--eb-edge) * 0.78),
-    rgba(0,0,0,.80) calc(var(--eb-edge) * 0.87),
-    rgba(0,0,0,.52) calc(var(--eb-edge) * 0.93),
-    rgba(0,0,0,.20) calc(var(--eb-edge) * 0.97),
-    transparent var(--eb-edge));
+    rgba(0,0,0,.99) calc(var(--eb-left) * 0.66),
+    rgba(0,0,0,.94) calc(var(--eb-left) * 0.78),
+    rgba(0,0,0,.80) calc(var(--eb-left) * 0.87),
+    rgba(0,0,0,.52) calc(var(--eb-left) * 0.93),
+    rgba(0,0,0,.20) calc(var(--eb-left) * 0.97),
+    transparent var(--eb-left));
   mask-image: linear-gradient(90deg,
     #000 0%,
-    rgba(0,0,0,.99) calc(var(--eb-edge) * 0.66),
-    rgba(0,0,0,.94) calc(var(--eb-edge) * 0.78),
-    rgba(0,0,0,.80) calc(var(--eb-edge) * 0.87),
-    rgba(0,0,0,.52) calc(var(--eb-edge) * 0.93),
-    rgba(0,0,0,.20) calc(var(--eb-edge) * 0.97),
-    transparent var(--eb-edge));
+    rgba(0,0,0,.99) calc(var(--eb-left) * 0.66),
+    rgba(0,0,0,.94) calc(var(--eb-left) * 0.78),
+    rgba(0,0,0,.80) calc(var(--eb-left) * 0.87),
+    rgba(0,0,0,.52) calc(var(--eb-left) * 0.93),
+    rgba(0,0,0,.20) calc(var(--eb-left) * 0.97),
+    transparent var(--eb-left));
   background: linear-gradient(90deg,
     rgba(0,0,0,var(--eb-dim, 0.28)) 0%,
-    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.96)) calc(var(--eb-edge) * 0.66),
-    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.82)) calc(var(--eb-edge) * 0.80),
-    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.50)) calc(var(--eb-edge) * 0.90),
-    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.16)) calc(var(--eb-edge) * 0.97),
-    transparent var(--eb-edge));
+    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.96)) calc(var(--eb-left) * 0.66),
+    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.82)) calc(var(--eb-left) * 0.80),
+    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.50)) calc(var(--eb-left) * 0.90),
+    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.16)) calc(var(--eb-left) * 0.97),
+    transparent var(--eb-left));
 }
+/* 右侧：从屏幕右缘糊到 --eb-right */
 #stagewrap > .edgeblur-r{
-  --eb-edge: calc(50% - var(--eb-clear, 50%) / 2);
   -webkit-mask-image: linear-gradient(270deg,
     #000 0%,
-    rgba(0,0,0,.99) calc(var(--eb-edge) * 0.66),
-    rgba(0,0,0,.94) calc(var(--eb-edge) * 0.78),
-    rgba(0,0,0,.80) calc(var(--eb-edge) * 0.87),
-    rgba(0,0,0,.52) calc(var(--eb-edge) * 0.93),
-    rgba(0,0,0,.20) calc(var(--eb-edge) * 0.97),
-    transparent var(--eb-edge));
+    rgba(0,0,0,.99) calc(calc(100% - var(--eb-right)) * 0.66),
+    rgba(0,0,0,.94) calc(calc(100% - var(--eb-right)) * 0.78),
+    rgba(0,0,0,.80) calc(calc(100% - var(--eb-right)) * 0.87),
+    rgba(0,0,0,.52) calc(calc(100% - var(--eb-right)) * 0.93),
+    rgba(0,0,0,.20) calc(calc(100% - var(--eb-right)) * 0.97),
+    transparent calc(100% - var(--eb-right)));
   mask-image: linear-gradient(270deg,
     #000 0%,
-    rgba(0,0,0,.99) calc(var(--eb-edge) * 0.66),
-    rgba(0,0,0,.94) calc(var(--eb-edge) * 0.78),
-    rgba(0,0,0,.80) calc(var(--eb-edge) * 0.87),
-    rgba(0,0,0,.52) calc(var(--eb-edge) * 0.93),
-    rgba(0,0,0,.20) calc(var(--eb-edge) * 0.97),
-    transparent var(--eb-edge));
+    rgba(0,0,0,.99) calc(calc(100% - var(--eb-right)) * 0.66),
+    rgba(0,0,0,.94) calc(calc(100% - var(--eb-right)) * 0.78),
+    rgba(0,0,0,.80) calc(calc(100% - var(--eb-right)) * 0.87),
+    rgba(0,0,0,.52) calc(calc(100% - var(--eb-right)) * 0.93),
+    rgba(0,0,0,.20) calc(calc(100% - var(--eb-right)) * 0.97),
+    transparent calc(100% - var(--eb-right)));
   background: linear-gradient(270deg,
     rgba(0,0,0,var(--eb-dim, 0.28)) 0%,
-    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.96)) calc(var(--eb-edge) * 0.66),
-    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.82)) calc(var(--eb-edge) * 0.80),
-    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.50)) calc(var(--eb-edge) * 0.90),
-    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.16)) calc(var(--eb-edge) * 0.97),
-    transparent var(--eb-edge));
+    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.96)) calc(calc(100% - var(--eb-right)) * 0.66),
+    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.82)) calc(calc(100% - var(--eb-right)) * 0.80),
+    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.50)) calc(calc(100% - var(--eb-right)) * 0.90),
+    rgba(0,0,0,calc(var(--eb-dim, 0.28) * 0.16)) calc(calc(100% - var(--eb-right)) * 0.97),
+    transparent calc(100% - var(--eb-right)));
 }

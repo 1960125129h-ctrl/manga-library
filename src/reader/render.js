@@ -185,6 +185,9 @@ function applyPickX(axis) {
   }
   if (pick === S.pi || !isFinite(pick)) return;
   S.pi = pick; updateInfo(); syncThumbsActive(); save();
+  // 页码变了 = 当前页换了：防剧透的模糊边界要跟着重算
+  // （滚动瞬时的 rAF 刷新用的是旧页码，这里补一次）
+  try { updateEdgeFxDynamic(); } catch (e) {}
 }
 
 const CH_KEEP_PREV = 3;    // 转正后保留上一话最后 3 页（可往回滚对照中割）
@@ -329,6 +332,9 @@ export function promoteNextChapter() {
   // 不重建的话缩略图会一直停在上一次渲染的那一话（甚至更早）。
   try { applyThumbs(); } catch (e) {}
   syncThumbsActive(); save();
+  // 转正后 S.pi 换成了新话的页码，防剧透的模糊边界必须立刻按新页重算，
+  // 否则它会停在上一话最后一页的位置（用户看到的"跟错一页"）。
+  try { updateEdgeFxDynamic(); } catch (e) {}
   return true;
 }
 

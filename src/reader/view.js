@@ -87,52 +87,75 @@ function ebCfg() {
     smooth: (f.smooth === 0) ? 0 : 1
   };
 }
-/* 当前视口中心那一页的显示宽度（横排）；取不到就返回 0 */
-function centerPageWidth() {
+/* 当前居中页在视口里的左右边界（相对视口左缘）；取不到返回 null */
+function currentPageSpan() {
   const st = ebStageEl();
-  if (!st) return 0;
+  if (!st) return null;
   const sr = st.getBoundingClientRect();
-  const cx = sr.left + sr.width / 2;
-  const imgs = st.querySelectorAll("img");
-  let best = 0, bestD = Infinity;
-  for (let i = 0; i < imgs.length; i++) {
-    const r = imgs[i].getBoundingClientRect();
-    if (!r.width) continue;
-    const d = Math.abs((r.left + r.width / 2) - cx);
-    if (d < bestD) { bestD = d; best = r.width; }
+  // 用"当前页码 S.pi 对应的那张图"，而不是"视口中心最近的图"：
+  // 横排第一页只有 800 多像素宽，滚到最左时视口中心其实落在第二页上，
+  // 按最近页判定会认错人，左侧也就不会贴着屏幕边。
+  let best = null;
+  const cur = st.querySelector('.hstripimg[data-i="' + (S.pi | 0) + '"]');
+  if (cur && cur.getBoundingClientRect().width) {
+    best = cur.getBoundingClientRect();
+  } else {
+    const cx = sr.left + sr.width / 2;
+    const imgs = st.querySelectorAll("img");
+    let bestD = Infinity;
+    for (let i = 0; i < imgs.length; i++) {
+      const r = imgs[i].getBoundingClientRect();
+      if (!r.width) continue;
+      const d = Math.abs((r.left + r.width / 2) - cx);
+      if (d < bestD) { bestD = d; best = r; }
+    }
   }
-  return best;
+  if (!best) return null;
+  // 超出视口就夹到边界：跨页图会自然变成"两侧都不糊"
+  const left = Math.max(0, Math.min(sr.width, Math.round(best.left - sr.left)));
+  const right = Math.max(0, Math.min(sr.width, Math.round(best.right - sr.left)));
+  return { left: left, right: right, width: Math.round(best.width), vw: Math.round(sr.width) };
 }
-/* 横排是否已滚到链条最左 / 最右 */
-function ebAtEdges() {
-  const st = ebStageEl();
-  if (!st) return { left: false, right: false };
-  const maxX = st.scrollWidth - st.clientWidth;
-  // 右端留 12px 容差：滚动条（约 9px）会让 scrollLeft 停在 maxX 前面一点，
-  // 原来用 -2 判不到最右，右侧模糊就不会自动关。
-  return { left: st.scrollLeft <= 2, right: maxX > 0 && st.scrollLeft >= maxX - 12 };
-}
-/* 只重算"清晰区"和左右开关（滚动时高频调用，不碰强度/压暗） */
+/* 只重算"模糊边界"和左右开关（滚动时高频调用，不碰强度/压暗） */
 export function updateEdgeFxDynamic() {
   const cfg = ebCfg();
   const root = document.documentElement;
   const st = ebStageEl();
   if (!st) return;
   const sr = st.getBoundingClientRect();
-  let clearPx = 0;
+  const vw = Math.round(sr.width);
+  const span = currentPageSpan();
+
+  // 模糊边界：默认 = 当前页在屏幕上的真实左右边（这样第二页整段都会被糊住）
+  // 手动挡：按清晰区百分比居中算，跟以前一样
+  let leftPx, rightPx;
   if (cfg.mode === 'manual') {
-    clearPx = Math.round(sr.width * cfg.clear / 100);
+    const half = Math.round(vw * cfg.clear / 100 / 2);
+    leftPx = Math.round(vw / 2) - half;
+    rightPx = Math.round(vw / 2) + half;
+  } else if (span && span.right > 0 && span.left < vw) {
+    // 当前页还看得见 → 模糊边界贴在它的真实左右边上
+    leftPx = span.left;
+    rightPx = span.right;
   } else {
-    const pw = centerPageWidth();
-    const lo = Math.round(sr.width * 0.40);
-    const hi = Math.round(sr.width * 1.00);   // 图片撑满或超宽 -> 清晰区 = 视口宽 -> 不糊
-    clearPx = pw > 0 ? Math.max(lo, Math.min(hi, Math.round(pw))) : Math.round(sr.width * (cfg.clear / 100));
+    // 当前页已完全滚出视口（滚到中割/预接区），或还没渲染 → 回退到居中算法
+    const half = Math.round(vw * cfg.clear / 100 / 2);
+    leftPx = Math.round(vw / 2) - half;
+    rightPx = Math.round(vw / 2) + half;
   }
-  try { root.style.setProperty("--eb-clear", clearPx + "px"); } catch (e) {}
-  // 左右是否启用
-  const cfgEdge = ebAtEdges();
-  const wantL = (cfg.left === 'auto') ? !cfgEdge.left : (cfg.left !== 'off');
-  const wantR = (cfg.right === 'auto') ? !cfgEdge.right : (cfg.right !== 'off');
+  try {
+    root.style.setProperty("--eb-left", leftPx + "px");
+    root.style.setProperty("--eb-right", rightPx + "px");
+  } catch (e) {}
+
+  // 左右是否启用：按滚动位置判断"链条两端"。
+  // 不能用 leftPx/rightPx —— 本话末页后面还有预接的下一话，那时 rightPx 已经是负数了，
+  // 但屏幕右边其实还有内容要糊。
+  const maxX = st.scrollWidth - st.clientWidth;
+  const edgeL = st.scrollLeft <= 2;
+  const edgeR = maxX > 0 && st.scrollLeft >= maxX - 12;
+  const wantL = (cfg.left === 'off') ? false : (cfg.left === 'on') ? true : !edgeL;
+  const wantR = (cfg.right === 'off') ? false : (cfg.right === 'on') ? true : !edgeR;
   const dead = (cfg.blur <= 0 && cfg.dim <= 0);
   const apply = (sel, on) => {
     const el = document.querySelector(sel);
