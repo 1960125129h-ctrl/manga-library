@@ -17,7 +17,7 @@ body.bgimg #thumblist::-webkit-scrollbar-track{background:transparent!important}
 body.bgimg #thumblist::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--r-fg2,var(--fg2)) 55%, transparent)!important}
 #sidebar{width:230px;flex:0 0 230px;background:#17181c;border-right:1px solid var(--r-line,#26282e);display:flex;flex-direction:column;position:relative;overflow:hidden;transition:width .7s ease,flex-basis .7s ease,border-color 1.2s cubic-bezier(.4,0,.2,1),opacity .3s}
 #sidebar h2,#sidebar #chapters{opacity:1;visibility:visible;transition:opacity .5s,visibility .5s,width .7s}
-#sidebar.collapsed{width:26px;flex:0 0 26px}
+#sidebar.collapsed{width:22px;flex:0 0 22px}   /* 与 .sidehandle 同宽：原来 26px 会让手柄旁空出 4px，背景底图从那里透出来 */
 #sidebar.collapsed > h2,#sidebar.collapsed > #chapters{opacity:0;visibility:hidden;transition:opacity .3s,visibility 0s .3s,width .7s}
 #sidebar h2{padding-right:34px}
 #sidebar #chapters{padding-right:26px}
@@ -64,7 +64,7 @@ button.b.on{background:linear-gradient(135deg,var(--accent),var(--accent2));colo
 #hint.show{opacity:1}
 #thumbs{width:152px;flex:0 0 152px;background:#17181c;border-left:1px solid var(--r-line,#26282e);display:flex;flex-direction:column;position:relative;overflow:hidden;transition:width .7s ease,flex-basis .7s ease,border-color 1.2s cubic-bezier(.4,0,.2,1),opacity .3s}
 #thumbs h2,#thumbs #thumblist{opacity:1;visibility:visible;transition:opacity .5s,visibility .5s,width .7s}
-#thumbs.collapsed{width:26px;flex:0 0 26px}
+#thumbs.collapsed{width:22px;flex:0 0 22px}    /* 同上 */
 #thumbs.collapsed > h2,#thumbs.collapsed > #thumblist{opacity:0;visibility:hidden;transition:opacity .3s,visibility 0s .3s,width .7s}
 #thumbs h2{padding-left:34px}
 #thumbs #thumblist{padding-left:26px}
