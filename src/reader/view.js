@@ -138,15 +138,17 @@ export function updateEdgeFxDynamic() {
     };
   };
 
+  // 首末页判定用滚动位置（不能用"第一页还剩一点在视口里"，那样翻到第 2 页时
+  // 第一页的 right 只有 8px，边界会算成 [0,8]，整屏几乎全糊）。
+  // 注意这里只切"用哪一页算边界"，不再联动整层的 opacity，所以即使有点切，
+  // 也只是边界值的一次过渡，不会有"闪没了"。
   let leftPx, rightPx;
   if (atLeft) {
-    // 第一页的真实边界
     let p = null;
     for (let i = 0; i < imgs.length; i++) { p = rectOf(imgs[i]); if (p) break; }
     if (p) { leftPx = 0; rightPx = p.right; }
     else { leftPx = 0; rightPx = Math.round(vw * cfg.clear / 100); }
   } else if (atRight) {
-    // 最后一页的真实边界
     let p = null;
     for (let i = imgs.length - 1; i >= 0; i--) { p = rectOf(imgs[i]); if (p) break; }
     if (p) { rightPx = vw; leftPx = p.left; }
