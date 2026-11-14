@@ -321,6 +321,15 @@ export function makeImg(src, cls) {
   var reveal = function () {
     // 大图守门：单张超过 12MP 时 SVG 卷积可能回落 CPU，摘掉滤镜比掉帧好
     try { if (!enhGuard(im) && im.style.filter !== "none") im.style.filter = "none"; } catch (e) {}
+    // 图片出来了就把外层 .pagewrap 的占位最小宽度撤掉。
+    // 那个 min-width（视口高×0.70）是给"图还没加载"时撑位置的，
+    // 窄图按高度缩放后往往比它窄，留着会让窄图两侧各空出一段，看起来像接缝。
+    try {
+      var wrap = im.parentElement;
+      if (wrap && wrap.classList && wrap.classList.contains("pagewrap")) {
+        wrap.style.minWidth = "0";
+      }
+    } catch (e) {}
     im.classList.add("pgin-on");
     setTimeout(function () {
       try { im.classList.remove("pgin"); im.classList.remove("pgin-on"); } catch (e) {}
