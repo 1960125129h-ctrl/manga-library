@@ -497,7 +497,10 @@ export function applyThumbs() {
   var list = document.getElementById("thumblist");
   if (!list) return;
   var pl = pages();
-  var sig = S.ci + ":" + pl.length + ":" + (S.prevRev ? 1 : 0);
+  // 签名里必须带上"是哪本书"：只算 章节号+页数 的话，
+  // 换到另一本同样是「第 0 话、24 页」的书时签名完全一样，
+  // 会命中下面的 "内容没变就不重建" 而跳过，缩略图就停在上本书上。
+  var sig = (comic && (comic.dir || comic.name) || "") + "|" + S.ci + ":" + pl.length + ":" + (S.prevRev ? 1 : 0);
   if (list.getAttribute("data-sig") === sig) { syncThumbsActive(); return; }   // 内容没变就不重建(免得闪)
   list.setAttribute("data-sig", sig);
   var frag = document.createDocumentFragment();
