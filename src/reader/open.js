@@ -19,6 +19,7 @@ import { imgFile, nOf, chLabel, pageList } from '../shared/chapter.js';
 import { enc } from '../shared/text.js';
 import { hint } from '../shared/ui.js';
 import { resetReaderFullscreen } from '../reader/fullscreen.js';
+import { stopAutoPlay } from '../reader/nav.js';
 import { prefs, applyToState } from './prefs.js';
 import { card } from '../shelf/render.js';
 
@@ -291,6 +292,7 @@ export function flyCloseComic() {
   setTimeout(function () { try { fly.remove(); } catch (e) {} }, 460);
 }
 export function closeComic() {
+  try { stopAutoPlay(); } catch (e) {}   // 退出阅读器时把自动翻页停掉
   disarmHistoryBack();
   resetReaderFullscreen();
   cancelScrollRestore();

@@ -95,14 +95,44 @@ export function openThemeDialog() {
       S.imgfx[k] = v;
       applyImgFilter(); fxSave();
     };
+    // ---- 滑杆全部收进折叠栏（默认收起，只留上面的 5 个预设）----
+    var fxFoldHead = document.createElement("div");
+    fxFoldHead.style.cssText = "display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;padding:8px 0 6px;font-size:12.5px;font-weight:600;opacity:.85";
+    var fxFoldArrow = document.createElement("span");
+    fxFoldArrow.textContent = "▸";
+    fxFoldArrow.style.cssText = "display:inline-block;transition:transform .15s";
+    var fxFoldTxt = document.createElement("span");
+    fxFoldTxt.textContent = "手动微调（14 项）";
+    fxFoldHead.appendChild(fxFoldArrow); fxFoldHead.appendChild(fxFoldTxt);
+    box.appendChild(fxFoldHead);
+    var fxFoldBody = document.createElement("div");
+    fxFoldBody.style.cssText = "display:grid;grid-template-rows:0fr;overflow:hidden;transition:grid-template-rows .22s ease";
+    var fxFoldInner = document.createElement("div");
+    fxFoldInner.style.cssText = "overflow:hidden;min-height:0;padding-left:4px";
+    fxFoldBody.appendChild(fxFoldInner);
+    box.appendChild(fxFoldBody);
+    fxFoldHead.onclick = function () {
+      var open = fxFoldBody.style.gridTemplateRows === "1fr";
+      fxFoldBody.style.gridTemplateRows = open ? "0fr" : "1fr";
+      fxFoldArrow.style.transform = open ? "" : "rotate(90deg)";
+      __foldSet("fx", !open);
+    };
+    // 上次是什么状态就恢复什么（默认收起）
+    if (__foldGet("fx", false)) {
+      fxFoldBody.style.transition = "none";
+      fxFoldBody.style.gridTemplateRows = "1fr";
+      fxFoldArrow.style.transform = "rotate(90deg)";
+      requestAnimationFrame(function () { fxFoldBody.style.transition = "grid-template-rows .22s ease"; });
+    }
+
     FX_GROUPS.forEach(function (g) {
       var h = document.createElement("div");
       h.textContent = g[0];
       h.style.cssText = "margin:10px 0 4px;font-size:12px;font-weight:600;opacity:.75;letter-spacing:.5px";
-      box.appendChild(h);
+      fxFoldInner.appendChild(h);
       var wrap = document.createElement("div");
       wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px 14px";
-      box.appendChild(wrap);
+      fxFoldInner.appendChild(wrap);
       g[1].forEach(function (it) {
         var k = it[0], name = it[1], lo = it[2], hi = it[3], dv = it[4];
         var cell = document.createElement("div");
@@ -153,13 +183,39 @@ export function openThemeDialog() {
     var ef = S.edgefx || {};
     var sepEf = document.createElement("div");
     sepEf.style.cssText = "margin:14px 0 6px;font-size:12px;font-weight:600;opacity:.75;letter-spacing:.5px";
-    sepEf.textContent = "防剧透（仅横排）";
-    box.appendChild(sepEf);
+    // ---- 防剧透：折进自己的折叠栏 ----
+    var efFoldHead = document.createElement("div");
+    efFoldHead.style.cssText = "display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;padding:10px 0 6px;font-size:12.5px;font-weight:600;opacity:.85;border-top:1px solid var(--border);margin-top:10px";
+    var efFoldArrow = document.createElement("span");
+    efFoldArrow.textContent = "▸";
+    efFoldArrow.style.cssText = "display:inline-block;transition:transform .18s";
+    var efFoldTxt = document.createElement("span");
+    efFoldTxt.textContent = "防剧透（仅横排）";
+    efFoldHead.appendChild(efFoldArrow); efFoldHead.appendChild(efFoldTxt);
+    box.appendChild(efFoldHead);
+    var efBody = document.createElement("div");
+    efBody.style.cssText = "display:grid;grid-template-rows:0fr;overflow:hidden;transition:grid-template-rows .22s ease";
+    var efBodyInner = document.createElement("div");
+    efBodyInner.style.cssText = "overflow:hidden;min-height:0";
+    efBody.appendChild(efBodyInner);
+    box.appendChild(efBody);
+    var efOpen = false;
+    function setEfOpen(v, silent) {
+      efOpen = v;
+      efBody.style.transition = silent ? "none" : "grid-template-rows .22s ease";
+      efBody.style.gridTemplateRows = v ? "1fr" : "0fr";
+      efFoldArrow.style.transform = v ? "rotate(90deg)" : "";
+      if (silent) requestAnimationFrame(function () { efBody.style.transition = "grid-template-rows .22s ease"; });
+      else __foldSet("ef", v);
+    }
+    if (__foldGet("ef", false)) setEfOpen(true, true);
+    efFoldHead.onclick = function () { setEfOpen(!efOpen); };
+    efBodyInner.appendChild(sepEf);
     var efNote = document.createElement("div");
     efNote.className = "sub";
     efNote.style.cssText = "margin-bottom:8px";
     efNote.textContent = "横排两侧会渐变模糊变暗，只看清中间那一页。自动挡会跟随当前页的宽度，并在首尾两端关掉没有内容那一侧。";
-    box.appendChild(efNote);
+    efBodyInner.appendChild(efNote);
 
     var efSaveT = 0;
     var efSave = function () {
@@ -212,14 +268,14 @@ export function openThemeDialog() {
       { v: "auto", t: "自动", d: "清晰区跟随当前页宽度；左右按位置自动开关（到头那一侧不糊）" },
       { v: "manual", t: "手动", d: "清晰区用下面的滑杆；左右可以各自设成自动/开/关" }
     ], ef.mode || "auto", function (v) { setEf("mode", v); });
-    box.appendChild(mkRow("模式", modeSeg));
+    efBodyInner.appendChild(mkRow("模式", modeSeg));
 
     // 左右两行的容器：自动挡只有「跟随 / 关」两档，
     // 手动挡才给「自动 / 开 / 关」三档 —— 自动挡下"始终开"没意义
     // （第一页左边本来没内容，强制开就是糊着空的）。
     var leftRow = document.createElement("div");
     var rightRow = document.createElement("div");
-    box.appendChild(leftRow); box.appendChild(rightRow);
+    efBodyInner.appendChild(leftRow); efBodyInner.appendChild(rightRow);
     var leftSeg = null, rightSeg = null;
 
     function buildSideRows() {
@@ -252,7 +308,7 @@ export function openThemeDialog() {
     // 三条滑杆
     var efWrap = document.createElement("div");
     efWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px";
-    box.appendChild(efWrap);
+    efBodyInner.appendChild(efWrap);
     var efSliders = {};
     [["clear", "清晰区", 30, 90, 50, "%"], ["blur", "模糊强度", 0, 30, 12, "px"], ["dim", "边缘压暗", 0, 80, 28, "%"], ["speed", "切换速度", 0, 400, 120, "ms"]].forEach(function (it) {
       var k = it[0], name = it[1], lo = it[2], hi = it[3], dv = it[4], unit = it[5];
@@ -290,7 +346,37 @@ export function openThemeDialog() {
     smoothCb.onchange = function () { setEf("smooth", smoothCb.checked ? 1 : 0); };
     smoothLab.appendChild(smoothCb);
     smoothLab.appendChild(document.createTextNode("切页时渐变平滑过渡（0.2 秒）"));
-    box.appendChild(smoothLab);
+    efBodyInner.appendChild(smoothLab);
+
+    // ---- 自动翻页间隔（横排用）----
+    var apRow2 = document.createElement("div");
+    apRow2.style.cssText = "display:flex;align-items:center;gap:10px;margin:10px 0 2px";
+    var apLb2 = document.createElement("span");
+    apLb2.textContent = "翻页间隔";
+    apLb2.style.cssText = "font-size:12.5px;opacity:.85;width:64px;flex:0 0 auto";
+    var apRg2 = document.createElement("input");
+    apRg2.type = "range"; apRg2.min = "0"; apRg2.max = "60"; apRg2.step = "1";
+    apRg2.id = "apRgReader";
+    apRg2.value = String((typeof S.autoplay === "number") ? S.autoplay : 0);
+    apRg2.style.cssText = "flex:1 1 auto;min-width:80px";
+    apRg2.title = "横排模式点工具栏「自动翻页」后，按这个间隔往下翻一页；0 表示关闭";
+    var apVv2 = document.createElement("span");
+    apVv2.className = "stat";
+    apVv2.style.cssText = "font-size:12px;min-width:46px;text-align:right";
+    function apText2() { return apRg2.value === "0" ? "关闭" : apRg2.value + " 秒"; }
+    apVv2.textContent = apText2();
+    apRg2.oninput = function () {
+      S.autoplay = Number(apRg2.value) || 0;
+      apVv2.textContent = apText2();
+      saveReaderDefaults();
+    };
+    apRow2.appendChild(apLb2); apRow2.appendChild(apRg2); apRow2.appendChild(apVv2);
+    box.appendChild(apRow2);
+    var apHint2 = document.createElement("div");
+    apHint2.className = "sub";
+    apHint2.textContent = "横排模式下点工具栏「自动翻页」按此间隔翻页，动作与按方向键相同；翻到最后一页自动停止。";
+    apHint2.style.cssText = "margin:2px 0 0 74px";
+    box.appendChild(apHint2);
 
     // 自动挡下清晰区滑杆置灰 + 显示「跟随图片」
     function refreshEfUI() {
@@ -600,7 +686,87 @@ function bindHScrollWheel() {
   }, { passive: true });
 }
 
+
+/* ---------- 自动翻页 ----------
+   逻辑和按方向键完全一样：每次调 stripJump(1)。
+   间隔取自偏好 S.autoplay（秒，0=关闭）。
+   到底了就停（不循环——看完一话还在自动滚会很怪）。 */
+/* ---------- 折叠栏状态记忆 ----------
+   纯界面状态，放 localStorage 就够：不需要主进程校验，也不用跟别的机器同步。 */
+var FOLD_KEY = 'readerFoldState';
+function __foldAll() {
+  try { return JSON.parse(localStorage.getItem(FOLD_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+function __foldGet(name, dv) {
+  var o = __foldAll();
+  return (typeof o[name] === 'boolean') ? o[name] : dv;
+}
+function __foldSet(name, v) {
+  try { var o = __foldAll(); o[name] = !!v; localStorage.setItem(FOLD_KEY, JSON.stringify(o)); } catch (e) {}
+}
+
+var autoTimer = 0;
+export function isAutoPlaying() { return !!autoTimer; }
+export function stopAutoPlay() {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = 0; }
+  S.autoplayOn = false;
+  syncAutoBtn();
+}
+function syncAutoBtn() {
+  var btn = document.getElementById("bauto");
+  if (!btn) return;
+  var on = !!autoTimer;
+  btn.classList.toggle("on", on);
+  btn.textContent = on ? "停止自动" : "自动翻页";
+  btn.title = on
+    ? ("正在自动翻页，间隔 " + (S.autoplay || 0) + " 秒。再点一次停止")
+    : "自动翻页：按间隔自动往下翻一页，翻页动作与方向键完全相同";
+}
+export function startAutoPlay(sec) {
+  stopAutoPlay();
+  var n = Math.round(Number(sec) || 0);
+  if (!(n >= 1)) { hint("先把「翻页间隔」设成大于 0 的秒数（阅读设置 → 防剧透下方）"); return; }
+  S.autoplay = n;
+  S.autoplayOn = true;
+  autoTimer = setInterval(function () {
+    if (S.mode !== "hscroll" && S.mode !== "hspread") { stopAutoPlay(); return; }
+    var ok = false;
+    try { ok = stripJump(1); } catch (e) { ok = false; }
+    if (!ok) { stopAutoPlay(); hint("已经是最后一页，自动翻页已停止"); }
+  }, n * 1000);
+  syncAutoBtn();
+}
+export function toggleAutoPlay() {
+  if (autoTimer) stopAutoPlay();
+  else startAutoPlay(S.autoplay || 0);
+}
+
+/* 有人介入就停：键盘、滚轮、点/触摸、切章节都算。
+   不监听 scroll —— 自动翻页自己就在滚，监听它会刚启动就停。
+   stripJump 不产生这些事件，所以不会误伤自己。 */
+var autoStopBound = false;
+export function bindAutoStopOnInteract() {
+  if (autoStopBound) return;
+  autoStopBound = true;
+  var stop = function (ev) {
+    if (!autoTimer) return;
+    // 点「自动翻页」按钮本身不算介入：那个按钮有自己的开关逻辑，
+    // 不排除的话 pointerdown 先停、click 又启，等于关不掉。
+    var t = ev && ev.target;
+    if (t && t.closest && t.closest("#bauto")) return;
+    stopAutoPlay();
+  };
+  ["keydown", "wheel", "pointerdown", "touchstart"].forEach(function (ev) {
+    try { document.addEventListener(ev, stop, { passive: true, capture: true }); } catch (e) {
+      try { document.addEventListener(ev, stop, true); } catch (e2) {}
+    }
+  });
+}
+
 export function initReaderNav(ctx) {
   BG_PARALLAX = ctx.BG_PARALLAX; THEMES = ctx.THEMES; elStage = ctx.elStage;
   bindHScrollWheel();
+  var autoBtn = document.getElementById("bauto");
+  if (autoBtn) autoBtn.onclick = function () { toggleAutoPlay(); };
+  bindAutoStopOnInteract();
 }

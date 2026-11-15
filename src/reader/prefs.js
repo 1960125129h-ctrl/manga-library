@@ -13,7 +13,7 @@ import { S } from '../app/state.js';
 const API = '/api/reader-prefs';
 const LKEY = 'readerPrefs';          // 本机镜像: 启动瞬间先按它渲染, 再异步跟文件对齐
 export const PREF_KEYS = ['mode', 'fit', 'dir', 'cover', 'sidebar', 'thumbs', 'wheel', 'rev', 'prevRev', 'theme', 'bright', 'scale',
-                        'enhance', 'contrast', 'saturate', 'preload', 'spreadWide', 'gap', 'imgfx', 'edgefx'];
+                        'enhance', 'contrast', 'saturate', 'preload', 'spreadWide', 'gap', 'imgfx', 'edgefx', 'autoplay'];
 const FX_KEYS = { bright: [0, 200, 100], contrast: [0, 200, 100], saturate: [0, 200, 100],
                   warmth: [-100, 100, 0], tint: [-100, 100, 0],
                   highlights: [-100, 100, 0], shadows: [-100, 100, 0], curve: [-100, 100, 0],
@@ -70,7 +70,7 @@ export function defaults() {
            sidebar: !coarse(), thumbs: false, wheel: true, rev: false, prevRev: false,
            theme: 'dark', bright: 1, scale: 1,
            enhance: 'off', contrast: 1, saturate: 1, preload: 4, spreadWide: 'auto', gap: 8,
-           imgfx: sanitizeImgFx(null), edgefx: sanitizeEdgeFx(null) };
+           imgfx: sanitizeImgFx(null), edgefx: sanitizeEdgeFx(null), autoplay: 0 };
 }
 
 // 只认列出来的键, 并且逐个校验类型/取值 —— 文件坏了或手改错了也不会把界面搞崩
@@ -105,6 +105,9 @@ export function sanitize(src) {
   o.spreadWide = ['auto', 'on', 'off'].indexOf(s.spreadWide) >= 0 ? s.spreadWide : d.spreadWide;
   var gp = Number(s.gap);
   o.gap = (isFinite(gp) && gp >= 0 && gp <= 48) ? Math.round(gp) : d.gap;
+  // 自动翻页间隔（秒），0 = 关闭
+  var ap = Number(s.autoplay);
+  o.autoplay = (isFinite(ap) && ap >= 0 && ap <= 60) ? Math.round(ap) : d.autoplay;
   return o;
 }
 
@@ -121,6 +124,7 @@ export function applyToState(p) {
   current = v;
   S.mode = v.mode; S.fit = v.fit; S.dir = v.dir; S.cover = v.cover;
   S.sidebar = v.sidebar; S.thumbs = v.thumbs; S.wheel = v.wheel;
+  S.autoplay = v.autoplay;      // 自动翻页间隔；漏这一行的话磁盘上存了也读不回来
   S.rev = v.rev; S.prevRev = v.prevRev;
   S.theme = v.theme; S.bright = v.bright;
   S.scale = v.scale;

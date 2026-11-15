@@ -830,6 +830,7 @@ function sanitizePrefs(src) {
   o.sidebar = typeof s.sidebar === 'boolean' ? s.sidebar : true;
   o.thumbs = typeof s.thumbs === 'boolean' ? s.thumbs : false;
   o.wheel = typeof s.wheel === 'boolean' ? s.wheel : true;
+  o.autoplay = (typeof s.autoplay === 'number' && s.autoplay >= 1 && s.autoplay <= 60) ? Math.round(s.autoplay) : 0;   // 自动翻页间隔(秒)，0=关
   o.rev = !!s.rev;
   o.prevRev = !!s.prevRev;
   o.theme = PREF_THEMES.indexOf(s.theme) >= 0 ? s.theme : 'dark';

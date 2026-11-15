@@ -80,6 +80,16 @@ def lev(a, b):
 _BOOK_CACHE = {}
 
 
+_VOL_RE = re.compile(r"[0-9０-９]+|[一二三四五六七八九十百千]+")
+
+
+def _vol_key(s):
+    """抽出书名里的数字标记，用来区分第 1 卷 / 第 2 卷这类同系列不同本。
+    之前只看编辑距离：'〜世界 [DL版]' 和 '〜世界 ２[DL版]' 距离是 1，
+    被当成同一本书，第 2 卷的内容直接覆盖到第 1 卷目录里。"""
+    return tuple(_VOL_RE.findall(s or ""))
+
+
 def resolve_book_name(base, title):
     """库里有同名（含简繁差异）目录就沿用，避免同一本被拆成两个目录。"""
     want = safe_name(title)
@@ -95,8 +105,13 @@ def resolve_book_name(base, title):
         _BOOK_CACHE[key] = want
         return want
     best, bd = None, 999
+    wantVol = _vol_key(want)
     for d in cands:
         if abs(len(d) - len(want)) > 2:
+            continue
+        # 数字标记不同 = 不同的一本（第 2 卷不能被并进第 1 卷）。
+        # 宁可多建一个目录也不要并错——并错会覆盖内容。
+        if _vol_key(d) != wantVol:
             continue
         dist = lev(d, want)
         if dist < bd:

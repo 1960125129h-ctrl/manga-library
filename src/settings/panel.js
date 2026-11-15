@@ -448,6 +448,7 @@ export function openSettings() {
     plRow.appendChild(plLb); plRow.appendChild(plRg); plRow.appendChild(plVal);
     pDisplay.appendChild(plRow);
 
+
     // 背景图
     var bgSep = document.createElement('div'); bgSep.style.cssText = 'border-top:1px solid var(--border);margin:12px 0;padding-top:10px;font-weight:600;font-size:14px';
     bgSep.textContent = '背景图';
