@@ -46,7 +46,7 @@ export function editNote(dir) {
     modalFoot(box, function () {
       closeModal();
       e.note = ta.value.trim();
-      libSave(); invalidateCard(dir); renderShelf();
+      libSave(); invalidateCard(dir); keepScroll(renderShelf);
       hint(e.note ? "已保存备注" : "已清空备注");
     }, "保存");
     setTimeout(function () { ta.focus(); }, 40);
@@ -136,8 +136,24 @@ export function toggleFav(dir) {
   var e = libEntry(dir);
   e.favorite = !e.favorite;
   libSave();
-  invalidateCard(dir);
-  renderShelf();
+  // 收藏只影响那一个星标的显示，不需要重建整个书架。
+  // 原来这里调 renderShelf() 会导致所有卡片重建、高度塌陷再撑回，
+  // 滚动位置必然跟着跳；直接改星标即可，零重绘。
+  var card = null;
+  try {
+    var g = document.getElementById("grid");
+    if (g) card = g.querySelector('[data-dir="' + (window.CSS && CSS.escape ? CSS.escape(dir) : dir.replace(/"/g, '\\"')) + '"]');
+  } catch (er) { card = null; }
+  if (card) {
+    var star = card.querySelector(".star");
+    if (star) {
+      star.classList.toggle("on", !!e.favorite);
+      star.textContent = e.favorite ? "★" : "☆";
+    }
+  } else {
+    // 找不到那张卡片（比如不在当前筛选里）才退回重绘
+    keepScroll(renderShelf);
+  }
   hint(e.favorite ? "已加入收藏" : "已取消收藏");
 }
 export async function mergeBook(dir) {
@@ -157,6 +173,41 @@ export function setRating(dir, manual) {   // manual: true=18+ / false=全年龄
   else { e.restricted = !!manual; if (mf) mf.rating = manual ? "18+" : ""; hint(manual ? "已标为 18+" : "已标为全年龄"); }
   libSave(); invalidateCard(dir); keepScroll(renderShelf);
 }
+
+/* 直接把一本书删掉（不弹确认框）。
+   卡片上的 ✕ 已经做过二次确认（✕ → 确认删除），这里就直接执行。
+   返回 true 表示成功。 */
+export async function deleteBookNow(dir) {
+  var doDelete;
+  if (DISK && DISK.deleteComic) {
+    doDelete = async function () {
+      var r = await DISK.deleteComic(dir);
+      if (!r || !r.ok) throw new Error((r && r.msg) || "未知错误");
+    };
+  } else if (isWebMode()) {
+    doDelete = async function () { await webDeleteBook(dir); };
+  } else {
+    hint("删除需要桌面版：请用「启动书库.cmd」打开书库");
+    return false;
+  }
+  try {
+    await doDelete();
+  } catch (err) {
+    hint("删除失败：" + (err && err.message ? err.message : String(err)));
+    return false;
+  }
+  if (LIBRARY && LIBRARY.comics) delete LIBRARY.comics[dir];
+  if (COMICS && COMICS.length) {
+    for (var i = COMICS.length - 1; i >= 0; i--) {
+      if (COMICS[i].dir === dir) { COMICS.splice(i, 1); break; }
+    }
+  }
+  hint("已删除：" + dir);
+  invalidateCard(dir);
+  renderShelf();
+  return true;
+}
+
 export function confirmDelete(dir) {
   // 选择删除执行器: 桌面版走 IPC, Web 模式(手机浏览器)走 HTTP /api/delete
   var doDelete;
@@ -199,8 +250,10 @@ export function confirmDelete(dir) {
         }
         hint("已删除：" + dir);
         closeModal();
-        if (DISK && DISK.rescan) await DISK.rescan({ offline: true, dirs: [dir] });   // 目录已删, 增量扫描会把这本书从 manifest 摘掉
-        else { invalidateCard(dir); renderShelf(); }
+        // 不再跑 build-library.mjs 重建：主进程的 lib:delete 已经把这本书从 _manifest.json 摘掉了，
+        // 这里只把界面刷一下就行（原来是 30~50 秒，现在立刻完成）。
+        invalidateCard(dir);
+        renderShelf();
       } catch (err) {
         del.disabled = false; del.textContent = "删除";
         st.textContent = "删除失败：" + (err && err.message ? err.message : String(err));

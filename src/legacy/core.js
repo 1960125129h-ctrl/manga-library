@@ -20,7 +20,7 @@ import { initLibraryStore, setCACHE, libEntry, manifestOf, entryOf, noteOf, revO
          totalPages, innerAuthor, authorKey, platformOf, isBigPlat, unitP, unitQ, dupKey, cn2num, sortKey,
          bookCmp, bookSortKey, coverPage, countIn, groupLabelFor, authorOf, buildSearchHay, flushProg } from '../library/store.js';
 import { initShelfSelect, selHas, selClear, selToggle, selRange, selNewAlbum, selRemoveFromAlbum, selDelete, selCategory, addToAlbum, removeFromAlbum, inAlbum, albumCount, visibleDirs, deleteMany } from '../shelf/select.js';
-import { initShelfUtil, clampTags, gridCellW, keepScroll, scrollers, finishReorder, updateFilterBadge, copyText, thumbOf, extractCardColor } from '../shelf/util.js';
+import { initShelfUtil, clampTags, gridCellW, keepScroll, jumpToCard, scrollers, finishReorder, updateFilterBadge, copyText, thumbOf, extractCardColor } from '../shelf/util.js';
 import { initShelfActions, editNote, autoTags, toggleFav, setRating, renameBookDir, mergeBook, confirmDelete, findDupGroups, loadBookTimes, dupDialog, manageCat } from '../shelf/book-actions.js';
 import { initShelfHistory, openHistory, renderHistory, renderBookmarks, closeHistory } from '../shelf/history.js';
 import { initShelfAuthors, autoAuthor, authorGroups, authorCtx, mergeAuthorInto, mergeAuthorDialog, saveAliasMap, tagOne, autoTagsAll } from '../shelf/authors.js';
@@ -730,6 +730,23 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
     elQClear.onclick = function () {
       elSearch.value = ""; S.q = ""; syncQClear();
       renderShelf(); saveShelfView(); elSearch.focus();
+      // 从卡片上的作者/标签点进来的：清空后退回那本书所在位置，而不是书架首行
+      var __origin = window.__filterOrigin;
+      if (__origin && __origin.dir) {
+        window.__filterOrigin = null;
+        // renderShelf 走 view transition，DOM 是异步重建的，直接跳会找不到卡片。
+        // 分几次试，哪次找到就滚过去。
+        (function (dir) {
+          var tries = 0;
+          var go = function () {
+            tries++;
+            var ok = false;
+            try { ok = jumpToCard(dir); } catch (e) { ok = false; }
+            if (!ok && tries < 8) setTimeout(go, 120);
+          };
+          setTimeout(go, 120);
+        })(__origin.dir);
+      }
     };
   }
   syncQClear();

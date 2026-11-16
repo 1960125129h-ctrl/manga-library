@@ -12,19 +12,57 @@ import { hint } from '../shared/ui.js';
 import { S, elGrid } from '../app/state.js';
 import { manualOrder, saveManualOrder } from '../shared/storage.js';
 
-export function keepScroll(fn) {
-  var se = document.scrollingElement || document.body;
-  var y0 = se ? se.scrollTop : 0, g0 = elGrid ? elGrid.scrollTop : 0;
-  try { fn(); } catch (e) {}
-  var restore = function () {
-    try { if (se) se.scrollTop = y0; } catch (e) {}
-    try { if (elGrid) elGrid.scrollTop = g0; } catch (e) {}
-  };
-  restore();
-  requestAnimationFrame(restore);
-  setTimeout(restore, 60);
-  setTimeout(restore, 200);
+/* 待恢复的滚动位置：renderShelf 走 document.startViewTransition，DOM 是异步重建的，
+   在它之前恢复等于没恢复（清空一归零就白设了）。所以只登记目标值，
+   由 renderShelfNow() 重建完调 applyPendingScroll() 落地。 */
+
+/* 滚动位置不能只记像素：重绘后卡片高度会变（图片/标签陆续加载），
+   scrollTop 数值没动，但那个像素位置对应的已经是另一张卡片了 —— 看着就是"跳"。
+   所以记的是「第几张卡片 + 卡片内的偏移」，恢复时按卡片重新定位。 */
+let pendingScroll = null;
+
+function anchorOf() {
+  try {
+    var g = document.getElementById("grid");
+    if (!g) return null;
+    var top = g.scrollTop;
+    var cards = g.children;
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      if (c.offsetTop + c.offsetHeight > top) {
+        return { i: i, off: top - c.offsetTop, top: top };
+      }
+    }
+  } catch (e) {}
+  return null;
 }
+
+export function keepScroll(fn) {
+  pendingScroll = anchorOf();
+  try { fn(); } catch (e) {}
+  setTimeout(applyPendingScroll, 300);   // 兜底
+}
+
+export function applyPendingScroll() {
+  var a2 = pendingScroll;
+  if (!a2) return;
+  pendingScroll = null;
+  var set = function () {
+    try {
+      var g = document.getElementById("grid");
+      if (!g) return;
+      var c = g.children[a2.i];
+      var target = c ? (c.offsetTop + a2.off) : a2.top;
+      g.scrollTop = target;
+    } catch (e) {}
+  };
+  set();
+  requestAnimationFrame(set);
+  setTimeout(set, 80);
+  setTimeout(set, 260);
+  setTimeout(set, 600);   // 等图片/标签把高度撑回去后再校一次
+}
+
 export function clampTags(tw) {
   if (!tw || tw.dataset.clamped) return;
   var kids = Array.prototype.slice.call(tw.children);
@@ -168,4 +206,51 @@ let COLOR_CACHE;
 
 export function initShelfUtil(ctx) {
   COLOR_CACHE = ctx.COLOR_CACHE
+}
+
+/* 滚到某一本书所在的位置（书架里按 data-dir 找）。
+   用途：点作者/标签筛选后清空返回时，回到当初点的那本书，
+   而不是直接回到书架首行。 */
+/* 滚到某一本书所在的位置。
+   注意不能"现在"就滚：调用方前面的 renderShelf() 走的是 view transition，
+   DOM 是异步重建的，那一刻卡片还没生成。所以这里只登记目标，
+   由 renderShelfNow() 重建完调 applyPendingJump() 落地。 */
+let pendingJumpDir = null;
+
+export function jumpToCard(dir) {
+  if (!dir) return false;
+  try {
+    var g = document.getElementById("grid");
+    if (!g) return false;
+    var sel = (window.CSS && CSS.escape) ? CSS.escape(dir) : String(dir).replace(/"/g, '\\"');
+    var card = g.querySelector('[data-dir="' + sel + '"]');
+    if (!card) return false;
+    // 卡片还没被布局（高度 0 / 不在文档流里）就别设，等下次重试
+    if (!card.offsetHeight || !card.isConnected) return false;
+    var target = Math.max(0, card.offsetTop - 16);
+    g.scrollTop = target;
+    // 只有真正到位（或被 clamp 到最大值）才算完成，避免调用方一直重试累积偏差
+    return Math.abs(g.scrollTop - target) <= 4 || g.scrollTop >= g.scrollHeight - g.clientHeight - 4;
+  } catch (e) { return false; }
+}
+
+export function applyPendingJump() {
+  var dir = pendingJumpDir;
+  if (!dir) return;
+  var tryOnce = function () {
+    try {
+      var g = document.getElementById("grid");
+      if (!g) return false;
+      var sel = (window.CSS && CSS.escape) ? CSS.escape(dir) : String(dir).replace(/"/g, '\\"');
+      var card = g.querySelector('[data-dir="' + sel + '"]');
+      if (!card) return false;
+      g.scrollTop = Math.max(0, card.offsetTop - 16);
+      return true;
+    } catch (e) { return false; }
+  };
+  if (tryOnce()) { pendingJumpDir = null; return; }
+  // 还没渲染出来：多试几次（含图片/标签撑高之后）
+  [50, 150, 300, 600].forEach(function (ms) {
+    setTimeout(function () { if (pendingJumpDir === dir && tryOnce()) pendingJumpDir = null; }, ms);
+  });
 }

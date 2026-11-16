@@ -19,7 +19,7 @@ import { fmtBytes } from '../shared/format.js';
 import { nOf, chLabel, pageList } from '../shared/chapter.js';
 import { loadAlbums, saveAlbums, manualOrder } from '../shared/storage.js';
 import { hint, showModal, closeModal, askConfirm, askText } from '../shared/ui.js';
-import { confirmDelete } from '../shelf/book-actions.js';
+import { confirmDelete, deleteBookNow } from '../shelf/book-actions.js';
 import { S, elGrid, LIBRARY } from '../app/state.js';
 import { saveShelfView, applyFRowState } from '../shelf/filter-row.js';
 import { SET } from '../settings/panel.js';
@@ -98,7 +98,11 @@ export function initShelfRender(c) {
 
 
 export function renderShelf() {
-  vtWrap(function () { renderShelfNow(); });
+  // 重绘完成后把滚动位置落地（详见 util.js 的 applyPendingScroll）
+  vtWrap(function () {
+    renderShelfNow();
+    try { applyPendingScroll(); } catch (e) {}
+  });
 }
 
 export function renderShelfNow() {
@@ -385,6 +389,7 @@ export function card(c, m) {
     au.title = (rawA && rawA !== ak ? "原始写法: " + rawA + " · " : "") + "点一下：搜索这个作者的书";
     au.onclick = function (ev) {
       ev.stopPropagation();
+      window.__filterOrigin = { dir: c.dir }; try { var __g = document.getElementById("grid"); if (__g) __g.scrollTop = 0; } catch (e) {}   // 记住从哪本书点进来的，清空筛选后回到它
       S.q = ak; S.authors = [];
       if (elSearch) elSearch.value = ak;
       if (window.__qclearSync) window.__qclearSync();
@@ -399,8 +404,33 @@ export function card(c, m) {
     wl.textContent = [c.work, c.char].filter(Boolean).join(" · ");
     mt.appendChild(wl);
   }
-  var sub = document.createElement("div"); sub.className = "csub";
-  sub.textContent = c.chapters.length + " " + unitQ(c.dir) + " · " + totalPages(c) + " " + unitP(c.dir) + (c.size ? " · " + fmtBytes(c.size) : ""); mt.appendChild(sub);
+  // 第一行：话数 · 页数 · 大小 +（最右端）删除按钮
+  var sub = document.createElement("div"); sub.className = "csub crow";
+  var subTxt = document.createElement("span");
+  subTxt.className = "crowtxt";
+  subTxt.textContent = c.chapters.length + " " + unitQ(c.dir) + " · " + totalPages(c) + " " + unitP(c.dir) + (c.size ? " · " + fmtBytes(c.size) : "");
+  sub.appendChild(subTxt);
+  // 删除按钮：平时灰色 ✕，悬浮变红；点一下原地变成「确认删除」，
+  // 鼠标离开这一行就退回灰色 ✕（两次确认，但不用弹窗）
+  var delx = document.createElement("button");
+  delx.type = "button";
+  delx.className = "cdelx";
+  delx.textContent = "✕";
+  delx.title = "删除这本书";
+  var delArmed = false;
+  var disarmDel = function () { delArmed = false; delx.classList.remove("armed"); delx.textContent = "✕"; delx.title = "删除这本书"; };
+  delx.onclick = function (ev) {
+    ev.preventDefault(); ev.stopPropagation();
+    if (!delArmed) { delArmed = true; delx.classList.add("armed"); delx.textContent = "确认删除"; delx.title = "再点一次：连同磁盘文件一起删除"; return; }
+    delx.textContent = "删除中…";
+    disarmDel();
+    // 这里已经确认过了，直接删——不再弹第三个确认框
+    deleteBookNow(c.dir);
+  };
+  delx.oncontextmenu = function (ev) { ev.preventDefault(); ev.stopPropagation(); };
+  sub.onmouseleave = disarmDel;
+  sub.appendChild(delx);
+  mt.appendChild(sub);
   if (ent && ent.source && ent.source.site) {
     var sr = document.createElement("div"); sr.className = "csrc"; sr.textContent = "来源 " + ent.source.site; mt.appendChild(sr);
   }
@@ -426,7 +456,7 @@ export function card(c, m) {
       seenTag[_cats[ci]] = 1;
       var s1 = document.createElement("span"); s1.className = "ctag cat"; s1.textContent = _cats[ci];
       s1.title = "点一下：按分类「" + _cats[ci] + "」筛选";
-      s1.onclick = function (ev) { ev.stopPropagation(); S.filter = this.textContent; S.q = ""; if (elSearch) elSearch.value = ""; if (window.__qclearSync) window.__qclearSync(); renderShelf(); saveShelfView(true); };
+      s1.onclick = function (ev) { ev.stopPropagation(); window.__filterOrigin = { dir: c.dir }; try { var __g = document.getElementById("grid"); if (__g) __g.scrollTop = 0; } catch (e) {} S.filter = this.textContent; S.q = ""; if (elSearch) elSearch.value = ""; if (window.__qclearSync) window.__qclearSync(); renderShelf(); saveShelfView(true); };
       tw.appendChild(s1);
     }
     for (ci = 0; ci < _tags.length; ci++) {
@@ -434,7 +464,7 @@ export function card(c, m) {
       seenTag[_tags[ci]] = 1;
       var s2 = document.createElement("span"); s2.className = "ctag tag"; s2.textContent = "#" + _tags[ci];
       s2.title = "点一下：搜索标签「" + _tags[ci] + "」";
-      s2.onclick = function (ev) { ev.stopPropagation(); S.q = this.textContent.slice(1); if (elSearch) elSearch.value = S.q; if (window.__qclearSync) window.__qclearSync(); renderShelf(); saveShelfView(true); };
+      s2.onclick = function (ev) { ev.stopPropagation(); window.__filterOrigin = { dir: c.dir }; try { var __g = document.getElementById("grid"); if (__g) __g.scrollTop = 0; } catch (e) {} S.q = this.textContent.slice(1); if (elSearch) elSearch.value = S.q; if (window.__qclearSync) window.__qclearSync(); renderShelf(); saveShelfView(true); };
       tw.appendChild(s2);
     }
     mt.appendChild(tw);

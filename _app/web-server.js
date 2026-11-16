@@ -118,15 +118,10 @@ function streamFile(res, filePath, mime) {
 }
 function loadComics(libRoot) {
   // 优先读构建直接产出的 _manifest.json(格式稳定, 也省掉每次 API 都正则解析 3MB 生成 HTML)
-  // 只有老工程没有 _manifest.json 时才回退去抠 书库.html
+  // 没有 _manifest.json 就是没有数据（早年的 书库.html 兜底已移除，那个文件也不再生成）
   try {
     var j = JSON.parse(fs.readFileSync(path.join(libRoot, '_manifest.json'), 'utf8'));
     if (j && Array.isArray(j.comics)) return j.comics;
-  } catch (e) {}
-  try {
-    var html = fs.readFileSync(path.join(libRoot, '书库.html'), 'utf8');
-    var m = html.match(/var COMICS\s*=\s*(\[[\s\S]*?\]);/);
-    if (m) return JSON.parse(m[1]);
   } catch (e) {}
   return [];
 }

@@ -95,6 +95,7 @@ contextBridge.exposeInMainWorld('mangaLib', {
   versions: () => ipcRenderer.invoke('app:versions'),
   metaFetch: (url) => ipcRenderer.invoke('meta:fetch', url),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+    openUrlInBrowser: (url) => ipcRenderer.invoke('browser:openUrl', url),   // 优先用带调试端口的浏览器
   dlResolve: (url) => ipcRenderer.invoke('dl:resolve', url),
   dlStart: (opts) => ipcRenderer.invoke('dl:start', opts),
   dlCancel: () => ipcRenderer.invoke('dl:cancel'),

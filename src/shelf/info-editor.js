@@ -8,7 +8,7 @@ import { libEntry, libSave } from '../library/store.js';
 import { hint, showModal, modalFoot, closeModal } from '../shared/ui.js';
 import { hostOf } from '../shared/url.js';
 import { invalidateCard, renderShelf } from '../shelf/render.js';
-import { copyText } from '../shelf/util.js';
+import { copyText, keepScroll } from '../shelf/util.js';
 
 export function openEditor(dir) {
   if (!LIBRARY) { hint("收藏/分类需要桌面版"); return; }
@@ -43,7 +43,7 @@ export function openEditor(dir) {
       e.categories = cats;
       e.tags = ti.value.split(",").join("，").split("，").map(function (x) { return x.trim(); }).filter(Boolean);
       e.note = ni.value.trim();
-      libSave(); invalidateCard(dir); closeModal(); renderShelf(); hint("已保存");
+      libSave(); invalidateCard(dir); closeModal(); keepScroll(renderShelf); hint("已保存");
     });
     [ti, ni].forEach(function (inp) {
       inp.onkeydown = function (ev) { ev.stopPropagation(); if (ev.key === "Enter") f.ok.click(); else if (ev.key === "Escape") closeModal(); };
@@ -86,7 +86,9 @@ export function openInfo(dir) {
     ob.onclick = function () {
       var u = ui.value.trim();
       if (!u) { hint("请先填写链接"); return; }
-      if (DISK && DISK.openExternal) DISK.openExternal(u); else copyText(u);
+      if (DISK && DISK.openUrlInBrowser) DISK.openUrlInBrowser(u);
+      else if (DISK && DISK.openExternal) DISK.openExternal(u);
+      else copyText(u);
     };
     fb.onclick = async function () {
       var u = ui.value.trim();
@@ -111,7 +113,7 @@ export function openInfo(dir) {
       e.desc = ta.value.trim();
       e.author = ai.value.trim();
       e.note = ni.value.trim();
-      libSave(); invalidateCard(dir); closeModal(); renderShelf(); hint("已保存");
+      libSave(); invalidateCard(dir); closeModal(); keepScroll(renderShelf); hint("已保存");
     };
     [ui, ni].forEach(function (x) { x.onkeydown = function (ev) { ev.stopPropagation(); }; });
     ta.onkeydown = function (ev) { ev.stopPropagation(); };

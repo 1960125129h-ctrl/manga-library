@@ -2148,6 +2148,24 @@ ipcMain.handle('lib:delete', async (e, dir) => {
     if (lib.comics && lib.comics[dir]) { delete lib.comics[dir]; await writeJSON(libJson(), lib); }
     const prog = readJSON(progJson(), {});
     if (prog[dir]) { delete prog[dir]; await writeJSON(progJson(), prog); }
+    // 顺手把这本书从 _manifest.json 里摘掉：这样书架立刻就不显示它，
+    // 不用再 spawn build-library.mjs 跑一次重建（那要 30~50 秒，且大头是重写上千个静态 html）。
+    // 只是纯 JSON 读写，毫秒级。
+    try {
+      const mfp = manifestPath();
+      if (fs.existsSync(mfp)) {
+        const mf = readJSON(mfp, null);
+        if (mf && Array.isArray(mf.comics) && mf.comics.length) {
+          const d2 = String(dir).replace(/\\/g, '/');
+          const before = mf.comics.length;
+          mf.comics = mf.comics.filter(function (c) { return String(c && c.dir || '').replace(/\\/g, '/') !== d2; });
+          if (mf.comics.length !== before) {
+            mf.count = mf.comics.length;
+            await writeJSON(mfp, mf);
+          }
+        }
+      }
+    } catch (e2) {}
     return { ok: true, msg: '已删除 ' + dir };
   } catch (err) {
     return { ok: false, msg: String(err && err.message || err) };
@@ -2605,6 +2623,41 @@ ipcMain.handle('shell:openExternal', (e, url) => {
   const u = String(url || '');
   if (/^https?:\/\//i.test(u)) { shell.openExternal(u); return true; }
   return false;
+});
+
+/* 用「带调试端口的浏览器」打开链接（简介/来源里的下载链接走这条）。
+   不走"检测到没有就回退系统浏览器"那套——调试浏览器没开就直接用它起一个，
+   保证点开的永远是同一个有登录态、能被后续 CDP 复用的窗口。 */
+async function openInDebugBrowser(u) {
+  const ports = BROWSER_PORTS;
+  for (const p of ports) {
+    try {
+      const r = await fetch('http://127.0.0.1:' + p + '/json/version', { signal: AbortSignal.timeout(1200) });
+      if (!r.ok) continue;
+      // 已经在跑：开个新标签。老版 Chrome 的 /json/new 只认 GET，两种都试。
+      for (const opt of [{ method: 'PUT' }, {}]) {
+        try {
+          const nr = await fetch('http://127.0.0.1:' + p + '/json/new?' + encodeURIComponent(u), { ...opt, signal: AbortSignal.timeout(3000) });
+          if (nr.ok) return { ok: true, debug: true, port: p, reused: true };
+        } catch (e2) {}
+      }
+    } catch (e2) {}
+  }
+  // 没在跑：用 open-chrome.mjs 起一个（--url 让它直接打开这个地址）
+  try {
+    const script = path.join(LIB, '_scripts', 'jm', 'open-chrome.mjs');
+    if (!fs.existsSync(script)) return { ok: false, msg: '找不到 _scripts\\jm\\open-chrome.mjs' };
+    const { spawn } = require('node:child_process');
+    spawn(NODE_BIN, [script, '--url', u], { cwd: LIB, detached: true, stdio: 'ignore' }).unref();
+    return { ok: true, debug: true, reused: false };
+  } catch (e3) {
+    return { ok: false, msg: String(e3 && e3.message || e3) };
+  }
+}
+ipcMain.handle('browser:openUrl', async (e, url) => {
+  const u = String(url || '');
+  if (!/^https?:\/\//i.test(u)) return { ok: false, msg: '不是 http(s) 链接' };
+  return await openInDebugBrowser(u);
 });
 
 ipcMain.handle('shell:open', (e, p) => shell.openPath(p));

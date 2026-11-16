@@ -818,20 +818,7 @@ function readOldManifest() {
     const j = JSON.parse(fs.readFileSync(path.join(LIB, '_manifest.json'), 'utf8'));
     if (j && Array.isArray(j.comics)) return { arr: j.comics, ver: j.recogVer || null };
   } catch (e) {}
-  // 过渡期兼容: 老工程只有 书库.html 时仍能从里面抠出来
-  try {
-    const h = fs.readFileSync(path.join(LIB, '书库.html'), 'utf8');
-    const vm = h.match(/var RECOG_VER = "([^"]*)"/);
-    const oldVer = vm ? vm[1] : null;
-    const at = h.indexOf('var COMICS = ');
-    if (at < 0) return { arr: null, ver: oldVer };
-    let rest = h.slice(at + 13);
-    const nl = rest.indexOf('\n');
-    if (nl >= 0) rest = rest.slice(0, nl);
-    rest = rest.trim().replace(/;\s*$/, '');
-    const arr = JSON.parse(rest);
-    return { arr: Array.isArray(arr) ? arr : null, ver: oldVer };
-  } catch (e) { return { arr: null, ver: null }; }
+  return { arr: null, ver: null };   // 没有 _manifest.json 就是没有（不再从旧 书库.html 里抠数据）
 }
 function incrementalScan(lib, only) {
   const old = readOldManifest();
@@ -1115,7 +1102,12 @@ const libComics = comics.map(c => ({
 }));
 // 书库数据落盘: 渲染层运行时来读(src/main.js -> 主进程 lib:manifest), 不再依赖构建期内联
 fs.writeFileSync(path.join(LIB, '_manifest.json'), JSON.stringify({ recogVer: RECOG_VERSION, builtAt: new Date().toISOString(), count: libComics.length, comics: libComics }), 'utf8');
-fs.writeFileSync(path.join(LIB, '书库.html'), buildHtml(libComics, false, path.basename(LIB)), 'utf8');
+// 不再生成 书库.html：桌面应用读的是 _manifest.json，双击 html 看书的场景没人用，
+// 而这一步每次都要序列化 4MB 字符串，全量重建时是实打实的开销。
+// 需要时加 --html 参数单独产出。
+if (process.argv.includes('--html')) {
+  fs.writeFileSync(path.join(LIB, '书库.html'), buildHtml(libComics, false, path.basename(LIB)), 'utf8');
+}
 
 let n = 0;
 const onlySet = new Set(ONLY);
@@ -1123,8 +1115,10 @@ for (const c of comics) {
   if (c.ext) continue;   // 外部引用的书不往人家目录里写文件
   if (ONLY.length && !onlySet.has(String(c.dir))) continue;   // 增量: 别的书不重写单行本阅读器(81 本 ×160KB 很费时间)
   const one = [{ dir: c.dir, name: c.dir.split('/').pop(), cover: null, prefix: '', chapters: c.chapters }];
-  fs.writeFileSync(path.join(LIB, c.dir, '漫画阅读器.html'), buildHtml(one, true, c.dir.split('/').pop()), 'utf8');
-  n++;
+  if (process.argv.includes('--html')) {   // 默认不写：全量时会写上千个、几百 MB，且没有任何代码读它
+    fs.writeFileSync(path.join(LIB, c.dir, '漫画阅读器.html'), buildHtml(one, true, c.dir.split('/').pop()), 'utf8');
+    n++;
+  }
 }
 
 console.log('书库: ' + path.join(LIB, '书库.html') + '  (' + (fs.statSync(path.join(LIB, '书库.html')).size / 1024).toFixed(1) + ' KB)');

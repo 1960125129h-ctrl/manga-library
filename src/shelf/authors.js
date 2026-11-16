@@ -12,6 +12,7 @@ import { normName } from '../shared/text.js';
 import { hint, showModal, closeModal, modalFoot, askText } from '../shared/ui.js';
 import { autoTags } from '../shelf/book-actions.js';
 import { renderShelf, invalidateCard, invalidateAllCards } from '../shelf/render.js';
+import { keepScroll } from '../shelf/util.js';
 
 export function autoAuthor(raw) {
   var n = normName(raw);
@@ -120,7 +121,7 @@ export function tagOne(dir) {
   var e = libEntry(dir), cur = e.tags || [], added = [];
   t.forEach(function (x) { if (cur.indexOf(x) < 0) { cur.push(x); added.push(x); } });
   e.tags = cur;
-  libSave(); invalidateCard(dir); renderShelf();
+  libSave(); invalidateCard(dir); keepScroll(renderShelf);
   hint(added.length ? "已加标签: " + added.join(" ") : "标签已经有了: " + t.join(" "));
 }
 export function autoTagsAll() {

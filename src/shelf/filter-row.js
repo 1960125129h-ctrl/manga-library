@@ -116,3 +116,24 @@ export function animateFRow(row, open) {
     }, 300);
   }
 }
+
+/* 书架滚动位置要跟着存，否则重启后回不到上次的位置。
+   原来只有改筛选/切分类才调 saveShelfView，纯滚动不会保存。 */
+var scrollSaveBound = false;
+export function bindShelfScrollSave(getGrid) {
+  if (scrollSaveBound) return;
+  scrollSaveBound = true;
+  var t = 0;
+  var onScroll = function () {
+    if (t) clearTimeout(t);
+    t = setTimeout(function () { t = 0; try { saveShelfView(true); } catch (e) {} }, 400);
+  };
+  try {
+    var g = getGrid && getGrid();
+    if (g) g.addEventListener("scroll", onScroll, { passive: true });
+  } catch (e) {}
+  // 关窗前再存一次，防止"滚完立刻退出"漏掉
+  try {
+    window.addEventListener("beforeunload", function () { try { saveShelfView(true); } catch (e) {} });
+  } catch (e) {}
+}

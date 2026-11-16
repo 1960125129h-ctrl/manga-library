@@ -56,7 +56,6 @@ export function showCtx(x, y, dir) {
     { t: "合并成一个文件夹（图片全进 全部\\）", f: function () { mergeBook(dir); } },
     { t: "管理图包…", f: function () { openImageManager(dir); } },
     { t: "清除手动排序", f: function () { var o = manualOrder(); delete o[dir]; saveManualOrder(o); renderShelf(); hint("已清除这一本的手动排序"); } },
-    { t: "删除本书（含文件）…", f: function () { confirmDelete(dir); } }
   ], x, y);
 }
 

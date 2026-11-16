@@ -10,6 +10,7 @@
 import { S, LIBRARY, elGrid } from '../app/state.js';
 import { openComic } from '../reader/open.js';
 import { loadShelfView } from '../shared/storage.js';
+import { bindShelfScrollSave } from '../shelf/filter-row.js';
 import { applyFRowState } from '../shelf/filter-row.js';
 import { renderShelf } from '../shelf/render.js';
 import { loadBookTimes } from '../shelf/book-actions.js';
