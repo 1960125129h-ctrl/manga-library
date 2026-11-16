@@ -73,3 +73,8 @@ _scripts/sites/*cookies*
 _scripts/sites/cache-x.json
 _scripts/sites/cache-x-pages.json
 _scripts/sites/cache-douyin.json
+
+# 演示模式（本地自用，不进仓库）
+演示模式.cmd
+_scripts/jm/probe/make-demo.mjs
+_scripts/jm/probe/demo-run.mjs
