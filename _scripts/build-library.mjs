@@ -1121,7 +1121,9 @@ for (const c of comics) {
   }
 }
 
-console.log('书库: ' + path.join(LIB, '书库.html') + '  (' + (fs.statSync(path.join(LIB, '书库.html')).size / 1024).toFixed(1) + ' KB)');
+if (process.argv.includes('--html')) {
+  console.log('书库: ' + path.join(LIB, '书库.html') + '  (' + (fs.statSync(path.join(LIB, '书库.html')).size / 1024).toFixed(1) + ' KB)');
+}
 console.log('单行本阅读器: ' + n + ' 个');
 console.log('合计: ' + comics.length + ' 本 / ' + totalCh + ' 话 / ' + totalPg + ' 页');
 if (!ONLY.length) {   // 全量构建才列书单; 增量/下载收尾时别把全部书刷进日志
