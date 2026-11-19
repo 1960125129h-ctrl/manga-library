@@ -381,6 +381,16 @@ export function card(c, m) {
   mt.className = "cmeta";
   var t = document.createElement("div"); t.className = "ctitle"; t.textContent = (c.name || c.dir); t.title = (c.name || c.dir); mt.appendChild(t);
   var ak = authorKey(ent && ent.author);
+  /* 点卡片上的作者 / 分类 / 标签时：先把这一屏的滚动位置记下来，再清零。
+     清空搜索（#btn-qclear）时就能精确回到点击前那一屏，而不是"滚到那本书可见"。
+     三个入口共用这一份，别再各写一遍。 */
+  function markFilterOrigin(dir) {
+    var g = null;
+    try { g = document.getElementById("grid"); } catch (e) {}
+    var top = g ? Math.round(g.scrollTop) : 0;
+    window.__filterOrigin = { dir: dir, top: top };
+    if (g) { try { g.scrollTop = 0; } catch (e) {} }
+  }
   if (ak) {
     // 外观和卡片上的 18+ / #标签 一致(chip 样式), 点一下 = 按作者搜索(和标签同一条路径,
     // 不往筛选状态里塞东西 —— 否则清掉筛选要多点几次)
@@ -389,7 +399,7 @@ export function card(c, m) {
     au.title = (rawA && rawA !== ak ? "原始写法: " + rawA + " · " : "") + "点一下：搜索这个作者的书";
     au.onclick = function (ev) {
       ev.stopPropagation();
-      window.__filterOrigin = { dir: c.dir }; try { var __g = document.getElementById("grid"); if (__g) __g.scrollTop = 0; } catch (e) {}   // 记住从哪本书点进来的，清空筛选后回到它
+      markFilterOrigin(c.dir);   // 记住这一屏再清零，清空搜索后精确回到原位
       S.q = ak; S.authors = [];
       if (elSearch) elSearch.value = ak;
       if (window.__qclearSync) window.__qclearSync();
@@ -456,7 +466,7 @@ export function card(c, m) {
       seenTag[_cats[ci]] = 1;
       var s1 = document.createElement("span"); s1.className = "ctag cat"; s1.textContent = _cats[ci];
       s1.title = "点一下：按分类「" + _cats[ci] + "」筛选";
-      s1.onclick = function (ev) { ev.stopPropagation(); window.__filterOrigin = { dir: c.dir }; try { var __g = document.getElementById("grid"); if (__g) __g.scrollTop = 0; } catch (e) {} S.filter = this.textContent; S.q = ""; if (elSearch) elSearch.value = ""; if (window.__qclearSync) window.__qclearSync(); renderShelf(); saveShelfView(true); };
+      s1.onclick = function (ev) { ev.stopPropagation(); markFilterOrigin(c.dir); S.filter = this.textContent; S.q = ""; if (elSearch) elSearch.value = ""; if (window.__qclearSync) window.__qclearSync(); renderShelf(); saveShelfView(true); };
       tw.appendChild(s1);
     }
     for (ci = 0; ci < _tags.length; ci++) {
@@ -464,7 +474,7 @@ export function card(c, m) {
       seenTag[_tags[ci]] = 1;
       var s2 = document.createElement("span"); s2.className = "ctag tag"; s2.textContent = "#" + _tags[ci];
       s2.title = "点一下：搜索标签「" + _tags[ci] + "」";
-      s2.onclick = function (ev) { ev.stopPropagation(); window.__filterOrigin = { dir: c.dir }; try { var __g = document.getElementById("grid"); if (__g) __g.scrollTop = 0; } catch (e) {} S.q = this.textContent.slice(1); if (elSearch) elSearch.value = S.q; if (window.__qclearSync) window.__qclearSync(); renderShelf(); saveShelfView(true); };
+      s2.onclick = function (ev) { ev.stopPropagation(); markFilterOrigin(c.dir); S.q = this.textContent.slice(1); if (elSearch) elSearch.value = S.q; if (window.__qclearSync) window.__qclearSync(); renderShelf(); saveShelfView(true); };
       tw.appendChild(s2);
     }
     mt.appendChild(tw);

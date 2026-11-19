@@ -210,7 +210,9 @@ function rebuildBookOnce(dir) {
     const { spawn } = require('node:child_process');
     watchMuteUntil = Date.now() + 30000;   // 重建期间别让监听把页面刷掉
     return new Promise((res) => {
-      const p2 = spawn(process.execPath, [script, '--lib', LIB, '--only', dir, '--offline'], { cwd: LIB, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
+      const a2 = [script, '--lib', LIB, '--only', dir, '--offline'];
+      if (wantSizes()) a2.push('--sizes');
+      const p2 = spawn(process.execPath, a2, { cwd: LIB, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
       p2.on('error', () => res(false));
       p2.on('exit', (code) => res(code === 0));
     });
@@ -934,6 +936,15 @@ ipcMain.handle('state:library', async (e, lib) => {
   return true;
 });
 
+/* 是否统计书籍体积（书架卡片上显示的那个大小）。
+   默认关：统计它要给每个图片文件 stat 一次，实测 9 万个文件要 8.8 秒，
+   占整个重建时间的一半。开关放在设置 → 显示里。 */
+function wantSizes() { try { return !!readCfg().showSize; } catch (e) { return false; } }
+ipcMain.handle('set:getShowSize', () => wantSizes());
+ipcMain.handle('set:showSize', (e, v) => {
+  try { const c = readCfg(); c.showSize = !!v; writeCfg(c); return { ok: true }; } catch (err) { return { ok: false, msg: String(err) }; }
+});
+
 ipcMain.handle('lib:rescan', async (e, opts) => {
   rescanInProgress = true;
   pendingReload = false;
@@ -958,6 +969,8 @@ ipcMain.handle('lib:rescan', async (e, opts) => {
     if (onlyDirs.length && onlyDirs.some((d) => /[,，]/.test(d))) onlyDirs = [];
     if (onlyDirs.length && opts.dirs.length && onlyDirs.length !== opts.dirs.length) onlyDirs = [];
     if (onlyDirs.length) args.push('--only', onlyDirs.join(','));
+    if (opts && opts.extOnly) args.push('--ext-only');   // 只重扫外部目录，几百毫秒
+    if (wantSizes()) args.push('--sizes');               // 设置里开了"显示体积"才算
     execFile(process.execPath, args, { cwd: LIB, timeout: 120000, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }, (err, stdout, stderr) => {
       if (err) finish({ ok: false, msg: String(stderr || err.message).slice(0, 800) });
       else {
@@ -2151,6 +2164,11 @@ ipcMain.handle('lib:delete', async (e, dir) => {
     // 顺手把这本书从 _manifest.json 里摘掉：这样书架立刻就不显示它，
     // 不用再 spawn build-library.mjs 跑一次重建（那要 30~50 秒，且大头是重写上千个静态 html）。
     // 只是纯 JSON 读写，毫秒级。
+    // 这次写 _manifest.json 是我们自己干的（摘掉一本已删的书），不该触发
+    // "文件变了就刷新窗口"那条监听 —— 否则删完 500ms 整个窗口 reload，
+    // 前端刚补好的卡片位置又被滚动恢复拉回删除前的坐标。
+    // 删除本身在渲染层已经即时补位，不需要再刷一次。
+    watchMuteUntil = Date.now() + 3000;
     try {
       const mfp = manifestPath();
       if (fs.existsSync(mfp)) {
@@ -2170,6 +2188,74 @@ ipcMain.handle('lib:delete', async (e, dir) => {
   } catch (err) {
     return { ok: false, msg: String(err && err.message || err) };
   }
+});
+
+/* ---------- 外部目录：拖文件夹进来登记 ----------
+   _manifest.json 里的外部书由 build-library.mjs 读 外部目录.json 生成，
+   所以这里只负责「识别 + 写 JSON」，写完由前端调 lib:rescan 重建。
+   拖进来的文件夹按结构自动判断：
+     · 根目录直接有图      -> 这个文件夹就是一本（子文件夹是各话）
+     · 否则看下一层        -> 每个"里面有图"的子文件夹各算一本 */
+const EXT_JSON = () => path.join(LIB, '外部目录.json');
+const EXT_IMG_RE = /\.(jpe?g|png|webp|gif|bmp|avif)$/i;
+function readExtList() {
+  try {
+    const raw = fs.readFileSync(EXT_JSON(), 'utf8').replace(/^\uFEFF/, '');   // 记事本存过会带 BOM
+    const j = JSON.parse(raw);
+    return Array.isArray(j) ? j : [];
+  } catch (e) { return []; }
+}
+function writeExtList(list) {
+  fs.writeFileSync(EXT_JSON(), JSON.stringify(list, null, 2), 'utf8');
+}
+function extHasImages(dir) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).some((d) => d.isFile() && EXT_IMG_RE.test(d.name));
+  } catch (e) { return false; }
+}
+ipcMain.handle('ext:inspect', async (e, paths) => {
+  const out = [];
+  const seen = {};
+  for (const p of (Array.isArray(paths) ? paths : [])) {
+    try {
+      const abs = path.resolve(String(p || ''));
+      if (!abs || !fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) continue;   // 只收文件夹
+      if (extHasImages(abs)) {
+        if (!seen[abs]) { seen[abs] = 1; out.push({ name: path.basename(abs), path: abs }); }
+        continue;
+      }
+      let subs = [];
+      try { subs = fs.readdirSync(abs, { withFileTypes: true }).filter((d) => d.isDirectory()); } catch (e2) {}
+      for (const d of subs) {
+        const sub = path.join(abs, d.name);
+        if (seen[sub] || !extHasImages(sub)) continue;
+        seen[sub] = 1;
+        out.push({ name: d.name, path: sub });
+      }
+    } catch (e2) {}
+  }
+  return { ok: true, items: out };
+});
+ipcMain.handle('ext:add', async (e, items) => {
+  try {
+    const list = readExtList().filter((x) => x && x.name && x.path);
+    const used = {};
+    for (const x of list) used[String(x.name)] = 1;
+    let added = 0;
+    for (const it of (Array.isArray(items) ? items : [])) {
+      const nm0 = String((it && it.name) || '').trim();
+      const p0 = String((it && it.path) || '').trim();
+      if (!nm0 || !p0) continue;
+      if (list.some((x) => String(x.path) === p0)) continue;   // 同一个目录不重复登记
+      let nm = nm0, n = 2;
+      while (used[nm]) { nm = nm0 + '-' + n; n++; }            // 重名：雏菊 -> 雏菊-2 -> 雏菊-3
+      used[nm] = 1;
+      list.push({ name: nm, path: p0 });
+      added++;
+    }
+    if (added) writeExtList(list);
+    return { ok: true, added: added, total: list.length };
+  } catch (err) { return { ok: false, msg: String((err && err.message) || err) }; }
 });
 
 /* 删除一本书里的某一话(只删这一话的文件夹, 不碰整本书) */

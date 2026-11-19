@@ -18,6 +18,10 @@ const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : d; };
 const LIB = arg('lib');
 const REMATCH = argv.includes('--rematch');   // 强制重新匹配所有书的作品/角色(忽略旧缓存)
+const EXT_ONLY = argv.includes('--ext-only');   // 只重扫外部目录(外部目录.json), 其它书从旧 manifest 沿用
+// 是否统计每本书的体积。默认不算 —— 算它要给每个图片文件 stat 一次，
+// 实测 9 万个文件要 8.8 秒，占了整个重建时间的一半。
+const WITH_SIZES = argv.includes('--sizes');
 if (!LIB) { console.error('missing --lib'); process.exit(1); }
 
 // 识别规则版本号: 每次改识别逻辑(tags.mjs 的正则/词典)就把这个字符串改一下,
@@ -148,7 +152,8 @@ function scanComic(cdir, relDir) {
       let bt = 0;
       try { bt = fs.statSync(dir).birthtimeMs || 0; } catch (e0) {}
       found.push({ rel: rel, files: files, ts: bt });
-      for (const f of files) { try { bytes += fs.statSync(path.join(dir, f)).size; } catch (e) {} }   // 顺手统计这本的体积
+      // 体积统计是可选的：开着它才有意义，否则这一行要跑 9 万次 stat（占重建一半时间）
+      if (WITH_SIZES) for (const f of files) { try { bytes += fs.statSync(path.join(dir, f)).size; } catch (e) {} }
     }
     for (const e of entries) {
       if (!e.isDirectory()) continue;
@@ -842,7 +847,22 @@ function incrementalScan(lib, only) {
   list.sort((x, y) => String(x.dir).localeCompare(String(y.dir), 'zh'));
   return list;
 }
-let comics = ONLY.length ? incrementalScan(LIB, ONLY) : null;
+/* --ext-only：拖文件夹登记外部图包时用。
+   外部书不放在书库目录下，incrementalScan 的相对路径那套用不了，
+   所以走这里：其它书原样从旧 manifest 继承，只把 old 里的 ext 条目剔掉，
+   下面那段"读 外部目录.json 重新 scanComic"会把它们重新加回来。
+   全量重建要扫 1800 多本（十几秒），这条路只有几毫秒。 */
+let comics = null;
+if (EXT_ONLY) {
+  const oldMf = readOldManifest();
+  if (oldMf.arr) {
+    comics = oldMf.arr.filter(function (c) { return !c.ext; });
+    console.log('外部目录增量：沿用 ' + comics.length + ' 本，重扫 外部目录.json');
+  } else {
+    console.log('外部目录增量：读不回旧 manifest，退回全量重建');
+  }
+}
+if (!comics) comics = ONLY.length ? incrementalScan(LIB, ONLY) : null;
 if (!comics) comics = scanLibrary(LIB);
 if (ONLY.length) console.log('增量重建: 只处理 ' + ONLY.join(' , ') + '（其余 ' + (comics.length - ONLY.length) + ' 本从旧 manifest 沿用）');
 

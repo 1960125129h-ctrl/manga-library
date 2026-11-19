@@ -526,6 +526,10 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
       if (ev.button === 3) {
         if (inReader) { flyCloseComic(); return; }
         if (inHistory) { closeHistory(); return; }
+        // 书架：搜索框里有词（点了卡片上的标签/作者进来的）→ 等同于点左上角的 ✕，
+        // 清空筛选并回到点击前那一屏。分类筛选（不填搜索框、没有 ✕）不在这里处理。
+        var qc = document.getElementById("btn-qclear");
+        if (elSearch && elSearch.value && qc) { qc.click(); return; }
         return;
       }
       if (!inReader) reopenLast();
@@ -730,22 +734,38 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
     elQClear.onclick = function () {
       elSearch.value = ""; S.q = ""; syncQClear();
       renderShelf(); saveShelfView(); elSearch.focus();
-      // 从卡片上的作者/标签点进来的：清空后退回那本书所在位置，而不是书架首行
+      // 从卡片上的作者/分类/标签点进来的：清空后回到点击前那一屏，而不是书架首行
       var __origin = window.__filterOrigin;
-      if (__origin && __origin.dir) {
+      if (__origin) {
         window.__filterOrigin = null;
-        // renderShelf 走 view transition，DOM 是异步重建的，直接跳会找不到卡片。
-        // 分几次试，哪次找到就滚过去。
-        (function (dir) {
-          var tries = 0;
-          var go = function () {
-            tries++;
-            var ok = false;
-            try { ok = jumpToCard(dir); } catch (e) { ok = false; }
-            if (!ok && tries < 8) setTimeout(go, 120);
-          };
-          setTimeout(go, 120);
-        })(__origin.dir);
+        if (typeof __origin.top === "number") {
+          // 记了坐标就精确复位。renderShelf 走 view transition，DOM 是异步重建的，
+          // 一次设不上就分几次试，到位了再把结果存一次（否则持久化的是复位前的 0）。
+          (function (top) {
+            var tries = 0;
+            var go = function () {
+              tries++;
+              try { if (elGrid) elGrid.scrollTop = top; } catch (e) {}
+              var cur = 0;
+              try { cur = elGrid ? elGrid.scrollTop : 0; } catch (e2) {}
+              if (Math.abs(cur - top) <= 2) { saveShelfView(true); return; }
+              if (tries < 8) setTimeout(go, 120);
+            };
+            setTimeout(go, 120);
+          })(__origin.top);
+        } else if (__origin.dir) {
+          // 老数据（只有 dir）沿用原来的做法：滚到那本书可见
+          (function (dir) {
+            var tries = 0;
+            var go = function () {
+              tries++;
+              var ok = false;
+              try { ok = jumpToCard(dir); } catch (e) { ok = false; }
+              if (!ok && tries < 8) setTimeout(go, 120);
+            };
+            setTimeout(go, 120);
+          })(__origin.dir);
+        }
       }
     };
   }

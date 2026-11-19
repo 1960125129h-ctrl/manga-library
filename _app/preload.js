@@ -1,5 +1,5 @@
 'use strict';
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // dl:event 的监听槽位表：同一槽位重复注册只保留最新回调（弹窗每次打开都是新匿名函数）
 const onDlSlots = Object.create(null);
@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld('mangaLib', {
   imageColors: (src, opts) => ipcRenderer.invoke('ref:imageColors', src, opts),
   saveLibrary: (lib) => ipcRenderer.invoke('state:library', lib),
   rescan: (opts) => ipcRenderer.invoke('lib:rescan', opts),
+  getShowSize: () => ipcRenderer.invoke('set:getShowSize'),
+  setShowSize: (v) => ipcRenderer.invoke('set:showSize', v),
   bookTimes: () => ipcRenderer.invoke('lib:bookTimes'),
   jmStart: (urls, browser, imgMode) => ipcRenderer.invoke('jm:start', urls, browser, imgMode),
   jmSetMode: (img) => ipcRenderer.invoke('jm:setMode', img),
@@ -84,6 +86,15 @@ contextBridge.exposeInMainWorld('mangaLib', {
   jmBusy: () => ipcRenderer.invoke('jm:busy'),
   onJm: (cb) => { ipcRenderer.removeAllListeners('jm:event'); ipcRenderer.on('jm:event', (e, d) => cb(d)); },
   deleteComic: (dir) => ipcRenderer.invoke('lib:delete', dir),
+  // 拖拽进窗口的文件拿真实路径。Electron 32 起 File.path 已被移除，
+  // 必须走 webUtils.getPathForFile；它只能在 preload 里调。
+  // 注意：只能一个一个传单个 File —— FileList 不是可克隆类型，
+  // 整个列表过 contextBridge 会变成空对象，取出来什么也没有。
+  getDroppedPath: (file) => {
+    try { return webUtils.getPathForFile(file) || ''; } catch (e) { return ''; }
+  },
+  extInspect: (paths) => ipcRenderer.invoke('ext:inspect', paths),
+  extAdd: (items) => ipcRenderer.invoke('ext:add', items),
   deleteChapter: (dir, ch) => ipcRenderer.invoke('lib:deleteChapter', dir, ch),
   deleteImage: (dir, rel, opts) => ipcRenderer.invoke('lib:deleteImage', dir, rel, opts),   // opts.rebuild=false: 批量删图时不要每张都重建
   renameBook: (oldDir, newName) => ipcRenderer.invoke('lib:renameBook', oldDir, newName),

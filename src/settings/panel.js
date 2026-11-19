@@ -405,6 +405,22 @@ export function openSettings() {
     var homeSep = document.createElement('div'); homeSep.style.cssText = 'font-weight:600;font-size:14px;margin:0 0 8px';
     homeSep.textContent = '主页';
     pDisplay.appendChild(homeSep);
+
+    // 体积统计开关：默认关。开着的时候重建要给每个图片文件 stat 一次，
+    // 实测 9 万个文件多花 8.8 秒（占整个重建时间的一半），所以做成可选。
+    var szChk = chk(pDisplay, 'showSize', '显示书籍体积（开启后书库重建变慢）');
+    szChk.onchange = function () {
+      SET.showSize = szChk.checked;
+      applySettings();
+      try { DISK.setShowSize(szChk.checked); } catch (e) {}
+      hint(szChk.checked ? '已开启：下次重建会统计体积，耗时会明显增加' : '已关闭：重建不再统计体积');
+    };
+    try {
+      if (DISK && DISK.getShowSize) {
+        DISK.getShowSize().then(function (v) { SET.showSize = !!v; szChk.checked = !!v; }).catch(function () {});
+      }
+    } catch (e) {}
+
     var chkGrid = document.createElement('div');
     chkGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;margin:6px 0';
     pDisplay.appendChild(chkGrid);

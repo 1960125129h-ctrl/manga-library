@@ -47,6 +47,15 @@ async function boot() {
     console.error('[boot] 载入界面核心失败: ' + msg);
     showBootError(msg);
   }
+
+  // 拖文件夹进窗口 → 登记到 外部目录.json（只引用不复制）。
+  // 放在 core 之后：确认框用的是 showModal，重建完还要靠 core 的监听器刷新书架。
+  try {
+    const m = await import('./shelf/drop-import.js');
+    m.initDropImport();
+  } catch (e) {
+    console.error('[boot] 载入拖拽登记失败: ' + ((e && e.message) || e));
+  }
 }
 
 function showBootError(msg) {
