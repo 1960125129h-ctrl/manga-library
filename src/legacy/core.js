@@ -776,7 +776,9 @@ initShelfSelect({ DISK: DISK, COMICS: COMICS });
   setupFRowToggles();
 
   elStage.addEventListener("wheel", onWheel, { passive: false });
-  document.getElementById("bwheel").onclick = function () { S.wheel = !S.wheel; syncButtons(); save(); };
+  // saveReaderDefaults() 不能少：只调 save() 存的是阅读进度，滚轮开关本身不落盘，
+  // 重开就回到默认的「开」。方向/封面/侧栏/顺序那几个按钮都是成对调的，这里以前漏了。
+  document.getElementById("bwheel").onclick = function () { S.wheel = !S.wheel; syncButtons(); save(); saveReaderDefaults(); };
 
   elPageInput.onkeydown = function (e) {
     if (e.key === "Enter") {
