@@ -5,18 +5,39 @@ import { openPage, sleep } from '../jm/cdp.mjs';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { PORT, pickTarget, closeTab } from './tab.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+/* 标签复用（见 tab.mjs）：按 URL 找已经开着的那一页就地读，
+   确实没有才借空白标签，只关自己临时开的那个。 */
+const SAME_DOUYIN = (a, b) => { const ia = itemOf(a), ib = itemOf(b); return !!ia && ia === ib; };
 export const id = 'douyin';
 export const label = '抖音';
 export const home = 'https://www.douyin.com/';
 export function match(url) { return /(^|\.|\/\/)(douyin|iesdouyin)\.com\//i.test(String(url || '') + '/'); }
+/* 主页 sec_uid：注意 /user/self 里的 self 是"当前登录账号"的占位符，不是 sec_uid。
+   把它当 sec_uid 拿去和作品的 author.sec_uid 比对，永远对不上 → 列表被过滤成空。 */
 export function secOf(url) {
   const m = String(url || '').match(/\/user\/([A-Za-z0-9_\-]+)/);
-  return m ? m[1] : '';
+  const s = m ? m[1] : '';
+  return s && s !== 'self' ? s : '';
 }
+/* 作品 id：/note/<id>、/video/<id>，以及弹窗看作品时的 ?modal_id=<id>
+   （收藏页/主页点开某一条，地址栏就是 user/self?...&modal_id=...） */
 export function itemOf(url) {
   const m = String(url || '').match(/\/(?:note|video)\/(\d{6,})/);
+  if (m) return m[1];
+  const q = String(url || '').match(/[?&]modal_id=(\d{6,})/);
+  return q ? q[1] : '';
+}
+/* 主页里的页签：showTab=favorite_collection / collection / like ...
+   收藏、喜欢这类列表里每条作品的作者都不一样，不能再按 sec_uid 过滤。 */
+export function tabOf(url) {
+  const m = String(url || '').match(/[?&]showTab=([A-Za-z_]+)/);
   return m ? m[1] : '';
+}
+export function isCollectPage(url) {
+  const s = String(url || '');
+  return /\/user\/self(\?|$)/i.test(s) || /^(favorite|collection|like|watchlater)/i.test(tabOf(s));
 }
 const HOOK = `(function(){
   window.__cap = [];
@@ -148,8 +169,8 @@ const JUMP_BOTTOM = `(function(){
   for (var i = 0; i < Math.min(4, nodes.length); i++) nodes[i].scrollTop = nodes[i].scrollHeight;
   return true;
 })()`;
-async function withPage(fn) {
-  const p = await openPage(Number(process.env.JM_PORT || 9333));
+async function withPage(fn, targetId) {
+  const p = await openPage(PORT, targetId || null);
   try { await p.send('Page.bringToFront').catch(() => {}); return await fn(p); } finally { try { p.close(); } catch (e) {} }
 }
 /* 同一次运行里 resolve+chapters 会连着调: 缓存住, 别把同一个页面加载两遍(省 10 秒以上) */
@@ -207,9 +228,27 @@ async function grab(url, rounds) {
   if (CACHE.data && CACHE.url === url && (rounds || 0) <= CACHE.rounds && Date.now() - CACHE.at < CACHE_MS) return CACHE.data;
   const disk = diskLoad(url);
   if (disk) { CACHE = { url: url, at: Date.now(), rounds: rounds || 0, data: disk }; return disk; }
-  const got = await withPage(async (p) => {
+  /* 浏览器里已经开着这一页 → 就地读，不重开；
+     没开着 → 借一个空白标签（没有才临时开一个，读完关掉它）。
+     两种情况都不会顶掉你正在看的那一页。 */
+  const target = await pickTarget(url, SAME_DOUYIN);
+  const tabId = target.tabId;
+  const mine = target.created;
+  const opened = target.reused ? { id: tabId } : null;
+  let got = null;
+  try {
+  got = await withPage(async (p) => {
     await p.send('Page.addScriptToEvaluateOnNewDocument', { source: HOOK }).catch(() => {});
-    await p.send('Page.navigate', { url: url }).catch(() => {});
+    if (!opened) await p.send('Page.navigate', { url: url }).catch(() => {});
+    else {
+      // 钩子只对"之后的请求"生效，这一页的数据请求早就发完了：
+      // 所以先读页面里现成的数据，读不到才原地刷新一次（同一个标签、同一个地址，
+      // 既不是新开一个页面，也不是把这一页关掉再打开）
+      const now = await readPage(p);
+      const cur = itemOf(url) || '';
+      if (now && now.items && now.items.length && (!cur || now.items.some((x) => x.id === cur))) return now;
+      await p.send('Page.reload', {}).catch(() => {});
+    }
     let best = null, partial = null;
     for (let i = 0; i < 80; i++) {
       await sleep(250);
@@ -287,9 +326,12 @@ async function grab(url, rounds) {
       if (finalData && (finalData.items || []).length >= best.items.length) best = finalData;
     }
     return best;
-  });
+  }, tabId);
+  } finally {
+    if (mine) await closeTab(mine);   // 只关自己临时开出来的那一个
+  }
   CACHE = { url: url, at: Date.now(), rounds: rounds || 0, data: got };
-    diskSave(url, got);   // 落盘给别的进程用（预览抓过，下载就不必再开浏览器）
+  diskSave(url, got);   // 落盘给别的进程用（预览抓过，下载就不必再开浏览器）
   return got;
 }
 function clean(s, n) { return String(s || '').replace(/https?:\/\/\S+/g, ' ').replace(/[\\/:*?"<>|#]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n || 24); }
@@ -297,7 +339,7 @@ function clean(s, n) { return String(s || '').replace(/https?:\/\/\S+/g, ' ').re
    不能只看第一条作品的作者 —— 抖音的"共创/合拍"作品 author 是合作方，
    实测某个主页第一条是共创，作者叫"韦伯机长"，而主页主人是"热茶"（78 条里 78 条都是他）。
    所以按"作品作者出现次数最多的那个"来定，再用页面标题（"热茶的抖音 - 抖音"）兜底。 */
-function pickOwner(got) {
+function pickOwner(got, preferTitle) {
   const counts = {};
   for (const it of ((got && got.items) || [])) {
     const n = clean(it.nick || '', 40);
@@ -308,13 +350,19 @@ function pickOwner(got) {
     .replace(/\s*[-–—]\s*抖音.*$/, '')
     .replace(/的抖音$/, '')
     .replace(/\s*\(@[^)]*\)/, ''), 40);
+  // 收藏页/喜欢页的作品来自一堆不同的人，"出现最多的作者"没有意义 —— 直接用页面标题
+  if (preferTitle) return fromTitle || top;
   return top || fromTitle;
 }
 export async function resolve(url) {
   const got = await grab(url, wantRounds(url));   // 和 chapters 用同样的深度: 命中缓存, 只加载一次页面
-  const one = itemOf(url) || itemOf(got.url || '');
+  const collect = isCollectPage(url) || isCollectPage(got.url || '');
+  // 只有"真的指向某一条作品"的链接才定位单条（/note/<id>、/video/<id>、?modal_id=<id>）。
+  // 主页/收藏页地址本身没作品 id 时，别拿浏览器落地后冒出来的 modal_id 当依据 ——
+  // 抖音刷着刷着会自己往地址栏挂 modal_id，照它取会把整页缩成一条。
+  const one = itemOf(url) || ((collect || secOf(url)) ? '' : itemOf(got.url || ''));
   const it = got.items.filter((x) => x.imgs && x.imgs.length).find((x) => one ? x.id === one : true) || got.items[0];
-  const nick = pickOwner(got);
+  const nick = pickOwner(got, collect);
   if (!nick) throw new Error('没读出抖音昵称，可能是页面没加载出来或需要登录');
   // 提取作品文案里的 #话题 -> tags
   const tags = [];
@@ -324,6 +372,7 @@ export async function resolve(url) {
   }
   // 单条作品链接: 书名用文案正文; 正文为空或就是作者昵称时, 用话题词拼; 主页链接仍用昵称
   let title = nick;
+  if (!one && collect) title = nick + '的收藏';
   if (one && it && it.desc) {
     const d = clean(String(it.desc).replace(/#[^#\s]+/g, ' ').replace(/@[\w\-·]+/g, ' '), 40);
     if (d && d.length >= 5 && d !== nick) title = d;
@@ -335,10 +384,16 @@ export async function resolve(url) {
 }
 export async function chapters(url) {
   const got = await grab(url, wantRounds(url));   // App 点「解析」时只快速采样, 别让它等超时
-  const one = itemOf(url) || itemOf(got.url || '');   // 分享短链: 用浏览器落地后的地址取作品 id
-  const sec = secOf(url) || (got.items[0] && got.items[0].sec) || '';
+  const collect = isCollectPage(url) || isCollectPage(got.url || '');
+  const one = itemOf(url) || (collect ? '' : itemOf(got.url || ''));   // 分享短链: 用浏览器落地后的地址取作品 id
+  // 收藏/喜欢页里每条作品的作者都不一样，按 sec_uid 过滤会把列表清空 —— 以前在这儿报"没找到图文作品"
+  const sec = (isCollectPage(url) || isCollectPage(got.url || ''))
+    ? ''
+    : (secOf(url) || (got.items[0] && got.items[0].sec) || '');
   let list = got.items.filter((x) => x.imgs && x.imgs.length);          // 只要图文
-  if (one) list = list.filter((x) => x.id === one);
+  // 定位到单条时，只有它确实是图文作品才收窄到它；modal_id 指的是视频（或被风控滤掉了）
+  // 就退回整页，别把整个收藏/主页判成"没找到图文作品"
+  if (one && list.some((x) => x.id === one)) list = list.filter((x) => x.id === one);
   else if (sec) list = list.filter((x) => x.sec === sec);
   if (!list.length) throw new Error('这个号里没找到图文作品（抖音图文才有图片，纯视频作品不下）');
   list.sort((a, b) => (b.t || 0) - (a.t || 0));

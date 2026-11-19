@@ -59,10 +59,14 @@ export async function resolve(url) {
 async function chaptersByBrowser(cid, bookTitle) {
   try {
     const { openPage, sleep } = await import('../jm/cdp.mjs');
-    const p = await openPage(9333);
+    const { PORT, pickTarget, closeTab } = await import('./tab.mjs');
+    // 这一页要是已经开着就原地用，不抢你正在看的标签 —— 见 tab.mjs 的注释
     const target = 'https://manhua.zaimanhua.com/details/' + cid;
-    await p.send('Page.navigate', { url: target });
-    await sleep(7000);
+    const t = await pickTarget(target);
+    const p = await openPage(PORT, t.tabId || null);
+    try {
+    if (!t.reused) await p.send('Page.navigate', { url: target });
+    await sleep(t.reused ? 1200 : 7000);   // 已经开着的话 DOM 现成，不用干等 7 秒
     // 校验：页面真的停在目标书上，别抓成浏览器里残留的别的标签
     const cur = await p.ev('location.href');
     if (String(cur).indexOf('/details/' + cid) < 0) return [];
@@ -80,6 +84,10 @@ async function chaptersByBrowser(cid, bookTitle) {
       out.push({ id: mm[3], title: nm, group: '', order: 0, url: 'https://manhua.zaimanhua.com' + x.h, book: bookTitle });
     }
     return out;
+    } finally {
+      try { p.close(); } catch (e) {}
+      if (t.created) await closeTab(t.created);
+    }
   } catch (e) { return []; }
 }
 

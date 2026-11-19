@@ -178,8 +178,13 @@ body.bar-autohide #bar.show{transform:translateY(0)}
 #stage.dir-rtl.mode-hspread #canvas{flex-direction:row-reverse}
 #stage.dir-rtl.mode-hscroll .pagewrap,
 #stage.dir-rtl.mode-hspread .pagewrap{flex-direction:row}
+/* 占位宽度原来是 calc(var(--sh) * 0.70) —— 按视口高的 70% 猜一个宽度。
+   猜得比真图窄，页与页之间就空出一条背景缝；猜得比真图宽，图在占位框里居中、
+   左右各留一段白 —— 只要下一张还没解码完，看起来就是"和上一张没接上"。
+   现在改成 1px 的极小占位：没解码的页几乎不占地方，解码完按真实宽高比立刻撑开，
+   相邻两页始终首尾相接。定位逻辑（alignToPageX 等）本来就会等 a.width > 0 之后才算。 */
 #stage.mode-hscroll .pagewrap,
-#stage.mode-hspread .pagewrap{display:flex;height:100%;width:auto;max-width:none;max-height:none;margin:0;gap:0;flex:0 0 auto;justify-content:center;min-width:calc(var(--sh, 700px) * 0.70)}   /* 占位：图未解码时也有宽，切模式能立刻定位 */
+#stage.mode-hspread .pagewrap{display:flex;height:100%;width:auto;max-width:none;max-height:none;margin:0;gap:0;flex:0 0 auto;justify-content:center;min-width:1px}
 #stage.mode-hscroll .pageimg,
 #stage.mode-hspread .pageimg{height:100%;width:auto;max-height:none;max-width:var(--sw);object-fit:contain}
 #stage.mode-hspread .pagewrap.dual .pageimg{max-width:calc(var(--sw) / 2 - 1px)}

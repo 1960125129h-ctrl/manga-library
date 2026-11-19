@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openPage, sleep } from '../jm/cdp.mjs';
+import { PORT, pickTarget, closeTab } from './tab.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CACHE = path.join(HERE, 'cache-x.json');
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -155,9 +156,12 @@ const PULL_ALL = `(async function () {
   var out = pack(all);
   return JSON.stringify({ url: location.href, title: document.title, who: out.who, items: out.items, pages: pages });
 })()`;
-async function withBrowser(fn) {
-  const p = await openPage(Number(process.env.JM_PORT || 9333));
-  try { await p.send('Page.bringToFront').catch(() => {}); return await fn(p); } finally { try { p.close(); } catch (e) {} }
+/* target 由 tab.mjs 的 pickTarget 给出：有就复用你开着的那一页，created 的用完关掉 */
+async function withBrowser(fn, target) {
+  const t = target || {};
+  const p = await openPage(PORT, t.tabId || null);
+  try { await p.send('Page.bringToFront').catch(() => {}); return await fn(p); }
+  finally { try { p.close(); } catch (e) {} if (t.created) await closeTab(t.created); }
 }
 let CACHE_MEM = { url: '', at: 0, data: null };
 
@@ -205,9 +209,17 @@ async function grab(url, rounds) {
   if (CACHE_MEM.data && CACHE_MEM.url === url && Date.now() - CACHE_MEM.at < CACHE_MS) return CACHE_MEM.data;
   const diskHit = pageLoad(url);
   if (diskHit) { CACHE_MEM = { url: url, at: Date.now(), data: diskHit }; return diskHit; }
+  const target = await pickTarget(url);
   const got = await withBrowser(async (p) => {
     await p.send('Page.addScriptToEvaluateOnNewDocument', { source: HOOK }).catch(() => {});
-    await p.send('Page.navigate', { url: url }).catch(() => {});
+    if (!target.reused) await p.send('Page.navigate', { url: url }).catch(() => {});
+    else {
+      // 已经开着这一页：先读现成的，没有才原地刷新一次（钩子只对之后的请求生效），
+      // 不新开、也不把你那一页顶掉
+      let j0 = null;
+      try { j0 = JSON.parse(String(await p.ev(READ) || '') || '{}'); } catch (e) {}
+      if (!(j0 && j0.items && j0.items.length)) await p.send('Page.reload', {}).catch(() => {});
+    }
     let best = null;
     for (let i = 0; i < 60; i++) {   // 有数据就走(一般 2~4 秒)
       await sleep(250);
@@ -237,7 +249,7 @@ async function grab(url, rounds) {
       if (grew) idle = 0; else idle++;
     }
     return best;
-  });
+  }, target);
   CACHE_MEM = { url: url, at: Date.now(), data: got };
   pageSave(url, got);   // 落盘给别的进程用
   return got;

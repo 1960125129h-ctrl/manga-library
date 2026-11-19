@@ -3,6 +3,7 @@
 //       再在页内换 page/since_id 翻页取全(和 X 同一套: 不滚动, 一页 0.3~0.8 秒)
 // 图片: pics[].large.url 是高清档; type=gif 的原样存 .gif(微博动图本身就是 gif, 不用转)
 import { openPage, sleep } from '../jm/cdp.mjs';
+import { PORT, pickTarget, closeTab } from './tab.mjs';
 export const id = 'weibo';
 export const label = '微博';
 export const home = 'https://weibo.com/';
@@ -173,9 +174,12 @@ const PULL_ALL = `(async function () {
   var out = pack(all);
   return JSON.stringify({ url: location.href, who: out.who, items: out.items, pages: pages });
 })()`;
-async function withBrowser(fn) {
-  const p = await openPage(Number(process.env.JM_PORT || 9333));
-  try { await p.send('Page.bringToFront').catch(() => {}); return await fn(p); } finally { try { p.close(); } catch (e) {} }
+/* target 由 tab.mjs 的 pickTarget 给出：有就复用你开着的那一页，created 的用完关掉 */
+async function withBrowser(fn, target) {
+  const t = target || {};
+  const p = await openPage(PORT, t.tabId || null);
+  try { await p.send('Page.bringToFront').catch(() => {}); return await fn(p); }
+  finally { try { p.close(); } catch (e) {} if (t.created) await closeTab(t.created); }
 }
 let CACHE_MEM = { url: '', at: 0, data: null };
 const CACHE_MS = 90000;
@@ -187,11 +191,14 @@ async function grab(url, pages) {
   if (CACHE_MEM.data && CACHE_MEM.url === url && Date.now() - CACHE_MEM.at < CACHE_MS) return CACHE_MEM.data;
   const uid = uidOf(url);
   if (!uid) throw new Error('链接里没有微博 uid（形如 https://weibo.com/u/1234567890）');
+  const target = await pickTarget('https://weibo.com/u/' + uid, (a, b) => a.indexOf('/u/' + uid) >= 0 && b.indexOf('/u/' + uid) >= 0);
   const got = await withBrowser(async (p) => {
     await p.send('Page.addScriptToEvaluateOnNewDocument', { source: HOOK }).catch(() => {});
     // 全程走 weibo.com 桌面版(不用手机端)
-    await p.send('Page.navigate', { url: 'https://weibo.com/u/' + uid }).catch(() => {});
-    await sleep(9000);   // 等登录态和 XSRF cookie 就位
+    if (!target.reused) {
+      await p.send('Page.navigate', { url: 'https://weibo.com/u/' + uid }).catch(() => {});
+      await sleep(9000);   // 等登录态和 XSRF cookie 就位
+    }
     let best = null;
     for (let i = 0; i < 5; i++) {
       let j = null;
@@ -201,7 +208,7 @@ async function grab(url, pages) {
     }
     if (!best) throw new Error('没读到微博数据（先在调试浏览器登录 weibo.com，再重试）');
     return best;
-  });
+  }, target);
   CACHE_MEM = { url: url, at: Date.now(), data: got };
   return got;
 }

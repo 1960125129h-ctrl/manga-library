@@ -54,7 +54,10 @@ let url = arg('url');
 if (url) {
   const u0 = String(url).trim();
   const uq = u0.indexOf('?');
-  if (uq > 0) url = u0.slice(0, uq).replace(/\/+$/, '/');
+  // 抖音的主页/收藏页/弹窗作品全靠 query 里的 modal_id、showTab 定位，
+  // 剥掉就变成"这个人的主页"，收藏页会退化成自己的收藏 —— 所以抖音的 query 必须留着。
+  const keepQuery = /(^|\.|\/\/)(douyin|iesdouyin)\.com\//i.test(u0);
+  if (uq > 0 && !keepQuery) url = u0.slice(0, uq).replace(/\/+$/, '/');
 }
 const PROBE = argv.includes('--probe');   // 只解析不出下载: 给 App 的「通用链接」页签用
 // --pick-details: 给一批 pixiv ID, 逐个查标题+缩略图, 逐行输出(在 adapter 检查之前)

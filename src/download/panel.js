@@ -210,10 +210,13 @@ export function buildGeneralPane(box, presetUrl, onResolved) {
       } catch (e) { hint("读不到剪贴板，请用 Ctrl+V 或右键粘贴"); }
     };
     urlrow.appendChild(pasteBtn);
-    // 识别当前页：直接读调试浏览器里正在看的那一页，填进地址框，顺手把那个标签关掉
+    // 识别当前页：读调试浏览器里正在看的那一页 → 把 URL 填进地址框。
+    // 关键是顺序：标签**不在这里关**。解析用的就是这一页，等它真的读成功了再关，
+    // 不然就是"先关掉我的页面、再照着链接重新开一个一样的"。
+    var picked = null;   // { id, url } —— 记住这一页是谁，解析成功后按它关
     var curBtn = document.createElement("button");
     curBtn.className = "btn ghost"; curBtn.type = "button"; curBtn.textContent = "识别当前页";
-    curBtn.title = "读浏览器里正在看的那一页：URL 填进来，然后把那个标签关掉";
+    curBtn.title = "读浏览器里正在看的那一页：URL 填进来，解析成功后才关那个标签";
     curBtn.onclick = function () {
       hint("正在找你在看的那一个标签…");
       Promise.resolve(DISK.tabsCurrent()).then(function (c) {
@@ -221,9 +224,8 @@ export function buildGeneralPane(box, presetUrl, onResolved) {
         var t = c.tab;
         if (!t || !t.url) { hint("没有正在看的标签"); return; }
         ui.value = t.url; ui.focus();
-        Promise.resolve(DISK.tabsClose(t.id)).then(function (cr) {
-          hint("已填入" + (cr && cr.ok ? "并关闭那个标签" : "（关标签失败）") + "：" + String(t.title || t.url).slice(0, 28));
-        }).catch(function () { hint("已填入：" + String(t.title || t.url).slice(0, 28)); });
+        picked = { id: t.id, url: t.url };
+        hint("已填入：" + String(t.title || t.url).slice(0, 28) + "（解析成功后再关这个标签）");
       }).catch(function (e) { hint("读出错：" + String(e)); });
     };
     urlrow.appendChild(curBtn);
@@ -374,6 +376,14 @@ export function buildGeneralPane(box, presetUrl, onResolved) {
         return;
       }
       if (onResolved) { try { onResolved(r); } catch (e) {} }
+      // 「识别当前页」拿来的那一页：解析已经成功（数据到手了），这会儿才关它。
+      // 解析失败就保留 —— 你还能接着重试，不用重新打开一遍。
+      if (picked && picked.url === url) {
+        var pid = picked.id; picked = null;
+        Promise.resolve(DISK.tabsClose(pid)).then(function (cr) {
+          if (cr && cr.ok) hint("已解析，顺手关掉了那个标签");
+        }).catch(function () {});
+      }
       // 下载前预览(功能5): 单本链接把每一页的缩略图摆出来, 勾选后只下勾选的页
       if (SET.dlPreview === true && r.pagePreview && r.pagePreview.pages && r.pagePreview.pages.length) {
         showPagePreview(S2, r, setTimeout, ui, ni, fi, ti, mc, cancel, go, bg, bar, pct, log);

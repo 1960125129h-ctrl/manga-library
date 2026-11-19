@@ -331,6 +331,9 @@ export function makeImg(src, cls) {
       }
     } catch (e) {}
     im.classList.add("pgin-on");
+    // 图解码完宽度才是真的：横排下防剧透的清晰区边界靠图的左右边算，
+    // 不在这里补一次，就得等 render() 里那个 320ms 的兜底定时器，期间边界是错的。
+    try { updateEdgeFxDynamic(); } catch (e) {}
     setTimeout(function () {
       try { im.classList.remove("pgin"); im.classList.remove("pgin-on"); } catch (e) {}
     }, 220);
