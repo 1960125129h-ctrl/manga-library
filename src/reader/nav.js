@@ -512,8 +512,8 @@ let hWheelBound = false;
    滚过这条竖条 = 换话（此时用户已经在看下一话的图了，切过去不会跳内容）。
    这样一话读完是"顺下去"，不是"卡在末尾再点一下"。 */
 let chBreakLock = 0;
-const CH_STEP = 12;         // 每话预接 12 页：第 4 页落点前后各留 6 页，中割区能看得更远
-const CH_LAND_PAGE = 3;     // 转正落点：第 4 页（0 基）
+const CH_STEP = 12;         // 每话预接 12 页：转正后还要靠它接着往下读，转正时再补齐剩下的
+const CH_LAND_PAGE = 1;     // 转正落点：第 2 页（0 基）。原来是第 4 页
 const CH_KEEP_PREV = 3;     // 转正后保留上一话最后 3 页
 
 function makeChapterBreak(idx) {
@@ -558,7 +558,7 @@ function appendNextChapterStrip(container) {
     }
     chain.push({ idx: nx, count: list.length, marker: mk, pages: pages });
 
-    if (list.length > CH_LAND_PAGE) break;   // 这一话有第 4 页 → 它就是落点，不再往后接
+    if (list.length > CH_LAND_PAGE) break;   // 这一话有第 2 页 → 它就是落点，不再往后接
     cur = nx;                                // 否则继续接下一话
   }
   return chain.length ? { chain: chain } : null;

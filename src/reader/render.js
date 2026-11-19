@@ -161,7 +161,19 @@ function applyPickX(axis) {
   if (axis === "x") {
     var maxSl = elStage.scrollWidth - elStage.clientWidth;
     if (elStage.scrollLeft <= 2) {
-      if (S.pi !== 0) { S.pi = 0; updateInfo(); syncThumbsActive(); save(); }
+      // 「滚到最左 = 第 1 页」只在当前页真的不在视野里时才成立。
+      // 窄图（两页加起来还没一屏宽）滚不动，scrollLeft 永远是 0，
+      // 这段特判就会把页码死锁在第 1 页 —— 用户滚一下没反应、
+      // 再滚一下直接从第 1 页跳到第 3 页（第 2 页被吞掉）。
+      // 所以先看当前页还在不在视口里：在的话就别抢页码。
+      var curEl = elStage.querySelector('.hstripimg[data-i="' + S.pi + '"]');
+      var srect = elStage.getBoundingClientRect();
+      var curVisible = false;
+      if (curEl) {
+        var crect = curEl.getBoundingClientRect();
+        curVisible = crect.width > 0 && crect.right > srect.left + 8 && crect.left < srect.right - 8;
+      }
+      if (!curVisible && S.pi !== 0) { S.pi = 0; updateInfo(); syncThumbsActive(); save(); }
       return;
     }
     if (maxSl > 0 && elStage.scrollLeft >= maxSl - 2) {
@@ -194,17 +206,18 @@ const CH_KEEP_PREV = 3;    // 转正后保留上一话最后 3 页（可往回�
 let promoteLock = 0;
 let pendingNext = null;
 
-/* 找落点章节：第一个「有第 4 页」的；都不够就退到链条最后一个 */
+/* 找落点章节：第一个「有第 2 页」的；都不够就退到链条最后一个 */
 function pickLanding(chain) {
   var target = null;
-  for (var i = 0; i < chain.length; i++) { if (chain[i].count > 3) { target = chain[i]; break; } }
+  for (var i = 0; i < chain.length; i++) { if (chain[i].count > 1) { target = chain[i]; break; } }
   if (!target) target = chain[chain.length - 1];
-  var pageIdx = Math.min(3, Math.max(0, (target && target.count ? target.count : 1) - 1));
+  var pageIdx = Math.min(1, Math.max(0, (target && target.count ? target.count : 1) - 1));
   return { target: target, pageIdx: pageIdx };
 }
 
-/* 转正时机：落点章节的**第 4 页**跑到视口中线上就算越过。
-   比「中割过中线就切」更靠后：前几页留给用户看清这是下一话开头，也给解码留静止时间。 */
+/* 转正时机：落点章节的**第 2 页**跑到视口中线附近就算进入这一话。
+   原来定在第 4 页，实际用下来偏晚。
+   提前 120px 触发：等它真的越过中线，滚轮动画早就跑过头，转正会把画面拽回去。 */
 export function maybePromoteNext() {
   if (!pendingNext || !pendingNext.chain || !pendingNext.chain.length) return false;
   if (S.mode !== "hscroll" && S.mode !== "hspread") return false;

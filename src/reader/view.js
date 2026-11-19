@@ -113,6 +113,24 @@ function ebAtEdges() {
   // 原来用 -2 判不到最右，右侧模糊就不会自动关。
   return { left: st.scrollLeft <= 2, right: maxX > 0 && st.scrollLeft >= maxX - 12 };
 }
+/* 当前页（S.pi）那张图在视口里的左右边界。
+   防剧透的清晰区应该跟"正在看的这一页"走，而不是靠"离屏幕中心最近"去猜 ——
+   窄图（两页加起来还没一屏宽）时页面根本滚不动，中心最近的那张往往是上一页。 */
+function curPageRect() {
+  const st = ebStageEl();
+  if (!st) return null;
+  const i = Number(S.pi) | 0;
+  let el = st.querySelector('.hstripimg:not(.extra)[data-i="' + i + '"]');
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  if (!r.width) return null;
+  const sr = st.getBoundingClientRect();
+  return {
+    left: Math.max(0, Math.min(Math.round(sr.width), Math.round(r.left - sr.left))),
+    right: Math.max(0, Math.min(Math.round(sr.width), Math.round(r.right - sr.left))),
+    width: Math.round(r.width)
+  };
+}
 /* 只重算"边界"和左右开关（滚动时高频调用，不碰强度/压暗）。
    宽度：中间页用 clamp(页宽, 视口40%, 视口100%)，再居中。
    两端：不用 clamp 值 —— 第 1 页往往比 40% 还窄，用 clamp 会把第二页一大段划进清晰区，
@@ -143,7 +161,10 @@ export function updateEdgeFxDynamic() {
   // 注意这里只切"用哪一页算边界"，不再联动整层的 opacity，所以即使有点切，
   // 也只是边界值的一次过渡，不会有"闪没了"。
   let leftPx, rightPx;
-  if (atLeft) {
+  // 注意 atLeft 的判据是 scrollLeft <= 2，而窄图滚不动时它恒为真 ——
+  // 所以必须再确认"当前页就是第 1 页"，否则第 2 页会被当成第一页处理：
+  // 清晰区卡在第一张图的右边界，第 2 页整块落在模糊区里（就是"识别不到第 2 张"）。
+  if (atLeft && (Number(S.pi) | 0) === 0) {
     let p = null;
     for (let i = 0; i < imgs.length; i++) { p = rectOf(imgs[i]); if (p) break; }
     if (p) { leftPx = 0; rightPx = p.right; }
@@ -153,16 +174,35 @@ export function updateEdgeFxDynamic() {
     for (let i = imgs.length - 1; i >= 0; i--) { p = rectOf(imgs[i]); if (p) break; }
     if (p) { rightPx = vw; leftPx = p.left; }
     else { rightPx = vw; leftPx = vw - Math.round(vw * cfg.clear / 100); }
-  } else {
-    let clearPx = 0;
-    if (cfg.mode === 'manual') {
-      clearPx = Math.round(vw * cfg.clear / 100);
+  } else if (cfg.mode !== 'manual') {
+    // 两种算法按情况混用：
+    //   · 默认走"居中平滑"——它跟着 scrollLeft 走，翻页过程是连续的，不跳；
+    //   · 只有"当前页怎么滚都居不了中"时才改贴它自己的左右边界。
+    //     这种情形就是窄图：两页加起来还没一屏宽，滚不动，当前页只会在链条两端
+    //     或者卡在偏移量为负的位置，居中算法会把清晰区放到屏幕正中，
+    //     当前页被砍掉一半（看着像"识别不到这一页"）。
+    // 直接全程贴边界会有另一个毛病：S.pi 是 90ms 防抖后才更新的，滚动中一变，
+    // 边界整体跳一下，观感就是"渐变跑得比图快、不跟手"。
+    const cr = curPageRect();
+    let useRect = false;
+    if (cr && cr.width > 4) {
+      const d = (cr.left + cr.right) / 2 - vw / 2;   // 页面中心相对屏幕中心的偏移
+      const need = st.scrollLeft + d;                 // 想让它居中需要的滚动量
+      useRect = (need <= 2) || (maxX > 0 && need >= maxX - 2);
+    }
+    if (useRect) {
+      leftPx = cr.left;
+      rightPx = cr.right;
     } else {
       const pw = centerPageWidth();
       const lo = Math.round(vw * 0.40);
       const hi = Math.round(vw * 1.00);
-      clearPx = pw > 0 ? Math.max(lo, Math.min(hi, Math.round(pw))) : Math.round(vw * (cfg.clear / 100));
+      const clearPx = pw > 0 ? Math.max(lo, Math.min(hi, Math.round(pw))) : Math.round(vw * (cfg.clear / 100));
+      leftPx = Math.round((vw - clearPx) / 2);
+      rightPx = leftPx + clearPx;
     }
+  } else {
+    const clearPx = Math.round(vw * cfg.clear / 100);
     leftPx = Math.round((vw - clearPx) / 2);
     rightPx = leftPx + clearPx;
   }
