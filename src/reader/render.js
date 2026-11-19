@@ -160,23 +160,24 @@ function applyPickX(axis) {
   // 滚到最左就是第 1 页、滚到最右就是最后一页 —— 否则 Home/End 之后页码会被"更居中的邻居"顶掉。
   if (axis === "x") {
     var maxSl = elStage.scrollWidth - elStage.clientWidth;
+    // 「滚到端点 = 首/末页」这个特判，只在当前页真的不在视野里时才成立。
+    // 窄图（两页加起来还没一屏宽）时页面滚不动或滚到头，"当前页还在眼前"却被
+    // 判成另一端，于是：滚一下没反应、再滚一下直接跳过中间那页。
+    // 首端和最右端是同一个毛病，所以共用这一份可见性判断。
+    var curEl = elStage.querySelector('.hstripimg:not(.extra)[data-i="' + S.pi + '"]');
+    var srect = elStage.getBoundingClientRect();
+    var curVisible = false;
+    if (curEl) {
+      var crect = curEl.getBoundingClientRect();
+      curVisible = crect.width > 0 && crect.right > srect.left + 8 && crect.left < srect.right - 8;
+    }
     if (elStage.scrollLeft <= 2) {
-      // 「滚到最左 = 第 1 页」只在当前页真的不在视野里时才成立。
-      // 窄图（两页加起来还没一屏宽）滚不动，scrollLeft 永远是 0，
-      // 这段特判就会把页码死锁在第 1 页 —— 用户滚一下没反应、
-      // 再滚一下直接从第 1 页跳到第 3 页（第 2 页被吞掉）。
-      // 所以先看当前页还在不在视口里：在的话就别抢页码。
-      var curEl = elStage.querySelector('.hstripimg[data-i="' + S.pi + '"]');
-      var srect = elStage.getBoundingClientRect();
-      var curVisible = false;
-      if (curEl) {
-        var crect = curEl.getBoundingClientRect();
-        curVisible = crect.width > 0 && crect.right > srect.left + 8 && crect.left < srect.right - 8;
-      }
       if (!curVisible && S.pi !== 0) { S.pi = 0; updateInfo(); syncThumbsActive(); save(); }
       return;
     }
     if (maxSl > 0 && elStage.scrollLeft >= maxSl - 2) {
+      // 当前页还在视野里 → 别抢页码（倒数第二页对最后一页，和首端对称）
+      if (curVisible) return;
       var lastI = -1;
       for (var q2 = 0; q2 < imgsNow.length; q2++) {
         var v2 = parseInt(imgsNow[q2].getAttribute("data-i"), 10);

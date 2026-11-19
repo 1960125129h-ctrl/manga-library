@@ -113,6 +113,19 @@ function ebAtEdges() {
   // 原来用 -2 判不到最右，右侧模糊就不会自动关。
   return { left: st.scrollLeft <= 2, right: maxX > 0 && st.scrollLeft >= maxX - 12 };
 }
+/* 链条里编号最大的那一页（最后一页）。用于判断"滚到最右"该不该接管清晰区 ——
+   窄图滚到头时，倒数第二页还在视野里，不能直接按最后一页算。 */
+function lastPageIndex() {
+  const st = ebStageEl();
+  if (!st) return -1;
+  const imgs = st.querySelectorAll('.hstripimg:not(.extra)');
+  let last = -1;
+  for (let i = 0; i < imgs.length; i++) {
+    const v = parseInt(imgs[i].getAttribute('data-i'), 10);
+    if (isFinite(v) && v > last) last = v;
+  }
+  return last;
+}
 /* 当前页（S.pi）那张图在视口里的左右边界。
    防剧透的清晰区应该跟"正在看的这一页"走，而不是靠"离屏幕中心最近"去猜 ——
    窄图（两页加起来还没一屏宽）时页面根本滚不动，中心最近的那张往往是上一页。 */
@@ -169,7 +182,9 @@ export function updateEdgeFxDynamic() {
     for (let i = 0; i < imgs.length; i++) { p = rectOf(imgs[i]); if (p) break; }
     if (p) { leftPx = 0; rightPx = p.right; }
     else { leftPx = 0; rightPx = Math.round(vw * cfg.clear / 100); }
-  } else if (atRight) {
+  } else if (atRight && (Number(S.pi) | 0) === lastPageIndex()) {
+    // 和左端同理：只有当前页真的是最后一页，才把清晰区贴到最右。
+    // 窄图滚到头时倒数第二页还在视野里，直接按最后一页算会把当前页糊掉。
     let p = null;
     for (let i = imgs.length - 1; i >= 0; i--) { p = rectOf(imgs[i]); if (p) break; }
     if (p) { rightPx = vw; leftPx = p.left; }
